@@ -10,14 +10,19 @@ final class DeviceLock: ObservableObject {
     @Published var configured = UserDefaults.standard.bool(forKey: "lockConfigured")
     private var context: LAContext?
 
-    func lock() { unlocked = false }
+    func lock() {
+        AppHaptics.soft()
+        unlocked = false
+    }
 
     func unlock() {
         guard !busy else { return }
+        AppHaptics.medium()
         let ctx = LAContext()
         var error: NSError?
         guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
             message = "Set up Face ID, Touch ID, or a device passcode in iPhone Settings, then try again."
+            AppHaptics.error()
             return
         }
         busy = true
@@ -31,8 +36,10 @@ final class DeviceLock: ObservableObject {
                 if success {
                     self.configured = true
                     UserDefaults.standard.set(true, forKey: "lockConfigured")
+                    AppHaptics.success()
                 } else {
                     self.message = "Unlock was cancelled or unsuccessful. You can try again."
+                    AppHaptics.warning()
                 }
             }
         }
@@ -174,28 +181,38 @@ struct RoutedURL: Identifiable {
 }
 
 struct MainTabs: View {
+    enum Tab: Hashable { case home, create, audio, artTrack, settings }
+
     @State private var routedURL: RoutedURL?
+    @State private var selection: Tab = .home
 
     var body: some View {
-        TabView {
+        TabView(selection: $selection) {
             NavigationStack { ProfessionalHome() }
                 .tabItem { Label("Home", systemImage: "house.fill") }
+                .tag(Tab.home)
 
             NavigationStack { CreatorHubView() }
                 .tabItem { Label("Create", systemImage: "wand.and.stars") }
+                .tag(Tab.create)
 
             NavigationStack { NativeAudioConverterView() }
                 .tabItem { Label("Audio", systemImage: "waveform") }
+                .tag(Tab.audio)
 
             NavigationStack { NativeArtTrackGeneratorView() }
                 .tabItem { Label("Art Track", systemImage: "play.rectangle.fill") }
+                .tag(Tab.artTrack)
 
             NavigationStack { Settings() }
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
+                .tag(Tab.settings)
         }
         .tint(.yellow)
+        .onChange(of: selection) { _, _ in AppHaptics.selection() }
         .onReceive(NotificationCenter.default.publisher(for: .pushDeepLinkReceived)) { note in
             guard let url = note.object as? URL else { return }
+            AppHaptics.doublePulse()
             if Browser.isFirstPartyURL(url) { routedURL = RoutedURL(url: url) }
             else { UIApplication.shared.open(url) }
         }
@@ -204,7 +221,10 @@ struct MainTabs: View {
                 Website(url: routed.url, title: "Notification")
                     .toolbar {
                         ToolbarItem(placement: .topBarLeading) {
-                            Button("Done") { routedURL = nil }
+                            Button("Done") {
+                                AppHaptics.light()
+                                routedURL = nil
+                            }
                         }
                     }
             }

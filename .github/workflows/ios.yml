@@ -1,4 +1,4 @@
-name: Build and test iPhone app
+name: iOS CI — Mr. Blindbandit
 on:
   push:
     branches: [main]
@@ -6,6 +6,8 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+env:
+  APP_VERSION: '1.4'
 jobs:
   test-and-build:
     runs-on: macos-15
@@ -18,6 +20,10 @@ jobs:
         run: |
           swift scripts/GenerateAppIcon.swift
           xcodegen generate
+      - name: Verify iOS release version
+        run: |
+          grep -q "MARKETING_VERSION: '1.4'" project.yml
+          grep -q "CURRENT_PROJECT_VERSION: '4'" project.yml
       - name: Run iOS unit tests
         run: |
           DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; ids=[x["udid"] for values in d.values() for x in values if x.get("isAvailable") and "iPhone" in x.get("name","")]; print(ids[0] if ids else "")')
@@ -27,7 +33,7 @@ jobs:
         run: bash build-unsigned.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: Blindbandit-iOS-1.3-unsigned-IPA
-          path: build/Blindbandit-unsigned.ipa
+          name: Mr-Blindbandit-iOS-v1.4-unsigned-IPA
+          path: dist/Mr-Blindbandit-iOS-v1.4-unsigned.ipa
           if-no-files-found: error
           retention-days: 7

@@ -1,4 +1,4 @@
-name: Build and test Android app
+name: Android CI — Mr. Blindbandit
 on:
   push:
     branches: [main]
@@ -6,6 +6,8 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+env:
+  APP_VERSION: '1.4'
 jobs:
   test-lint-build:
     runs-on: ubuntu-24.04
@@ -39,22 +41,30 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - name: Verify Android release version
+        run: |
+          grep -q 'versionCode = 4' Android/app/build.gradle.kts
+          grep -q 'versionName = "1.4.0"' Android/app/build.gradle.kts
       - name: Unit tests
         run: gradle -p Android testDebugUnitTest --stacktrace
       - name: Android lint
         run: gradle -p Android lintDebug --stacktrace
       - name: Build debug APK
         run: gradle -p Android assembleDebug --stacktrace
+      - name: Package versioned APK
+        run: |
+          mkdir -p dist
+          cp Android/app/build/outputs/apk/debug/app-debug.apk "dist/Mr-Blindbandit-Android-v1.4-debug.apk"
       - uses: actions/upload-artifact@v4
         with:
-          name: Blindbandit-Android-1.3-debug-APK
-          path: Android/app/build/outputs/apk/debug/app-debug.apk
+          name: Mr-Blindbandit-Android-v1.4-debug-APK
+          path: dist/Mr-Blindbandit-Android-v1.4-debug.apk
           if-no-files-found: error
           retention-days: 7
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: Blindbandit-Android-lint-report
+          name: Mr-Blindbandit-Android-v1.4-lint-report
           path: Android/app/build/reports/lint-results-debug.html
           if-no-files-found: ignore
           retention-days: 7

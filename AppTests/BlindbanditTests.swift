@@ -1,6 +1,7 @@
 import XCTest
 @testable import Blindbandit
 
+@MainActor
 final class BlindbanditTests: XCTestCase {
     func testFirstPartyHostsAreAccepted() throws {
         let urls = [
@@ -26,7 +27,6 @@ final class BlindbanditTests: XCTestCase {
         XCTAssertNotNil(version)
     }
 
-    @MainActor
     func testDefaultAccessibilityPreferences() {
         UserDefaults.standard.removeObject(forKey: "announcePageLoads")
         UserDefaults.standard.removeObject(forKey: "reduceAppMotion")

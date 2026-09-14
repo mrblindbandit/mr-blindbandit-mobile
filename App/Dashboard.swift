@@ -17,6 +17,11 @@ struct ProfessionalHome: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
 
                     LazyVGrid(columns: columns, spacing: 14) {
+                        NavigationLink { NativeCreatorToolkitView() } label: {
+                            DashboardCard(icon: "square.grid.3x3.fill", title: "Creator Toolkit", subtitle: "20 offline Swift utilities")
+                        }
+                        .buttonStyle(.plain)
+
                         NavigationLink { NativeAudioConverterView() } label: {
                             DashboardCard(icon: "waveform", title: "Audio Converter", subtitle: "Local master and distribution exports")
                         }
@@ -49,11 +54,6 @@ struct ProfessionalHome: View {
 
                         NavigationLink { NativeAudioInspectorView() } label: {
                             DashboardCard(icon: "waveform.badge.magnifyingglass", title: "Audio Inspector", subtitle: "Read technical file details")
-                        }
-                        .buttonStyle(.plain)
-
-                        NavigationLink { CreatorHubView() } label: {
-                            DashboardCard(icon: "wand.and.stars", title: "All Creator Tools", subtitle: "Open the full native toolbox")
                         }
                         .buttonStyle(.plain)
                     }
@@ -109,39 +109,15 @@ struct BrandHeroPanel: View {
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             RoundedRectangle(cornerRadius: 30)
-                .fill(
-                    LinearGradient(
-                        colors: [.black, Color(white: 0.12), Color(white: 0.25)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .fill(LinearGradient(colors: [.black, Color(white: 0.12), Color(white: 0.25)], startPoint: .topLeading, endPoint: .bottomTrailing))
                 .frame(height: 250)
-
-            Circle()
-                .fill(.yellow.opacity(0.14))
-                .frame(width: 220, height: 220)
-                .offset(x: 190, y: -75)
-                .accessibilityHidden(true)
-
-            Image(systemName: "waveform.path.ecg.rectangle.fill")
-                .font(.system(size: 86, weight: .bold))
-                .foregroundStyle(.yellow.opacity(0.20))
-                .offset(x: 210, y: -95)
-                .accessibilityHidden(true)
-
+            Circle().fill(.yellow.opacity(0.14)).frame(width: 220, height: 220).offset(x: 190, y: -75).accessibilityHidden(true)
+            Image(systemName: "waveform.path.ecg.rectangle.fill").font(.system(size: 86, weight: .bold)).foregroundStyle(.yellow.opacity(0.20)).offset(x: 210, y: -95).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 8) {
                 BrandMark(size: 72)
-                Text("MR. BLIND BANDIT")
-                    .font(.system(.title, design: .rounded, weight: .heavy))
-                    .foregroundStyle(.white)
-                    .accessibilityAddTraits(.isHeader)
-                Text("Music · Creator Tools · Blindbandit Records")
-                    .font(.headline)
-                    .foregroundStyle(.white.opacity(0.86))
-                Text("mrblindbandit.net")
-                    .font(.subheadline.monospaced())
-                    .foregroundStyle(.yellow)
+                Text("MR. BLIND BANDIT").font(.system(.title, design: .rounded, weight: .heavy)).foregroundStyle(.white).accessibilityAddTraits(.isHeader)
+                Text("Music · Creator Tools · Blindbandit Records").font(.headline).foregroundStyle(.white.opacity(0.86))
+                Text("mrblindbandit.net").font(.subheadline.monospaced()).foregroundStyle(.yellow)
             }
             .padding(24)
         }
@@ -218,6 +194,10 @@ struct StatusPill: View {
 struct CreatorHubView: View {
     var body: some View {
         List {
+            Section("Native creator toolkit") {
+                NavigationLink { NativeCreatorToolkitView() } label: { Label("20-Tool Creator Toolkit", systemImage: "square.grid.3x3.fill") }
+            }
+
             Section("Native audio tools") {
                 NavigationLink { NativeAudioConverterView() } label: { Label("Audio Converter", systemImage: "waveform") }
                 NavigationLink { NativeAudioTrimmerView() } label: { Label("Audio Trimmer", systemImage: "scissors") }

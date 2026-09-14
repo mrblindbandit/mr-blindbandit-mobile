@@ -17,11 +17,17 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.mrblindbandit.privateapp
         GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_ENTITLEMENTS: App/Blindbandit.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: Blindbandit
         INFOPLIST_KEY_NSFaceIDUsageDescription: Unlock your private Blindbandit app using Face ID.
+        INFOPLIST_KEY_NSCameraUsageDescription: Allow Blindbandit to use the camera for creator tools, profile media, and website uploads you choose to make.
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: Allow Blindbandit to use the microphone for recording and creator tools you choose to use.
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: Allow Blindbandit to choose photos and videos for uploads you start.
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: Allow Blindbandit to save media you explicitly export to Photos.
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        MARKETING_VERSION: '1.0'
-        CURRENT_PROJECT_VERSION: '1'
+        MARKETING_VERSION: '1.1'
+        CURRENT_PROJECT_VERSION: '2'
 schemes:
   Blindbandit:
     build:

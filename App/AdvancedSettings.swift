@@ -68,12 +68,15 @@ final class SiteConnectionSettings: ObservableObject {
             if ownerToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 KeychainStore.delete(account: "owner-token")
                 statusMessage = "Owner token removed from this device."
+                AppHaptics.warning()
             } else {
                 try KeychainStore.save(ownerToken, account: "owner-token")
                 statusMessage = "Owner token saved securely in this device Keychain."
+                AppHaptics.success()
             }
         } catch {
             statusMessage = "The owner token could not be saved."
+            AppHaptics.error()
         }
     }
 
@@ -81,6 +84,7 @@ final class SiteConnectionSettings: ObservableObject {
         ownerToken = ""
         KeychainStore.delete(account: "owner-token")
         statusMessage = "Owner token removed from this device."
+        AppHaptics.warning()
     }
 }
 
@@ -90,7 +94,7 @@ struct AdvancedSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Site connection") {
+            Section("Site Connection") {
                 TextField("API base URL", text: $site.apiBaseURL)
                     .textInputAutocapitalization(.never)
                     .keyboardType(.URL)
@@ -103,7 +107,7 @@ struct AdvancedSettingsView: View {
                     .accessibilityHint("A public client identifier that is safe to ship in the app.")
             }
 
-            Section("Private owner access") {
+            Section("Private Owner Access") {
                 Group {
                     if revealToken {
                         TextField("Owner access token", text: $site.ownerToken)
@@ -116,16 +120,25 @@ struct AdvancedSettingsView: View {
                 .accessibilityHint("Stored only in the iPhone Keychain when you choose Save owner token.")
 
                 Toggle("Show owner token", isOn: $revealToken)
-                Button("Save owner token") { site.saveOwnerToken() }
-                Button("Remove owner token", role: .destructive) { site.clearOwnerToken() }
-                    .disabled(site.ownerToken.isEmpty && KeychainStore.read(account: "owner-token").isEmpty)
+                    .onChange(of: revealToken) { _, _ in AppHaptics.selection() }
 
-                Text("Use a short-lived, scoped owner token here. Do not put a permanent master server secret in an iPhone app; client apps can be inspected. The token is stored with This Device Only Keychain protection and is not written to UserDefaults.")
+                Button("Save owner token") {
+                    AppHaptics.rigid()
+                    site.saveOwnerToken()
+                }
+
+                Button("Remove owner token", role: .destructive) {
+                    AppHaptics.heavy()
+                    site.clearOwnerToken()
+                }
+                .disabled(site.ownerToken.isEmpty && KeychainStore.read(account: "owner-token").isEmpty)
+
+                Text("For owner access, use a short-lived scoped token issued by your server. A permanent master server secret should stay on the server, because any iPhone app can ultimately be inspected. This token is protected by This Device Only Keychain storage and is never written to UserDefaults.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
 
-            Section("Connection policy") {
+            Section("Connection Policy") {
                 LabeledContent("Primary site", value: "mrblindbandit.net")
                 LabeledContent("Transport", value: "HTTPS only")
                 LabeledContent("Private token storage", value: "iOS Keychain")
@@ -141,5 +154,6 @@ struct AdvancedSettingsView: View {
         }
         .navigationTitle("Advanced Settings")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear { AppHaptics.soft() }
     }
 }

@@ -18,7 +18,7 @@ struct ProfessionalHome: View {
 
                     LazyVGrid(columns: columns, spacing: 14) {
                         NavigationLink { NativeAudioConverterView() } label: {
-                            DashboardCard(icon: "waveform", title: "Audio Converter", subtitle: "Local mastering exports")
+                            DashboardCard(icon: "waveform", title: "Audio Converter", subtitle: "Local master and distribution exports")
                         }
                         .buttonStyle(.plain)
 
@@ -27,13 +27,33 @@ struct ProfessionalHome: View {
                         }
                         .buttonStyle(.plain)
 
-                        NavigationLink { Website(path: "/media-tools/", title: "Media Suite") } label: {
-                            DashboardCard(icon: "wand.and.stars", title: "Media Suite", subtitle: "More creator tools")
+                        NavigationLink { NativeAudioTrimmerView() } label: {
+                            DashboardCard(icon: "scissors", title: "Audio Trimmer", subtitle: "Cut audio locally")
                         }
                         .buttonStyle(.plain)
 
-                        NavigationLink { Website(path: "/community/", title: "Community") } label: {
-                            DashboardCard(icon: "person.3.fill", title: "Community", subtitle: "Posts and updates")
+                        NavigationLink { NativePeakNormalizerView() } label: {
+                            DashboardCard(icon: "waveform.path", title: "Peak Normalizer", subtitle: "Set local peak level")
+                        }
+                        .buttonStyle(.plain)
+
+                        NavigationLink { NativeArtworkResizerView() } label: {
+                            DashboardCard(icon: "crop", title: "Artwork Resizer", subtitle: "Cover and social presets")
+                        }
+                        .buttonStyle(.plain)
+
+                        NavigationLink { NativeImageConverterView() } label: {
+                            DashboardCard(icon: "photo.on.rectangle.angled", title: "Image Converter", subtitle: "PNG and JPEG exports")
+                        }
+                        .buttonStyle(.plain)
+
+                        NavigationLink { NativeAudioInspectorView() } label: {
+                            DashboardCard(icon: "waveform.badge.magnifyingglass", title: "Audio Inspector", subtitle: "Read technical file details")
+                        }
+                        .buttonStyle(.plain)
+
+                        NavigationLink { CreatorHubView() } label: {
+                            DashboardCard(icon: "wand.and.stars", title: "All Creator Tools", subtitle: "Open the full native toolbox")
                         }
                         .buttonStyle(.plain)
                     }
@@ -198,31 +218,29 @@ struct StatusPill: View {
 struct CreatorHubView: View {
     var body: some View {
         List {
-            Section("Local tools") {
-                NavigationLink { NativeAudioConverterView() } label: {
-                    Label("Audio Converter", systemImage: "waveform")
-                }
-                NavigationLink { NativeArtTrackGeneratorView() } label: {
-                    Label("Art Track Generator", systemImage: "play.rectangle")
-                }
+            Section("Native audio tools") {
+                NavigationLink { NativeAudioConverterView() } label: { Label("Audio Converter", systemImage: "waveform") }
+                NavigationLink { NativeAudioTrimmerView() } label: { Label("Audio Trimmer", systemImage: "scissors") }
+                NavigationLink { NativePeakNormalizerView() } label: { Label("Peak Normalizer", systemImage: "waveform.path") }
+                NavigationLink { NativeAudioInspectorView() } label: { Label("Audio Inspector", systemImage: "waveform.badge.magnifyingglass") }
             }
-            Section("Online tools") {
-                NavigationLink { Website(path: "/media-tools/", title: "Media Suite") } label: {
-                    Label("Media Suite", systemImage: "wand.and.stars")
-                }
-                NavigationLink { Website(path: "/support/", title: "Support") } label: {
-                    Label("Support", systemImage: "questionmark.circle")
-                }
+
+            Section("Native artwork and video tools") {
+                NavigationLink { NativeArtTrackGeneratorView() } label: { Label("Art Track Generator", systemImage: "play.rectangle") }
+                NavigationLink { NativeArtworkResizerView() } label: { Label("Artwork Resizer", systemImage: "crop") }
+                NavigationLink { NativeImageConverterView() } label: { Label("Image Converter", systemImage: "photo.on.rectangle.angled") }
             }
+
+            Section("Website tools") {
+                NavigationLink { Website(path: "/media-tools/", title: "Media Suite") } label: { Label("Online Media Suite", systemImage: "globe") }
+                NavigationLink { Website(path: "/support/", title: "Support") } label: { Label("Support", systemImage: "questionmark.circle") }
+            }
+
             Section("Publishing") {
-                NavigationLink { Website(path: "/", title: "Website") } label: {
-                    Label("Open mrblindbandit.net", systemImage: "globe")
-                }
-                NavigationLink { Website(path: "/community/", title: "Community") } label: {
-                    Label("Community", systemImage: "person.3")
-                }
+                NavigationLink { Website(path: "/", title: "Website") } label: { Label("Open mrblindbandit.net", systemImage: "globe") }
+                NavigationLink { Website(path: "/community/", title: "Community") } label: { Label("Community", systemImage: "person.3") }
             }
         }
-        .navigationTitle("Create")
+        .navigationTitle("Creator Studio")
     }
 }

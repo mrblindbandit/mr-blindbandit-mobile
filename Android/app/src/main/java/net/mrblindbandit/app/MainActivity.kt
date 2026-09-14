@@ -180,7 +180,9 @@ class MainActivity : ComponentActivity() {
     companion object { private const val MEDIA_PERMISSION_REQUEST = 7301 }
 }
 
-enum class AppTab(val label: String) { HOME("Home"), WEB("Website"), MEDIA("Media"), SETTINGS("Settings") }
+enum class AppTab(val label: String) {
+    HOME("Home"), CREATOR("Create"), WEB("Website"), MEDIA("Media"), SETTINGS("Settings")
+}
 
 @Composable
 fun BlindbanditAndroidApp(activity: MainActivity, deepLinkState: MutableState<String?>) {
@@ -206,8 +208,9 @@ fun BlindbanditAndroidApp(activity: MainActivity, deepLinkState: MutableState<St
             AppTab.entries.forEach { item ->
                 val icon = when (item) {
                     AppTab.HOME -> Icons.Default.Home
+                    AppTab.CREATOR -> Icons.Default.Build
                     AppTab.WEB -> Icons.Default.Web
-                    AppTab.MEDIA -> Icons.Default.Build
+                    AppTab.MEDIA -> Icons.Default.UploadFile
                     AppTab.SETTINGS -> Icons.Default.Settings
                 }
                 NavigationBarItem(
@@ -227,9 +230,11 @@ fun BlindbanditAndroidApp(activity: MainActivity, deepLinkState: MutableState<St
             when (tab) {
                 AppTab.HOME -> HomeScreen(
                     onOpen = { currentUrl = it; tab = AppTab.WEB },
+                    onCreator = { tab = AppTab.CREATOR },
                     onMedia = { currentUrl = BuildConfig.WEB_BASE_URL + "/media-tools/"; tab = AppTab.MEDIA },
                     onSettings = { tab = AppTab.SETTINGS }
                 )
+                AppTab.CREATOR -> NativeCreatorToolkitScreen()
                 AppTab.WEB, AppTab.MEDIA -> BlindbanditWebView(activity, currentUrl, prefs)
                 AppTab.SETTINGS -> SettingsScreen(activity, prefs)
             }
@@ -238,7 +243,7 @@ fun BlindbanditAndroidApp(activity: MainActivity, deepLinkState: MutableState<St
 }
 
 @Composable
-private fun HomeScreen(onOpen: (String) -> Unit, onMedia: () -> Unit, onSettings: () -> Unit) {
+private fun HomeScreen(onOpen: (String) -> Unit, onCreator: () -> Unit, onMedia: () -> Unit, onSettings: () -> Unit) {
     val links = listOf(
         "Public website" to BuildConfig.WEB_BASE_URL + "/",
         "Profile and account" to BuildConfig.WEB_BASE_URL + "/account",
@@ -252,18 +257,19 @@ private fun HomeScreen(onOpen: (String) -> Unit, onMedia: () -> Unit, onSettings
                 BrandLogo(72.dp)
                 Spacer(Modifier.width(16.dp))
                 Column {
-                    Text("Mr. Blindbandit", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
-                    Text("Blindbandit Records · Android companion", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Mr. Blind Bandit", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
+                    Text("Blindbandit Records · Creator workspace", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
-        item { Button(onClick = onMedia, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.UploadFile, null); Spacer(Modifier.width(8.dp)); Text("Open Media Suite") } }
+        item { Button(onClick = onCreator, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Build, null); Spacer(Modifier.width(8.dp)); Text("Open 20-Tool Native Creator Toolkit") } }
+        item { Button(onClick = onMedia, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.UploadFile, null); Spacer(Modifier.width(8.dp)); Text("Open Online Media Suite") } }
         items(links) { (label, url) -> Button(onClick = { onOpen(url) }, modifier = Modifier.fillMaxWidth()) { Text(label) } }
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Native Android features", fontWeight = FontWeight.SemiBold, modifier = Modifier.semantics { heading() })
-                    Text("TalkBack-first navigation, Android System WebView, camera and microphone permission handling, native file uploads, Firebase Cloud Messaging scaffold, deep links, branded loading, and system accessibility support.")
+                    Text("Native Android creator tools", fontWeight = FontWeight.SemiBold, modifier = Modifier.semantics { heading() })
+                    Text("Twenty offline utilities now run directly in Jetpack Compose, including BPM, royalty splits, storage and bitrate calculators, ISRC/UPC validation, filename and slug tools, captions, hashtags, SHA-256 checksums, contrast checking, metadata, timecode, and sample calculations.")
                     Button(onClick = onSettings) { Text("Advanced settings") }
                 }
             }
@@ -411,6 +417,9 @@ private fun SettingsScreen(activity: MainActivity, prefs: AndroidAppPreferences)
 
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { Text("Settings", fontSize = 30.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() }) }
+        item { SettingsCard("Creator Tools") {
+            Text("Twenty native offline creator utilities are available from the Create tab. They do not use WebView.")
+        } }
         item { SettingsCard("Notifications") {
             Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Notifications, null); Spacer(Modifier.width(8.dp)); Text(firebaseStatus) }
             Button(onClick = { activity.requestNotificationPermission() }) { Text("Enable notification permission") }
@@ -443,8 +452,8 @@ private fun SettingsScreen(activity: MainActivity, prefs: AndroidAppPreferences)
             }) { Text("Clear website sessions and storage") }
         } }
         item { SettingsCard("About") {
-            Text("Blindbandit Android version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
-            Text("Android System WebView · AndroidX · Material 3 · Firebase Cloud Messaging scaffold")
+            Text("Mr. Blind Bandit Android version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+            Text("Native Jetpack Compose creator toolkit · Android System WebView · Material 3 · Firebase Cloud Messaging scaffold")
             Text("Accessibility target: TalkBack, large text, display scaling, high contrast, switch access, keyboard navigation, and system reduced-animation preferences.")
         } }
         item { Spacer(Modifier.height(24.dp)) }

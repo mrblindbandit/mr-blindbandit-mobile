@@ -1,7 +1,6 @@
 package net.mrblindbandit.app
 
 import android.Manifest
-import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -45,7 +44,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Mic
@@ -102,8 +100,7 @@ class MainActivity : ComponentActivity() {
 
     private val fileChooserLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val callback = filePathCallback ?: return@registerForActivityResult
-        val uris = WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
-        callback.onReceiveValue(uris)
+        callback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data))
         filePathCallback = null
     }
 
@@ -113,11 +110,7 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         deepLinkState.value = intent?.dataString?.takeIf { UrlPolicy.isFirstParty(it) }
-        setContent {
-            MaterialTheme {
-                BlindbanditAndroidApp(activity = this, deepLinkState = deepLinkState)
-            }
-        }
+        setContent { MaterialTheme { BlindbanditAndroidApp(this, deepLinkState) } }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -146,29 +139,23 @@ class MainActivity : ComponentActivity() {
                 request.deny()
                 return@runOnUiThread
             }
-
-            val allowedWebResources = request.resources.filter {
+            val allowed = request.resources.filter {
                 it == PermissionRequest.RESOURCE_VIDEO_CAPTURE || it == PermissionRequest.RESOURCE_AUDIO_CAPTURE
             }.toTypedArray()
-            if (allowedWebResources.isEmpty()) {
+            if (allowed.isEmpty()) {
                 request.deny()
                 return@runOnUiThread
             }
-
             val androidPermissions = mutableListOf<String>()
-            if (allowedWebResources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE)) androidPermissions += Manifest.permission.CAMERA
-            if (allowedWebResources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) androidPermissions += Manifest.permission.RECORD_AUDIO
-
-            val missing = androidPermissions.filter {
-                ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
-            }
-
+            if (allowed.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE)) androidPermissions += Manifest.permission.CAMERA
+            if (allowed.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) androidPermissions += Manifest.permission.RECORD_AUDIO
+            val missing = androidPermissions.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
             if (missing.isEmpty()) {
-                request.grant(allowedWebResources)
+                request.grant(allowed)
             } else {
                 pendingMediaRequest?.deny()
                 pendingMediaRequest = request
-                pendingMediaResources = allowedWebResources
+                pendingMediaResources = allowed
                 ActivityCompat.requestPermissions(this, missing.toTypedArray(), MEDIA_PERMISSION_REQUEST)
             }
         }
@@ -190,9 +177,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    companion object {
-        private const val MEDIA_PERMISSION_REQUEST = 7301
-    }
+    companion object { private const val MEDIA_PERMISSION_REQUEST = 7301 }
 }
 
 enum class AppTab(val label: String) { HOME("Home"), WEB("Website"), MEDIA("Media"), SETTINGS("Settings") }
@@ -211,40 +196,37 @@ fun BlindbanditAndroidApp(activity: MainActivity, deepLinkState: MutableState<St
             deepLinkState.value = null
         }
     }
-
     LaunchedEffect(prefs.keepScreenAwake) {
         if (prefs.keepScreenAwake) activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         else activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
-    Scaffold(
-        bottomBar = {
-            NavigationBar {
-                AppTab.entries.forEach { item ->
-                    val icon = when (item) {
-                        AppTab.HOME -> Icons.Default.Home
-                        AppTab.WEB -> Icons.Default.Web
-                        AppTab.MEDIA -> Icons.Default.Build
-                        AppTab.SETTINGS -> Icons.Default.Settings
-                    }
-                    NavigationBarItem(
-                        selected = tab == item,
-                        onClick = {
-                            tab = item
-                            if (item == AppTab.WEB) currentUrl = BuildConfig.WEB_BASE_URL + "/"
-                            if (item == AppTab.MEDIA) currentUrl = BuildConfig.WEB_BASE_URL + "/media-tools/"
-                        },
-                        icon = { Icon(icon, contentDescription = item.label) },
-                        label = { Text(item.label) }
-                    )
+    Scaffold(bottomBar = {
+        NavigationBar {
+            AppTab.entries.forEach { item ->
+                val icon = when (item) {
+                    AppTab.HOME -> Icons.Default.Home
+                    AppTab.WEB -> Icons.Default.Web
+                    AppTab.MEDIA -> Icons.Default.Build
+                    AppTab.SETTINGS -> Icons.Default.Settings
                 }
+                NavigationBarItem(
+                    selected = tab == item,
+                    onClick = {
+                        tab = item
+                        if (item == AppTab.WEB) currentUrl = BuildConfig.WEB_BASE_URL + "/"
+                        if (item == AppTab.MEDIA) currentUrl = BuildConfig.WEB_BASE_URL + "/media-tools/"
+                    },
+                    icon = { Icon(icon, contentDescription = item.label) },
+                    label = { Text(item.label) }
+                )
             }
         }
-    ) { inner ->
+    }) { inner ->
         Box(Modifier.fillMaxSize().padding(inner)) {
             when (tab) {
                 AppTab.HOME -> HomeScreen(
-                    onOpen = { url -> currentUrl = url; tab = AppTab.WEB },
+                    onOpen = { currentUrl = it; tab = AppTab.WEB },
                     onMedia = { currentUrl = BuildConfig.WEB_BASE_URL + "/media-tools/"; tab = AppTab.MEDIA },
                     onSettings = { tab = AppTab.SETTINGS }
                 )
@@ -276,9 +258,7 @@ private fun HomeScreen(onOpen: (String) -> Unit, onMedia: () -> Unit, onSettings
             }
         }
         item { Button(onClick = onMedia, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.UploadFile, null); Spacer(Modifier.width(8.dp)); Text("Open Media Suite") } }
-        items(links) { (label, url) ->
-            Button(onClick = { onOpen(url) }, modifier = Modifier.fillMaxWidth()) { Text(label) }
-        }
+        items(links) { (label, url) -> Button(onClick = { onOpen(url) }, modifier = Modifier.fillMaxWidth()) { Text(label) } }
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -319,7 +299,6 @@ private fun BlindbanditWebView(activity: MainActivity, url: String, prefs: Andro
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) settings.safeBrowsingEnabled = true
                     CookieManager.getInstance().setAcceptCookie(true)
                     CookieManager.getInstance().setAcceptThirdPartyCookies(this, prefs.allowThirdPartyCookies)
-
                     webViewClient = object : WebViewClient() {
                         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                             val target = request?.url?.toString() ?: return false
@@ -329,43 +308,22 @@ private fun BlindbanditWebView(activity: MainActivity, url: String, prefs: Andro
                             }
                             return true
                         }
-
-                        override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                            loading = true
-                            progress = 0
-                        }
-
+                        override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) { loading = true; progress = 0 }
                         override fun onPageFinished(view: WebView?, url: String?) {
-                            loading = false
-                            progress = 100
+                            loading = false; progress = 100
                             if (prefs.announcePageLoads) view?.announceForAccessibility("Page loaded")
                         }
                     }
-
                     webChromeClient = object : WebChromeClient() {
-                        override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                            progress = newProgress
-                            loading = newProgress < 100
+                        override fun onProgressChanged(view: WebView?, newProgress: Int) { progress = newProgress; loading = newProgress < 100 }
+                        override fun onShowFileChooser(webView: WebView?, callback: ValueCallback<Array<Uri>>?, params: FileChooserParams?): Boolean {
+                            if (callback == null || params == null) return false
+                            return activity.launchFileChooser(callback, params)
                         }
-
-                        override fun onShowFileChooser(
-                            webView: WebView?,
-                            filePathCallback: ValueCallback<Array<Uri>>?,
-                            fileChooserParams: FileChooserParams?
-                        ): Boolean {
-                            if (filePathCallback == null || fileChooserParams == null) return false
-                            return activity.launchFileChooser(filePathCallback, fileChooserParams)
-                        }
-
-                        override fun onPermissionRequest(request: PermissionRequest?) {
-                            if (request != null) activity.handleMediaPermission(request)
-                        }
+                        override fun onPermissionRequest(request: PermissionRequest?) { if (request != null) activity.handleMediaPermission(request) }
                     }
-
                     setDownloadListener { downloadUrl, _, _, _, _ ->
-                        if (downloadUrl.startsWith("https://")) {
-                            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl))) }
-                        }
+                        if (downloadUrl.startsWith("https://")) runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl))) }
                     }
                     loadUrl(url)
                 }
@@ -387,20 +345,14 @@ private fun BlindbanditWebView(activity: MainActivity, url: String, prefs: Andro
             Button(onClick = { webViewRef?.reload() }) { Icon(Icons.Default.Refresh, contentDescription = "Reload page") }
             Button(onClick = { runCatching { activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(webViewRef?.url ?: url))) } }) { Text("Browser") }
         }
-
-        if (loading) {
-            BrandedLoadingOverlay(progress = progress, reduceMotion = prefs.reduceMotion)
-        }
+        if (loading) BrandedLoadingOverlay(progress, prefs.reduceMotion)
     }
 }
 
 @Composable
 private fun BrandedLoadingOverlay(progress: Int, reduceMotion: Boolean) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Card(
-            Modifier.padding(24.dp).semantics { liveRegion = LiveRegionMode.Polite },
-            shape = RoundedCornerShape(24.dp)
-        ) {
+        Card(Modifier.padding(24.dp).semantics { liveRegion = LiveRegionMode.Polite }, shape = RoundedCornerShape(24.dp)) {
             Column(Modifier.padding(26.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 PulsingBrandLogo(88.dp, reduceMotion)
                 WaveformLoader(reduceMotion)
@@ -420,23 +372,10 @@ private fun BrandLogo(size: androidx.compose.ui.unit.Dp) {
 
 @Composable
 private fun PulsingBrandLogo(size: androidx.compose.ui.unit.Dp, reduceMotion: Boolean) {
-    if (reduceMotion) {
-        BrandLogo(size)
-        return
-    }
+    if (reduceMotion) { BrandLogo(size); return }
     val transition = rememberInfiniteTransition(label = "logoPulse")
-    val scale by transition.animateFloat(
-        initialValue = 0.94f,
-        targetValue = 1.08f,
-        animationSpec = infiniteRepeatable(tween(850), RepeatMode.Reverse),
-        label = "logoScale"
-    )
-    val alpha by transition.animateFloat(
-        initialValue = 0.76f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(850), RepeatMode.Reverse),
-        label = "logoAlpha"
-    )
+    val scale by transition.animateFloat(0.94f, 1.08f, infiniteRepeatable(tween(850), RepeatMode.Reverse), label = "logoScale")
+    val alpha by transition.animateFloat(0.76f, 1f, infiniteRepeatable(tween(850), RepeatMode.Reverse), label = "logoAlpha")
     Box(Modifier.scale(scale).alpha(alpha)) { BrandLogo(size) }
 }
 
@@ -461,78 +400,59 @@ private fun WaveformLoader(reduceMotion: Boolean) {
 private fun SettingsScreen(activity: MainActivity, prefs: AndroidAppPreferences) {
     val context = LocalContext.current
     var firebaseStatus by remember { mutableStateOf("Checking Google push services") }
-
     LaunchedEffect(Unit) {
         firebaseStatus = if (FirebaseApp.getApps(context).isNotEmpty()) {
             FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
                 firebaseStatus = if (task.isSuccessful) "Firebase Cloud Messaging ready" else "Firebase token unavailable"
             }
             "Firebase configured — requesting token"
-        } else {
-            "FCM framework installed — add google-services.json to activate remote delivery"
-        }
+        } else "FCM framework installed — add google-services.json to activate remote delivery"
     }
 
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { Text("Settings", fontSize = 30.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() }) }
-        item {
-            SettingsCard("Notifications") {
-                Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Notifications, null); Spacer(Modifier.width(8.dp)); Text(firebaseStatus) }
-                Button(onClick = { activity.requestNotificationPermission() }) { Text("Enable notification permission") }
-            }
-        }
-        item {
-            SettingsCard("Accessibility") {
-                SettingSwitch("Announce completed page loads", prefs.announcePageLoads) { prefs.setAnnouncePageLoads(it) }
-                SettingSwitch("Reduce app motion", prefs.reduceMotion) { prefs.setReduceMotion(it) }
-                SettingSwitch("Keep screen awake", prefs.keepScreenAwake) { prefs.setKeepScreenAwake(it) }
-                Text("TalkBack uses the native Android accessibility tree for app controls and the Android System WebView accessibility tree for website content.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Button(onClick = { runCatching { activity.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } }) { Text("Open Android accessibility settings") }
-            }
-        }
-        item {
-            SettingsCard("Browser") {
-                Text("Website text zoom: ${prefs.textZoom} percent")
-                Slider(
-                    value = prefs.textZoom.toFloat(),
-                    onValueChange = { prefs.setTextZoom(it.toInt()) },
-                    valueRange = 75f..200f
-                )
-                SettingSwitch("Allow third-party cookies for sign-in compatibility", prefs.allowThirdPartyCookies) { prefs.setAllowThirdPartyCookies(it) }
-                SettingSwitch("Allow media autoplay", prefs.mediaAutoplay) { prefs.setMediaAutoplay(it) }
-                SettingSwitch("Pull-to-refresh preference", prefs.pullToRefresh) { prefs.setPullToRefresh(it) }
-            }
-        }
-        item {
-            SettingsCard("Camera, microphone, and uploads") {
-                Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Mic, null); Spacer(Modifier.width(8.dp)); Text("First-party web media requests use Android runtime permissions.") }
-                Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.UploadFile, null); Spacer(Modifier.width(8.dp)); Text("HTML file inputs use the native Android document/photo picker.") }
-                Button(onClick = { runCatching { activity.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) } }) { Text("Open app permissions") }
-            }
-        }
-        item {
-            SettingsCard("Privacy and storage") {
-                Button(onClick = {
-                    CookieManager.getInstance().removeAllCookies(null)
-                    CookieManager.getInstance().flush()
-                    WebStorage.getInstance().deleteAllData()
-                    Toast.makeText(context, "Website cookies and storage cleared.", Toast.LENGTH_SHORT).show()
-                }) { Text("Clear website sessions and storage") }
-            }
-        }
-        item {
-            SettingsCard("About") {
-                Text("Blindbandit Android version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
-                Text("Android System WebView · AndroidX · Material 3 · Firebase Cloud Messaging scaffold")
-                Text("Accessibility target: TalkBack, large text, display scaling, high contrast, switch access, keyboard navigation, and system reduced-animation preferences.")
-            }
-        }
+        item { SettingsCard("Notifications") {
+            Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Notifications, null); Spacer(Modifier.width(8.dp)); Text(firebaseStatus) }
+            Button(onClick = { activity.requestNotificationPermission() }) { Text("Enable notification permission") }
+        } }
+        item { SettingsCard("Accessibility") {
+            SettingSwitch("Announce completed page loads", prefs.announcePageLoads) { prefs.setAnnouncePageLoads(it) }
+            SettingSwitch("Reduce app motion", prefs.reduceMotion) { prefs.setReduceMotion(it) }
+            SettingSwitch("Keep screen awake", prefs.keepScreenAwake) { prefs.setKeepScreenAwake(it) }
+            Text("TalkBack uses the native Android accessibility tree for app controls and the Android System WebView accessibility tree for website content.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Button(onClick = { runCatching { activity.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } }) { Text("Open Android accessibility settings") }
+        } }
+        item { SettingsCard("Browser") {
+            Text("Website text zoom: ${prefs.textZoom} percent")
+            Slider(value = prefs.textZoom.toFloat(), onValueChange = { prefs.setTextZoom(it.toInt()) }, valueRange = 75f..200f)
+            SettingSwitch("Allow third-party cookies for sign-in compatibility", prefs.allowThirdPartyCookies) { prefs.setAllowThirdPartyCookies(it) }
+            SettingSwitch("Allow media autoplay", prefs.mediaAutoplay) { prefs.setMediaAutoplay(it) }
+            SettingSwitch("Pull-to-refresh preference", prefs.pullToRefresh) { prefs.setPullToRefresh(it) }
+        } }
+        item { SettingsCard("Camera, microphone, and uploads") {
+            Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Mic, null); Spacer(Modifier.width(8.dp)); Text("First-party web media requests use Android runtime permissions.") }
+            Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.UploadFile, null); Spacer(Modifier.width(8.dp)); Text("HTML file inputs use the native Android document/photo picker.") }
+            Button(onClick = { runCatching { activity.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) } }) { Text("Open app permissions") }
+        } }
+        item { SettingsCard("Privacy and storage") {
+            Button(onClick = {
+                CookieManager.getInstance().removeAllCookies(null)
+                CookieManager.getInstance().flush()
+                WebStorage.getInstance().deleteAllData()
+                Toast.makeText(context, "Website cookies and storage cleared.", Toast.LENGTH_SHORT).show()
+            }) { Text("Clear website sessions and storage") }
+        } }
+        item { SettingsCard("About") {
+            Text("Blindbandit Android version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+            Text("Android System WebView · AndroidX · Material 3 · Firebase Cloud Messaging scaffold")
+            Text("Accessibility target: TalkBack, large text, display scaling, high contrast, switch access, keyboard navigation, and system reduced-animation preferences.")
+        } }
         item { Spacer(Modifier.height(24.dp)) }
     }
 }
 
 @Composable
-private fun SettingsCard(title: String, content: @Composable Column.() -> Unit) {
+private fun SettingsCard(title: String, content: @Composable () -> Unit) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(title, fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.semantics { heading() })
@@ -545,7 +465,7 @@ private fun SettingsCard(title: String, content: @Composable Column.() -> Unit) 
 @Composable
 private fun SettingSwitch(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, modifier = Modifier.weight(1f).padding(end = 12.dp))
+        Text(label, modifier = Modifier.fillMaxWidth(0.78f).padding(end = 12.dp))
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }

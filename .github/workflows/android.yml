@@ -1,0 +1,70 @@
+name: Android CI — Mr. Blindbandit
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  APP_VERSION: '1.4'
+jobs:
+  test-lint-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Verify Android SDK
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          "$SDKMANAGER" --version
+      - name: Accept required Android SDK licenses
+        run: |
+          set -o pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+      - name: Install required Android SDK packages
+        run: |
+          set -euo pipefail
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Verify Android release version
+        run: |
+          grep -q 'versionCode = 4' Android/app/build.gradle.kts
+          grep -q 'versionName = "1.4.0"' Android/app/build.gradle.kts
+      - name: Unit tests
+        run: gradle -p Android testDebugUnitTest --stacktrace
+      - name: Android lint
+        run: gradle -p Android lintDebug --stacktrace
+      - name: Build debug APK
+        run: gradle -p Android assembleDebug --stacktrace
+      - name: Package versioned APK
+        run: |
+          mkdir -p dist
+          cp Android/app/build/outputs/apk/debug/app-debug.apk "dist/Mr-Blindbandit-Android-v1.4-debug.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mr-Blindbandit-Android-v1.4-debug-APK
+          path: dist/Mr-Blindbandit-Android-v1.4-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Mr-Blindbandit-Android-v1.4-lint-report
+          path: Android/app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore
+          retention-days: 7

@@ -19,17 +19,31 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_ENTITLEMENTS: App/Blindbandit.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        INFOPLIST_KEY_CFBundleDisplayName: Blindbandit
-        INFOPLIST_KEY_NSFaceIDUsageDescription: Unlock your private Blindbandit app using Face ID.
-        INFOPLIST_KEY_NSCameraUsageDescription: Allow Blindbandit to use the camera for creator tools, profile media, and website uploads you choose to make.
-        INFOPLIST_KEY_NSMicrophoneUsageDescription: Allow Blindbandit to use the microphone for recording and creator tools you choose to use.
-        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: Allow Blindbandit to choose photos and videos for uploads you start.
-        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: Allow Blindbandit to save media you explicitly export to Photos.
+        INFOPLIST_KEY_CFBundleDisplayName: Mr. Blindbandit
+        INFOPLIST_KEY_CFBundleName: Mr. Blindbandit
+        INFOPLIST_KEY_NSFaceIDUsageDescription: Unlock Mr. Blindbandit using Face ID.
+        INFOPLIST_KEY_NSCameraUsageDescription: Allow Mr. Blindbandit to use the camera for creator tools, profile media, and uploads you choose to make.
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: Allow Mr. Blindbandit to use the microphone for recording and creator tools you choose to use.
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: Allow Mr. Blindbandit to choose photos and videos for creator tools and uploads you start.
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: Allow Mr. Blindbandit to save media you explicitly export to Photos.
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        MARKETING_VERSION: '1.1'
-        CURRENT_PROJECT_VERSION: '2'
+        MARKETING_VERSION: '1.4'
+        CURRENT_PROJECT_VERSION: '4'
+  BlindbanditTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [AppTests]
+    dependencies:
+      - target: Blindbandit
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
 schemes:
   Blindbandit:
     build:
       targets:
         Blindbandit: all
+        BlindbanditTests: [test]
+    test:
+      targets:
+        - BlindbanditTests

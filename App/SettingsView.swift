@@ -48,11 +48,21 @@ struct Settings: View {
             Section("Notifications") {
                 LabeledContent("Push notifications", value: push.statusText)
                 if push.authorizationStatus == .notDetermined {
-                    Button("Enable push notifications") { push.requestAuthorization() }.disabled(push.busy)
+                    Button("Enable push notifications") {
+                        AppHaptics.medium()
+                        push.requestAuthorization()
+                    }
+                    .disabled(push.busy)
                 } else if push.authorizationStatus == .denied {
-                    Button("Open notification settings") { openSystemSettings() }
+                    Button("Open notification settings") {
+                        AppHaptics.light()
+                        openSystemSettings()
+                    }
                 } else {
-                    Button("Refresh notification registration") { Task { await push.refresh() } }
+                    Button("Refresh notification registration") {
+                        AppHaptics.light()
+                        Task { await push.refresh() }
+                    }
                 }
                 if push.busy { ProgressView("Requesting notification permission") }
                 if !push.registrationError.isEmpty {
@@ -68,20 +78,38 @@ struct Settings: View {
                     Label("Art Track Generator", systemImage: "play.rectangle.fill")
                 }
                 Toggle("Dark background for artwork tools", isOn: $preferDarkArtworkBackground)
+                    .onChange(of: preferDarkArtworkBackground) { _, _ in AppHaptics.selection() }
                 Toggle("Haptics", isOn: $hapticsEnabled)
+                    .onChange(of: hapticsEnabled) { _, value in
+                        if value { AppHaptics.success() }
+                        else {
+                            let generator = UIImpactFeedbackGenerator(style: .medium)
+                            generator.prepare()
+                            generator.impactOccurred(intensity: 0.8)
+                        }
+                    }
             }
 
             Section("Camera, Microphone & Files") {
                 LabeledContent("Camera", value: privacy.text(for: privacy.camera))
                 if privacy.camera == .notDetermined {
-                    Button("Allow camera access") { privacy.requestCamera() }
+                    Button("Allow camera access") {
+                        AppHaptics.medium()
+                        privacy.requestCamera()
+                    }
                 }
                 LabeledContent("Microphone", value: privacy.text(for: privacy.microphone))
                 if privacy.microphone == .notDetermined {
-                    Button("Allow microphone access") { privacy.requestMicrophone() }
+                    Button("Allow microphone access") {
+                        AppHaptics.medium()
+                        privacy.requestMicrophone()
+                    }
                 }
                 if privacy.camera == .denied || privacy.microphone == .denied {
-                    Button("Open app permissions") { openSystemSettings() }
+                    Button("Open app permissions") {
+                        AppHaptics.light()
+                        openSystemSettings()
+                    }
                 }
                 Text("Native media tools use the iOS document picker. Website-backed tools can request camera or microphone access only from approved Mr. Blind Bandit domains.")
                     .font(.footnote)
@@ -94,18 +122,31 @@ struct Settings: View {
                     Slider(value: $preferences.pageZoom, in: 0.75...2.0, step: 0.05)
                         .accessibilityLabel("Website page zoom")
                         .accessibilityValue("\(Int(preferences.pageZoom * 100)) percent")
+                        .onChange(of: preferences.pageZoom) { _, _ in AppHaptics.selection() }
                 }
                 Toggle("Pull to refresh", isOn: $preferences.pullToRefresh)
+                    .onChange(of: preferences.pullToRefresh) { _, _ in AppHaptics.selection() }
                 Toggle("Confirm external links", isOn: $confirmBeforeExternalLinks)
-                Button("Clear website cache") { clearCache() }.disabled(clearing)
+                    .onChange(of: confirmBeforeExternalLinks) { _, _ in AppHaptics.selection() }
+                Button("Clear website cache") {
+                    AppHaptics.warning()
+                    clearCache()
+                }
+                .disabled(clearing)
             }
 
             Section("Accessibility") {
                 Toggle("Announce completed page loads", isOn: $preferences.announcePageLoads)
+                    .onChange(of: preferences.announcePageLoads) { _, _ in AppHaptics.selection() }
                 Toggle("Reduce app motion", isOn: $preferences.reduceAppMotion)
+                    .onChange(of: preferences.reduceAppMotion) { _, _ in AppHaptics.selection() }
                 Toggle("Keep screen awake while app is open", isOn: $keepScreenAwake)
-                    .onChange(of: keepScreenAwake) { _, value in UIApplication.shared.isIdleTimerDisabled = value }
+                    .onChange(of: keepScreenAwake) { _, value in
+                        UIApplication.shared.isIdleTimerDisabled = value
+                        AppHaptics.selection()
+                    }
                 Button("Open iOS accessibility settings") {
+                    AppHaptics.light()
                     UIApplication.shared.open(URL(string: "App-Prefs:ACCESSIBILITY") ?? URL(string: UIApplication.openSettingsURLString)!)
                 }
                 Text("Native controls use semantic labels, Dynamic Type, system focus order, VoiceOver announcements, and standard iOS dialogs. Web screens retain their semantic accessibility tree.")
@@ -115,9 +156,19 @@ struct Settings: View {
 
             Section("Privacy & Security") {
                 Label("Device authentication enabled", systemImage: "lock.shield.fill")
-                Button("Lock app now") { lock.lock() }
-                Button("Clear website sessions", role: .destructive) { confirmClearSessions = true }.disabled(clearing)
-                Button("Open iOS app settings") { openSystemSettings() }
+                Button("Lock app now") {
+                    AppHaptics.rigid()
+                    lock.lock()
+                }
+                Button("Clear website sessions", role: .destructive) {
+                    AppHaptics.warning()
+                    confirmClearSessions = true
+                }
+                .disabled(clearing)
+                Button("Open iOS app settings") {
+                    AppHaptics.light()
+                    openSystemSettings()
+                }
             }
 
             Section("App Information") {
@@ -131,18 +182,27 @@ struct Settings: View {
         }
         .navigationTitle("Settings")
         .confirmationDialog("Clear website sessions on this iPhone?", isPresented: $confirmClearSessions, titleVisibility: .visible) {
-            Button("Clear sessions", role: .destructive) { clearSessions() }
-            Button("Cancel", role: .cancel) {}
+            Button("Clear sessions", role: .destructive) {
+                AppHaptics.heavy()
+                clearSessions()
+            }
+            Button("Cancel", role: .cancel) { AppHaptics.light() }
         } message: {
             Text("This removes cookies and website storage used by the in-app browser. Other devices are not affected.")
         }
-        .onAppear { UIApplication.shared.isIdleTimerDisabled = keepScreenAwake }
+        .onAppear {
+            UIApplication.shared.isIdleTimerDisabled = keepScreenAwake
+            AppHaptics.soft()
+        }
     }
 
     private func clearCache() {
         clearing = true
         WKWebsiteDataStore.default().removeData(ofTypes: [WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache], modifiedSince: .distantPast) {
-            Task { @MainActor in clearing = false }
+            Task { @MainActor in
+                clearing = false
+                AppHaptics.success()
+            }
         }
     }
 
@@ -151,6 +211,7 @@ struct Settings: View {
         WKWebsiteDataStore.default().removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) {
             Task { @MainActor in
                 clearing = false
+                AppHaptics.success()
                 lock.lock()
             }
         }

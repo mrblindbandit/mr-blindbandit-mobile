@@ -77,6 +77,7 @@ final class AudioConverterModel: ObservableObject {
 
         let output = FileManager.default.temporaryDirectory
             .appendingPathComponent("Mr-Blind-Bandit-\(UUID().uuidString).wav")
+        try? FileManager.default.removeItem(at: output)
         let destination = try AVAudioFile(forWriting: output, settings: settings)
         guard let buffer = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: 32_768) else {
             throw CocoaError(.fileWriteUnknown)
@@ -106,7 +107,7 @@ final class AudioConverterModel: ObservableObject {
     }
 
     private func runExport(_ session: AVAssetExportSession) async throws {
-        try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             session.exportAsynchronously {
                 if let error = session.error {
                     continuation.resume(throwing: error)
@@ -122,7 +123,6 @@ final class AudioConverterModel: ObservableObject {
     private func copyToTemporaryLocation(_ url: URL) -> URL? {
         let accessed = url.startAccessingSecurityScopedResource()
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-
         let destination = FileManager.default.temporaryDirectory
             .appendingPathComponent("input-\(UUID().uuidString)-\(url.lastPathComponent)")
         do {
@@ -149,9 +149,7 @@ struct NativeAudioConverterView: View {
                 )
 
                 VStack(alignment: .leading, spacing: 14) {
-                    Label("Source", systemImage: "music.note")
-                        .font(.headline)
-
+                    Label("Source", systemImage: "music.note").font(.headline)
                     Button(model.inputURL?.lastPathComponent ?? "Choose audio file") {
                         AppHaptics.medium()
                         showPicker = true
@@ -182,7 +180,6 @@ struct NativeAudioConverterView: View {
                             Label("Share converted file", systemImage: "square.and.arrow.up")
                         }
                         .buttonStyle(.bordered)
-                        .simultaneousGesture(TapGesture().onEnded { AppHaptics.light() })
                     }
                 }
                 .padding()
@@ -217,7 +214,6 @@ final class ArtTrackGeneratorModel: ObservableObject {
         case landscape = "Landscape · 1920 × 1080"
         case vertical = "Vertical · 1080 × 1920"
         var id: String { rawValue }
-
         var size: CGSize {
             switch self {
             case .square: return CGSize(width: 1080, height: 1080)
@@ -276,9 +272,7 @@ final class ArtTrackGeneratorModel: ObservableObject {
             let audioAsset = AVURLAsset(url: audioURL)
             let duration = try await audioAsset.load(.duration)
             let imageData = try Data(contentsOf: artworkURL)
-            guard let image = UIImage(data: imageData) else {
-                throw CocoaError(.fileReadCorruptFile)
-            }
+            guard let image = UIImage(data: imageData) else { throw CocoaError(.fileReadCorruptFile) }
 
             let silentVideo = try await renderStillVideo(
                 image: image,
@@ -297,12 +291,7 @@ final class ArtTrackGeneratorModel: ObservableObject {
         }
     }
 
-    private func renderStillVideo(
-        image: UIImage,
-        duration: CMTime,
-        size: CGSize,
-        waveform: Bool
-    ) async throws -> URL {
+    private func renderStillVideo(image: UIImage, duration: CMTime, size: CGSize, waveform: Bool) async throws -> URL {
         let output = FileManager.default.temporaryDirectory
             .appendingPathComponent("arttrack-video-\(UUID().uuidString).mp4")
         try? FileManager.default.removeItem(at: output)
@@ -316,46 +305,26 @@ final class ArtTrackGeneratorModel: ObservableObject {
         ]
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
         input.expectsMediaDataInRealTime = false
-
         let attributes: [String: Any] = [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32ARGB,
             kCVPixelBufferWidthKey as String: Int(size.width),
             kCVPixelBufferHeightKey as String: Int(size.height)
         ]
-        let adaptor = AVAssetWriterInputPixelBufferAdaptor(
-            assetWriterInput: input,
-            sourcePixelBufferAttributes: attributes
-        )
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: attributes)
 
         guard writer.canAdd(input) else { throw CocoaError(.fileWriteUnknown) }
         writer.add(input)
-        guard writer.startWriting() else {
-            throw writer.error ?? CocoaError(.fileWriteUnknown)
-        }
+        guard writer.startWriting() else { throw writer.error ?? CocoaError(.fileWriteUnknown) }
         writer.startSession(atSourceTime: .zero)
 
-        let pixelBuffer = try makePixelBuffer(
-            image: image,
-            size: size,
-            waveform: waveform,
-            pool: adaptor.pixelBufferPool
-        )
-
-        while !input.isReadyForMoreMediaData {
-            try await Task.sleep(nanoseconds: 20_000_000)
-        }
-        guard adaptor.append(pixelBuffer, withPresentationTime: .zero) else {
-            throw writer.error ?? CocoaError(.fileWriteUnknown)
-        }
+        let pixelBuffer = try makePixelBuffer(image: image, size: size, waveform: waveform, pool: adaptor.pixelBufferPool)
+        while !input.isReadyForMoreMediaData { try await Task.sleep(nanoseconds: 20_000_000) }
+        guard adaptor.append(pixelBuffer, withPresentationTime: .zero) else { throw writer.error ?? CocoaError(.fileWriteUnknown) }
 
         let end = CMTimeSubtract(duration, CMTime(value: 1, timescale: 30))
         if CMTimeCompare(end, .zero) > 0 {
-            while !input.isReadyForMoreMediaData {
-                try await Task.sleep(nanoseconds: 20_000_000)
-            }
-            guard adaptor.append(pixelBuffer, withPresentationTime: end) else {
-                throw writer.error ?? CocoaError(.fileWriteUnknown)
-            }
+            while !input.isReadyForMoreMediaData { try await Task.sleep(nanoseconds: 20_000_000) }
+            guard adaptor.append(pixelBuffer, withPresentationTime: end) else { throw writer.error ?? CocoaError(.fileWriteUnknown) }
         }
 
         input.markAsFinished()
@@ -364,7 +333,7 @@ final class ArtTrackGeneratorModel: ObservableObject {
     }
 
     private func finish(_ writer: AVAssetWriter) async throws {
-        try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             writer.finishWriting {
                 if let error = writer.error {
                     continuation.resume(throwing: error)
@@ -377,31 +346,16 @@ final class ArtTrackGeneratorModel: ObservableObject {
         }
     }
 
-    private func makePixelBuffer(
-        image: UIImage,
-        size: CGSize,
-        waveform: Bool,
-        pool: CVPixelBufferPool?
-    ) throws -> CVPixelBuffer {
+    private func makePixelBuffer(image: UIImage, size: CGSize, waveform: Bool, pool: CVPixelBufferPool?) throws -> CVPixelBuffer {
         var buffer: CVPixelBuffer?
-        if let pool {
-            CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer)
-        }
+        if let pool { CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer) }
         if buffer == nil {
-            CVPixelBufferCreate(
-                nil,
-                Int(size.width),
-                Int(size.height),
-                kCVPixelFormatType_32ARGB,
-                nil,
-                &buffer
-            )
+            CVPixelBufferCreate(nil, Int(size.width), Int(size.height), kCVPixelFormatType_32ARGB, nil, &buffer)
         }
         guard let pixelBuffer = buffer else { throw CocoaError(.fileWriteUnknown) }
 
         CVPixelBufferLockBaseAddress(pixelBuffer, [])
         defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
-
         guard let context = CGContext(
             data: CVPixelBufferGetBaseAddress(pixelBuffer),
             width: Int(size.width),
@@ -410,22 +364,13 @@ final class ArtTrackGeneratorModel: ObservableObject {
             bytesPerRow: CVPixelBufferGetBytesPerRow(pixelBuffer),
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue
-        ) else {
-            throw CocoaError(.fileWriteUnknown)
-        }
+        ) else { throw CocoaError(.fileWriteUnknown) }
 
         context.setFillColor(UIColor.black.cgColor)
         context.fill(CGRect(origin: .zero, size: size))
-
         let fitted = aspectFit(image.size, inside: size)
-        if let cgImage = image.cgImage {
-            context.draw(cgImage, in: fitted)
-        }
-
-        if waveform {
-            drawWaveform(in: context, size: size)
-        }
-
+        if let cgImage = image.cgImage { context.draw(cgImage, in: fitted) }
+        if waveform { drawWaveform(in: context, size: size) }
         return pixelBuffer
     }
 
@@ -433,20 +378,13 @@ final class ArtTrackGeneratorModel: ObservableObject {
         let centerY = size.height * 0.86
         let levels: [CGFloat] = [0.18, 0.34, 0.54, 0.28, 0.72, 0.46, 0.22, 0.62, 0.38, 0.16]
         context.setFillColor(UIColor.white.withAlphaComponent(0.92).cgColor)
-
         let total = size.width * 0.6
         let barWidth = total / CGFloat(levels.count * 2)
         let start = (size.width - total) / 2
-
         for (index, scale) in levels.enumerated() {
             let height = size.height * 0.10 * scale
             let x = start + CGFloat(index * 2) * barWidth
-            context.fill(CGRect(
-                x: x,
-                y: centerY - height / 2,
-                width: barWidth,
-                height: height
-            ))
+            context.fill(CGRect(x: x, y: centerY - height / 2, width: barWidth, height: height))
         }
     }
 
@@ -466,39 +404,20 @@ final class ArtTrackGeneratorModel: ObservableObject {
         let videoAsset = AVURLAsset(url: video)
 
         guard let videoSource = try await videoAsset.loadTracks(withMediaType: .video).first,
-              let videoTrack = composition.addMutableTrack(
-                withMediaType: .video,
-                preferredTrackID: kCMPersistentTrackID_Invalid
-              ) else {
+              let videoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
             throw CocoaError(.fileReadCorruptFile)
         }
-
-        try videoTrack.insertTimeRange(
-            CMTimeRange(start: .zero, duration: duration),
-            of: videoSource,
-            at: .zero
-        )
+        try videoTrack.insertTimeRange(CMTimeRange(start: .zero, duration: duration), of: videoSource, at: .zero)
 
         if let audioSource = try await audio.loadTracks(withMediaType: .audio).first,
-           let audioTrack = composition.addMutableTrack(
-            withMediaType: .audio,
-            preferredTrackID: kCMPersistentTrackID_Invalid
-           ) {
-            try audioTrack.insertTimeRange(
-                CMTimeRange(start: .zero, duration: duration),
-                of: audioSource,
-                at: .zero
-            )
+           let audioTrack = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
+            try audioTrack.insertTimeRange(CMTimeRange(start: .zero, duration: duration), of: audioSource, at: .zero)
         }
 
         let output = FileManager.default.temporaryDirectory
             .appendingPathComponent("Mr-Blind-Bandit-Art-Track-\(UUID().uuidString).mp4")
         try? FileManager.default.removeItem(at: output)
-
-        guard let session = AVAssetExportSession(
-            asset: composition,
-            presetName: AVAssetExportPresetHighestQuality
-        ) else {
+        guard let session = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else {
             throw CocoaError(.fileWriteUnknown)
         }
         session.outputURL = output
@@ -508,7 +427,7 @@ final class ArtTrackGeneratorModel: ObservableObject {
     }
 
     private func runExport(_ session: AVAssetExportSession) async throws {
-        try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             session.exportAsynchronously {
                 if let error = session.error {
                     continuation.resume(throwing: error)
@@ -524,7 +443,6 @@ final class ArtTrackGeneratorModel: ObservableObject {
     private func copy(_ url: URL) -> URL? {
         let accessed = url.startAccessingSecurityScopedResource()
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-
         let destination = FileManager.default.temporaryDirectory
             .appendingPathComponent("media-\(UUID().uuidString)-\(url.lastPathComponent)")
         do {
@@ -591,7 +509,6 @@ struct NativeArtTrackGeneratorView: View {
                             Label("Share finished MP4", systemImage: "square.and.arrow.up")
                         }
                         .buttonStyle(.bordered)
-                        .simultaneousGesture(TapGesture().onEnded { AppHaptics.light() })
                     }
                 }
                 .padding()

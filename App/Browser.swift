@@ -68,7 +68,10 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
         web.scrollView.refreshControl = control
     }
 
-    @objc private func refreshFromPull() { reload() }
+    @objc private func refreshFromPull() {
+        AppHaptics.medium()
+        reload()
+    }
 
     func reload() {
         error = nil
@@ -88,6 +91,7 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
         back = webView.canGoBack
         forward = webView.canGoForward
         webView.scrollView.refreshControl?.endRefreshing()
+        AppHaptics.soft()
         if UserDefaults.standard.object(forKey: "announcePageLoads") as? Bool ?? true {
             UIAccessibility.post(notification: .announcement, argument: "Page loaded")
         }
@@ -98,6 +102,7 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
         loading = false
         web.scrollView.refreshControl?.endRefreshing()
         error = "This page could not load. Check your connection and try again."
+        AppHaptics.error()
         UIAccessibility.post(notification: .announcement, argument: error)
     }
 
@@ -107,6 +112,7 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         loading = false
         error = "The page stopped responding. Reload to continue. Unsaved changes may be lost."
+        AppHaptics.error()
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -117,22 +123,29 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
         }
         decisionHandler(.cancel)
         if ["https", "mailto", "tel"].contains(url.scheme?.lowercased() ?? "") {
+            AppHaptics.light()
             UIApplication.shared.open(url)
         } else {
             loading = false
             error = "Open this page in Safari to use this link."
+            AppHaptics.warning()
         }
     }
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         guard let url = action.request.url else { return nil }
         if Self.isFirstPartyURL(url) { webView.load(action.request) }
-        else if url.scheme?.lowercased() == "https" { UIApplication.shared.open(url) }
+        else if url.scheme?.lowercased() == "https" {
+            AppHaptics.light()
+            UIApplication.shared.open(url)
+        }
         return nil
     }
 
     func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
-        decisionHandler(Self.firstPartyHosts.contains(origin.host.lowercased()) ? .grant : .deny)
+        let allowed = Self.firstPartyHosts.contains(origin.host.lowercased())
+        AppHaptics.selection()
+        decisionHandler(allowed ? .grant : .deny)
     }
 
     private func show(_ alert: UIAlertController, fallback: () -> Void) {
@@ -141,19 +154,29 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
             return
         }
         while let shown = presenter.presentedViewController { presenter = shown }
+        AppHaptics.warning()
         presenter.present(alert, animated: true)
     }
 
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
         let alert = UIAlertController(title: "Website message", message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler() })
+        alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
+            Task { @MainActor in AppHaptics.light() }
+            completionHandler()
+        })
         show(alert, fallback: completionHandler)
     }
 
     func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
         let alert = UIAlertController(title: "Confirm website action", message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(false) })
-        alert.addAction(UIAlertAction(title: "Confirm", style: .default) { _ in completionHandler(true) })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+            Task { @MainActor in AppHaptics.light() }
+            completionHandler(false)
+        })
+        alert.addAction(UIAlertAction(title: "Confirm", style: .default) { _ in
+            Task { @MainActor in AppHaptics.medium() }
+            completionHandler(true)
+        })
         show(alert) { completionHandler(false) }
     }
 
@@ -163,8 +186,14 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
             field.text = defaultText
             field.accessibilityLabel = prompt
         }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(nil) })
-        alert.addAction(UIAlertAction(title: "Continue", style: .default) { _ in completionHandler(alert.textFields?.first?.text) })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+            Task { @MainActor in AppHaptics.light() }
+            completionHandler(nil)
+        })
+        alert.addAction(UIAlertAction(title: "Continue", style: .default) { _ in
+            Task { @MainActor in AppHaptics.medium() }
+            completionHandler(alert.textFields?.first?.text)
+        })
         show(alert) { completionHandler(nil) }
     }
 }
@@ -202,7 +231,10 @@ struct Website: View {
                 if let message = browser.error {
                     VStack(spacing: 12) {
                         Text(message)
-                        Button("Retry loading") { browser.reload() }
+                        Button("Retry loading") {
+                            AppHaptics.medium()
+                            browser.reload()
+                        }
                     }
                     .padding()
                     .accessibilityElement(children: .combine)
@@ -215,19 +247,52 @@ struct Website: View {
                     .transition(.opacity)
             }
         }
-        .onAppear { browser.applyPreferences(preferences) }
+        .onAppear {
+            browser.applyPreferences(preferences)
+            AppHaptics.soft()
+        }
         .onChange(of: preferences.pageZoom) { _, _ in browser.applyPreferences(preferences) }
         .onChange(of: preferences.pullToRefresh) { _, _ in browser.applyPreferences(preferences) }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .bottomBar) {
-                Button { browser.web.goBack() } label: { Label("Back", systemImage: "chevron.left") }.disabled(!browser.back)
-                Button { browser.web.goForward() } label: { Label("Forward", systemImage: "chevron.right") }.disabled(!browser.forward)
+                Button {
+                    AppHaptics.light()
+                    browser.web.goBack()
+                } label: {
+                    Label("Back", systemImage: "chevron.left")
+                }
+                .disabled(!browser.back)
+
+                Button {
+                    AppHaptics.light()
+                    browser.web.goForward()
+                } label: {
+                    Label("Forward", systemImage: "chevron.right")
+                }
+                .disabled(!browser.forward)
+
                 Spacer()
-                Button { browser.reload() } label: { Label("Reload page", systemImage: "arrow.clockwise") }
-                ShareLink(item: browser.web.url ?? browser.initialURL) { Label("Share page", systemImage: "square.and.arrow.up") }
-                Button { UIApplication.shared.open(browser.web.url ?? browser.initialURL) } label: { Label("Open in Safari", systemImage: "safari") }
+
+                Button {
+                    AppHaptics.medium()
+                    browser.reload()
+                } label: {
+                    Label("Reload page", systemImage: "arrow.clockwise")
+                }
+
+                ShareLink(item: browser.web.url ?? browser.initialURL) {
+                    Label("Share page", systemImage: "square.and.arrow.up")
+                }
+                .simultaneousGesture(TapGesture().onEnded { AppHaptics.light() })
+
+                Button {
+                    AppHaptics.light()
+                    UIApplication.shared.open(browser.web.url ?? browser.initialURL)
+                } label: {
+                    Label("Open in Safari", systemImage: "safari")
+                }
             }
         }
     }

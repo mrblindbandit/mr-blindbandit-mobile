@@ -2,9 +2,11 @@
 
 # Mr. Blindbandit Mobile
 
-### Version 1.4 — iOS and Android companion apps for the Mr. Blindbandit ecosystem
+### Version 1.4 — iOS and Android creator platform for the Mr. Blindbandit ecosystem
 
 **Accessibility-first • Creator-focused • Security-conscious • Cross-platform**
+
+Mr. Blindbandit Mobile is an accessibility-first creator platform for iOS and Android with native media tools, secure integrations, and connected ecosystem features.
 
 [![Website](https://img.shields.io/badge/Website-mrblindbandit.net-111111?style=for-the-badge&logo=googlechrome&logoColor=white)](https://mrblindbandit.net)
 [![Release](https://img.shields.io/badge/Release-v1.4-111111?style=for-the-badge)](CHANGELOG.md)
@@ -12,7 +14,7 @@
 [![Android](https://img.shields.io/badge/Android-26%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)](#android)
 [![Accessibility](https://img.shields.io/badge/Accessibility-VoiceOver_%2B_TalkBack-111111?style=for-the-badge)](#accessibility)
 
-**Repository:** `mrblindbandit/mr.-Blindbandit-app`
+**Repository:** [`mrblindbandit/mr-blindbandit-mobile`](https://github.com/mrblindbandit/mr-blindbandit-mobile)
 
 </div>
 
@@ -38,6 +40,12 @@ See **[CHANGELOG.md](CHANGELOG.md)** for the complete version history.
 Mr. Blindbandit Mobile is the native iOS and Android layer for the broader **Mr. Blindbandit** and **Blindbandit Records** ecosystem.
 
 The apps combine native mobile controls with trusted first-party web experiences from `mrblindbandit.net`. The goal is to keep content and account features connected to the website while adding the things a real mobile app should handle natively: navigation, accessibility, local permissions, file selection, notifications, security, device integration, media utilities, and polished loading/error states.
+
+The project is designed around three ideas:
+
+1. **Accessibility is core architecture.** VoiceOver and TalkBack support are product requirements, not cleanup work.
+2. **Creators should be able to work from a phone.** Media utilities and creator workflows should be usable without a desktop-first assumption.
+3. **Mobile clients should never become a secret vault.** Reusable backend credentials stay server-side and device clients receive only the access they actually need.
 
 ---
 
@@ -341,3 +349,5 @@ Do not commit private signing keys, reusable backend secrets, APNs keys, Firebas
 Mr. Blindbandit is an artist, creator, and platform project spanning music, creator tools, accessibility-focused technology, community features, and Blindbandit Records.
 
 **Website:** https://mrblindbandit.net
+
+**GitHub:** https://github.com/mrblindbandit

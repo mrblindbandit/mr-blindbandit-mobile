@@ -34,4 +34,20 @@ final class BlindbanditTests: XCTestCase {
         XCTAssertTrue(preferences.announcePageLoads)
         XCTAssertFalse(preferences.reduceAppMotion)
     }
+
+    func testPhoneNormalizationForTesterRouting() {
+        XCTAssertEqual(TestIdentity.normalizePhone(" +63 917-123-4567 "), "+639171234567")
+        XCTAssertEqual(TestIdentity.routingKey(for: "+63 (917) 123-4567"), "639171234567")
+        XCTAssertEqual(TestIdentity.normalizePhone("415 555 0199"), "4155550199")
+    }
+
+    func testInboxRoomNameIsStableAcrossPhoneFormatting() {
+        let formatted = TestIdentity.inboxRoom(for: "+63 917 123 4567")
+        let compact = TestIdentity.inboxRoom(for: "+639171234567")
+        let other = TestIdentity.inboxRoom(for: "+639171234568")
+
+        XCTAssertEqual(formatted, compact)
+        XCTAssertNotEqual(compact, other)
+        XCTAssertTrue(compact.hasPrefix("bb-inbox-"))
+    }
 }

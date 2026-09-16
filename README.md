@@ -2,16 +2,15 @@
 
 # Mr. Blindbandit Mobile
 
-### Version 1.4 — iOS and Android creator platform for the Mr. Blindbandit ecosystem
+### iOS 1.5 — calling-first communications + creator platform
 
-**Accessibility-first • Creator-focused • Security-conscious • Cross-platform**
+**Accessibility-first • Communications-first on iOS • Creator-focused • Security-conscious**
 
-Mr. Blindbandit Mobile is an accessibility-first creator platform for iOS and Android with native media tools, secure integrations, and connected ecosystem features.
+Mr. Blindbandit Mobile combines native calling, messaging, creator tools, secure integrations, and connected Mr. Blindbandit ecosystem features.
 
 [![Website](https://img.shields.io/badge/Website-mrblindbandit.net-111111?style=for-the-badge&logo=googlechrome&logoColor=white)](https://mrblindbandit.net)
-[![Release](https://img.shields.io/badge/Release-v1.4-111111?style=for-the-badge)](CHANGELOG.md)
-[![iOS](https://img.shields.io/badge/iOS-17%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](#ios)
-[![Android](https://img.shields.io/badge/Android-26%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)](#android)
+[![iOS](https://img.shields.io/badge/iOS-v1.5-000000?style=for-the-badge&logo=apple&logoColor=white)](#ios)
+[![Android](https://img.shields.io/badge/Android-v1.4-3DDC84?style=for-the-badge&logo=android&logoColor=white)](#android)
 [![Accessibility](https://img.shields.io/badge/Accessibility-VoiceOver_%2B_TalkBack-111111?style=for-the-badge)](#accessibility)
 
 **Repository:** [`mrblindbandit/mr-blindbandit-mobile`](https://github.com/mrblindbandit/mr-blindbandit-mobile)
@@ -20,16 +19,16 @@ Mr. Blindbandit Mobile is an accessibility-first creator platform for iOS and An
 
 ---
 
-## Current release
+## Current development releases
 
-**Mr. Blindbandit Mobile 1.4** is the current development release.
-
-| Platform | Public version | Build | Minimum OS | CI artifact |
+| Platform | Version | Build | Minimum OS | CI artifact |
 |---|---:|---:|---:|---|
-| iOS | 1.4 | 4 | iOS 17 | `Mr-Blindbandit-iOS-v1.4-unsigned-IPA` |
+| iOS | 1.5 | 5 | iOS 17 | `Mr-Blindbandit-iOS-v1.5-unsigned-IPA` |
 | Android | 1.4.0 | 4 | Android 8.0 / API 26 | `Mr-Blindbandit-Android-v1.4-debug-APK` |
 
-Version 1.4 expands the project into a substantially more native creator app on both platforms. It adds native creator utilities, dedicated media-tool surfaces, accessibility improvements, stronger CI, and consistent public release metadata across source, documentation, and build artifacts.
+**iOS 1.5** is the first calling-first release. It adds native LiveKit voice/video transport, CallKit integration, realtime messaging, a dial keypad, communications settings, haptics, and a reorganized app shell while preserving the existing creator suite.
+
+Android remains on the 1.4 creator-platform release line until the communications architecture is intentionally ported to Android.
 
 See **[CHANGELOG.md](CHANGELOG.md)** for the complete version history.
 
@@ -37,19 +36,35 @@ See **[CHANGELOG.md](CHANGELOG.md)** for the complete version history.
 
 ## What this project is
 
-Mr. Blindbandit Mobile is the native iOS and Android layer for the broader **Mr. Blindbandit** and **Blindbandit Records** ecosystem.
+Mr. Blindbandit Mobile is the native mobile layer for the broader **Mr. Blindbandit** and **Blindbandit Records** ecosystem.
 
-The apps combine native mobile controls with trusted first-party web experiences from `mrblindbandit.net`. The goal is to keep content and account features connected to the website while adding the things a real mobile app should handle natively: navigation, accessibility, local permissions, file selection, notifications, security, device integration, media utilities, and polished loading/error states.
+The apps combine native mobile controls with trusted first-party web experiences from `mrblindbandit.net`. Native code handles the parts that benefit most from operating-system integration: calling, messaging, accessibility, permissions, files, notifications, security, media utilities, and polished navigation.
 
-The project is designed around three ideas:
+The project is designed around four ideas:
 
-1. **Accessibility is core architecture.** VoiceOver and TalkBack support are product requirements, not cleanup work.
-2. **Creators should be able to work from a phone.** Media utilities and creator workflows should be usable without a desktop-first assumption.
-3. **Mobile clients should never become a secret vault.** Reusable backend credentials stay server-side and device clients receive only the access they actually need.
+1. **Accessibility is core architecture.** VoiceOver and TalkBack support are product requirements.
+2. **Calling should feel native.** iOS communications use native SwiftUI, CallKit, AVFoundation, and LiveKit rather than a web call surface.
+3. **Creators should be able to work from a phone.** Media utilities and creator workflows remain first-class features.
+4. **Mobile clients should never become a secret vault.** Reusable backend credentials stay server-side.
 
 ---
 
-## Version 1.4 highlights
+## iOS 1.5 highlights
+
+### Calls & messages
+
+- Calling-first tab layout: Phone, Messages, Home, Create, More
+- Native dial keypad with haptics and VoiceOver labels
+- LiveKit voice and video transport
+- Native CallKit incoming/outgoing call experience
+- Mute, speaker, camera, answer, decline, cancel, and hang-up controls
+- Local and remote video rendering
+- Realtime LiveKit data-channel messaging
+- Local message history
+- Configurable message sound/haptic behavior
+- iOS system-default incoming ringtone
+- Username + unverified phone-number test routing
+- LiveKit Development Token Server support for device testing
 
 ### Creator tools
 
@@ -57,9 +72,8 @@ The project is designed around three ideas:
 - Native audio conversion workflow
 - Native art-track generation workflow
 - Expanded creator utility set
-- Dedicated media-tool tabs and navigation
 - Improved file import/export flows
-- Haptic feedback for supported native actions
+- Website-backed media suite remains available under More
 
 ### Accessibility
 
@@ -68,7 +82,7 @@ The project is designed around three ideas:
 - Dynamic Type / large-text support
 - Reduced-motion preferences
 - Page-load announcements
-- Accessible loading progress and branded launch states
+- Accessible call controls and keypad
 - Native accessibility-settings shortcuts
 - Screen-reader-aware WebView integration
 
@@ -80,16 +94,23 @@ The project is designed around three ideas:
 - Firebase Cloud Messaging scaffold on Android
 - Deep-link routing
 - External-link handoff to the operating system
-- Native app/version information in Settings
+- Device-owner authentication
+- Native settings and connection status
 
-### Engineering
+---
 
-- iOS unit-test and unsigned-IPA pipeline
-- Android unit-test, lint, and APK pipeline
-- Hardened Android SDK setup in CI
-- First-party URL policy tests
-- Version-aligned artifact naming
-- Professional release documentation and changelog discipline
+## Communications testing model
+
+The iOS 1.5 communications layer intentionally uses LiveKit's **Development Token Server** for the first device-testing phase.
+
+- Test mode is visibly enabled and locked on in this build.
+- Both devices must use the same LiveKit Cloud Development Token Server ID.
+- Phone numbers are unverified routing identifiers inside the app; no SMS verification occurs.
+- The LiveKit API secret is not embedded in the app.
+- The receiving app must currently be running and connected for direct test calls/messages.
+- Production closed-app incoming calling will require PushKit plus server-side call signaling.
+- Production authentication will replace development token issuance with short-lived server-issued tokens.
+- End-to-end encryption is planned as a later layer rather than being falsely claimed in the test build.
 
 ---
 
@@ -101,11 +122,11 @@ GitHub Actions produces temporary development artifacts for testing.
 
 Artifact:
 
-`Mr-Blindbandit-iOS-v1.4-unsigned-IPA`
+`Mr-Blindbandit-iOS-v1.5-unsigned-IPA`
 
 File inside the artifact:
 
-`Mr-Blindbandit-iOS-v1.4-unsigned.ipa`
+`Mr-Blindbandit-iOS-v1.5-unsigned.ipa`
 
 The iOS artifact is **unsigned**. It is a build-validation artifact and must be properly signed/provisioned before installation on a normal iPhone.
 
@@ -125,25 +146,29 @@ The Android artifact is a **debug APK** for development and device testing. It i
 
 Workflow: `.github/workflows/android.yml`
 
-> GitHub Actions artifacts are temporary. Public production distribution should use signed builds delivered through the appropriate Apple or Google release channels, or permanent GitHub Releases where appropriate.
+> GitHub Actions artifacts are temporary. Production distribution should use signed builds delivered through the appropriate Apple or Google release channels.
 
 ---
 
 # iOS
 
-The iOS app is built with **SwiftUI** and **WKWebView** and targets iOS 17 or later.
+The iOS app is built with **SwiftUI**, **CallKit**, **LiveKit**, **AVFoundation**, and **WKWebView**, and targets iOS 17 or later.
 
 ## Current capabilities
 
 - Native SwiftUI application shell
-- Native tab navigation
+- Calling-first five-tab navigation
+- Native voice and video calls
+- Native CallKit call presentation
+- Realtime messaging
+- LiveKit Development Token Server test connectivity
+- Native keypad and communications haptics
 - Native Settings and advanced settings
 - WKWebView for trusted first-party web content
 - VoiceOver-conscious semantics and controls
 - Dynamic Type-friendly interfaces
 - Device-owner authentication support
 - Background privacy handling
-- Native back, forward, reload, and browser controls
 - First-party deep-link handling
 - Camera and microphone permission framework
 - Native file-upload support
@@ -160,13 +185,13 @@ The iOS app is built with **SwiftUI** and **WKWebView** and targets iOS 17 or la
 
 ### iOS push notifications
 
-The APNs framework is present, but production remote push still requires Apple signing/entitlements and server-side token registration/delivery. Production server credentials must never be embedded in the mobile binary.
+APNs registration is present. Production remote push delivery still requires Apple signing/entitlements and server-side token registration/delivery. Production PushKit signaling for waking the app for incoming calls is not yet connected in the test communications phase.
 
 ---
 
 # Android
 
-The Android app is built with **Kotlin**, **Jetpack Compose**, **Android System WebView**, **AndroidX**, and **Material 3**.
+The Android app remains on the 1.4 release and is built with **Kotlin**, **Jetpack Compose**, **Android System WebView**, **AndroidX**, and **Material 3**.
 
 ## Current capabilities
 
@@ -208,7 +233,7 @@ Accessibility is a product requirement, not a post-build add-on.
 - Dynamic Type
 - Native control semantics
 - Logical focus order
-- Descriptive labels and hints
+- Descriptive call, message, and keypad labels
 - Reduced Motion
 - Accessible loading/error states
 - Keyboard and switch-control compatibility where supported by native controls
@@ -236,10 +261,11 @@ The app does not ship reusable master backend secrets.
 The security model separates:
 
 1. **Device security** — Face ID, Touch ID, passcode, and Android device protections.
-2. **Website authentication** — user sign-in and session state.
-3. **Server authorization** — protected APIs and account roles.
-4. **Domain policy** — only approved first-party hosts remain inside the trusted in-app web surface.
-5. **Platform permissions** — camera, microphone, notifications, photos/files, and related capabilities remain operating-system controlled.
+2. **Communications test identity** — username and unverified phone routing for the current LiveKit development phase.
+3. **Website authentication** — user sign-in and session state.
+4. **Server authorization** — protected APIs and account roles.
+5. **Domain policy** — only approved first-party hosts remain inside the trusted in-app web surface.
+6. **Platform permissions** — camera, microphone, notifications, photos/files, and related capabilities remain operating-system controlled.
 
 Mobile binaries should always be treated as inspectable. Long-lived private server credentials must remain server-side.
 
@@ -309,20 +335,20 @@ Requirements:
 bash build-unsigned.sh
 ```
 
-The script generates the Xcode project, builds the release configuration without code signing, packages the `.app`, and creates the versioned unsigned IPA in `dist/`.
+The script generates the Xcode project, resolves the LiveKit Swift package, builds the release configuration without code signing, packages the `.app`, and creates the versioned unsigned IPA in `dist/`.
 
 ---
 
 # Release discipline
 
-The canonical public version is **1.4**.
+Current platform releases are **iOS 1.5 (build 5)** and **Android 1.4.0 (versionCode 4)**.
 
-Every release must update all version surfaces together:
+Every release must update the relevant version surfaces together:
 
 - iOS `MARKETING_VERSION`
 - iOS `CURRENT_PROJECT_VERSION`
-- Android `versionName`
-- Android `versionCode`
+- Android `versionName` when Android is part of the release
+- Android `versionCode` when Android is part of the release
 - GitHub Actions artifact names
 - README current-release table
 - `CHANGELOG.md`
@@ -340,7 +366,7 @@ This repository is under active development.
 - CI-generated Android APKs are debug development artifacts.
 - Production App Store/TestFlight and Google Play builds require the appropriate signing, provisioning, store configuration, and release pipelines.
 
-Do not commit private signing keys, reusable backend secrets, APNs keys, Firebase server credentials, or other production secrets to this repository.
+Do not commit private signing keys, reusable backend secrets, APNs keys, Firebase server credentials, LiveKit API secrets, or other production secrets to this repository.
 
 ---
 

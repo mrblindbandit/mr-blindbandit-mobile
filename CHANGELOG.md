@@ -6,6 +6,41 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 
 ---
 
+## [1.5] — 2026-09-16
+
+### Added
+
+- Calling-first native iOS navigation with dedicated Phone and Messages tabs.
+- Official LiveKit Swift SDK integration for realtime voice, video, and data transport.
+- LiveKit Cloud Development Token Server support for backend-free device testing.
+- Native CallKit incoming and outgoing call presentation.
+- Native dial keypad with VoiceOver labels and haptic feedback.
+- Voice-call controls for mute, speaker, answer, decline, and hang up.
+- Video-call controls with local and remote video rendering.
+- Realtime test messaging with local message history.
+- First-launch communication profile with username and unverified phone-number routing.
+- Communications settings for LiveKit test connectivity, alerts, call behavior, and tester identity.
+- iOS system-default ringtone integration for CallKit calls.
+
+### Changed
+
+- iOS version advanced to **1.5 (build 5)**.
+- The iOS app is now organized around **Phone, Messages, Home, Create, and More**.
+- Creator tools remain fully available but no longer dominate the primary tab bar.
+- Settings and More were reorganized into production-style sections with cleaner labels and less explanatory clutter.
+- Camera and microphone permission descriptions now explicitly cover voice and video calling.
+- Launch presentation now reflects calls, messages, music, and creator tools.
+- LiveKit test mode is visibly enabled and locked on in this development build.
+
+### Security & Testing
+
+- LiveKit API secrets are not embedded in the app.
+- Test phone numbers are routing identifiers only and do not require SMS verification.
+- Development Token Server mode remains intentionally limited to testing and must be replaced by server-issued tokens before production communications launch.
+- Existing APNs registration remains available; production PushKit wake-up for closed-app incoming calls is a follow-up layer.
+
+---
+
 ## [1.4] — 2026-09-15
 
 ### Added
@@ -47,7 +82,6 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 - TalkBack-focused navigation and semantics.
 - Android camera, microphone, notification, and file-picker permission handling.
 - Firebase Cloud Messaging scaffolding.
-- Android adaptive launcher icon and branded loading experience.
 - Expanded native iOS settings and accessibility preferences.
 - Branded pulsing logo, waveform loader, and progress presentation.
 - VoiceOver page-load announcements.

@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APP_VERSION="${APP_VERSION:-1.4}"
+APP_VERSION="${APP_VERSION:-1.5}"
 OUTPUT_DIR="dist"
 OUTPUT_FILE="Mr-Blindbandit-iOS-v${APP_VERSION}-unsigned.ipa"
 

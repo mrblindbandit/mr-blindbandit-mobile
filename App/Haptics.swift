@@ -49,6 +49,13 @@ enum AppHaptics {
         generator.selectionChanged()
     }
 
+    static func keypad() {
+        guard enabled else { return }
+        let generator = UISelectionFeedbackGenerator()
+        generator.prepare()
+        generator.selectionChanged()
+    }
+
     static func success() {
         guard enabled else { return }
         let generator = UINotificationFeedbackGenerator()

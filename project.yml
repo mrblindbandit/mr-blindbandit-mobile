@@ -33,8 +33,8 @@ targets:
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: Allow Mr. Blindbandit to choose photos and videos for creator tools and uploads you start.
         INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: Allow Mr. Blindbandit to save media you explicitly export to Photos.
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        MARKETING_VERSION: '1.4'
-        CURRENT_PROJECT_VERSION: '4'
+        MARKETING_VERSION: '1.5'
+        CURRENT_PROJECT_VERSION: '5'
   BlindbanditTests:
     type: bundle.unit-test
     platform: iOS

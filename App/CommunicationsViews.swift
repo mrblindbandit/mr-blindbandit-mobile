@@ -14,45 +14,50 @@ struct TestProfileOnboardingView: View {
             Form {
                 Section {
                     VStack(spacing: 14) {
-                        BrandMark(size: 82)
-                        Text("Set Up Calling")
+                        BrandMark(size: 86)
+                        Text("Welcome to Mr. Blind Bandit")
                             .font(.largeTitle.bold())
-                            .accessibilityAddTraits(.isHeader)
-                        Text("Create a lightweight tester identity for native calls and messages.")
                             .multilineTextAlignment(.center)
+                            .accessibilityAddTraits(.isHeader)
+                        Text("Set up your calling identity to continue.")
                             .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
+                    .padding(.vertical, 12)
                 }
 
-                Section("Test Identity") {
+                Section("Profile") {
                     TextField("Username", text: $username)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        .accessibilityHint("This is the name other testers will see.")
+                        .accessibilityHint("The name other people see when you call or message them.")
 
                     TextField("Phone number", text: $phoneNumber)
                         .keyboardType(.phonePad)
                         .textContentType(.telephoneNumber)
-                        .accessibilityHint("No SMS confirmation is used in this development build.")
+                        .accessibilityHint("Used to route calls and messages inside this test build.")
 
-                    Text("The phone number is an unverified development routing ID. It is not used for cellular calling, authentication, or account recovery.")
+                    Label("Phone verification is off for this build", systemImage: "checkmark.shield")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
 
-                Section("LiveKit Development") {
-                    SecureField("Development token server ID", text: $tokenServerID)
+                Section("Calling Network") {
+                    Toggle("LiveKit Test Network", isOn: .constant(true))
+                        .disabled(true)
+                        .accessibilityHint("Enabled for this build")
+
+                    SecureField("LiveKit Development Token Server ID", text: $tokenServerID)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    Text("Paste the Development Token Server ID from your LiveKit Cloud project. This is for testing only and is not your LiveKit API secret.")
+
+                    Text("Enter the Development Token Server ID from your LiveKit Cloud project. Do not enter your API secret.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
 
                 Section {
-                    Button("Continue to Mr. Blind Bandit") {
+                    Button("Continue") {
                         AppHaptics.success()
                         profile.save(username: username,
                                      phoneNumber: phoneNumber,
@@ -62,11 +67,13 @@ struct TestProfileOnboardingView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
+                    .frame(maxWidth: .infinity)
                     .disabled(username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
                               TestIdentity.routingKey(for: phoneNumber).isEmpty)
                 }
             }
-            .navigationTitle("Welcome")
+            .navigationTitle("Setup")
+            .navigationBarTitleDisplayMode(.inline)
             .onAppear {
                 username = profile.username
                 phoneNumber = profile.phoneNumber
@@ -91,26 +98,28 @@ struct CallingHomeView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                VStack(spacing: 6) {
-                    Text("Phone")
-                        .font(.largeTitle.bold())
-                        .accessibilityAddTraits(.isHeader)
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(communications.inboxStatus.contains("Ready") ? Color.green : Color.orange)
+                        .frame(width: 9, height: 9)
+                        .accessibilityHidden(true)
                     Text(communications.inboxStatus)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(communications.inboxStatus.contains("Ready") ? Color.green : Color(uiColor: .secondaryLabel))
-                    Text("Your test number: \(profile.normalizedPhone)")
-                        .font(.footnote)
+                    Spacer()
+                    Text(profile.normalizedPhone)
+                        .font(.footnote.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
+                .accessibilityElement(children: .combine)
 
-                TextField("Enter tester phone number", text: $targetPhone)
+                TextField("Phone number", text: $targetPhone)
                     .keyboardType(.phonePad)
                     .textContentType(.telephoneNumber)
                     .font(.title2.monospacedDigit())
                     .multilineTextAlignment(.center)
                     .padding()
                     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
-                    .accessibilityHint("Enter the phone number configured on another Mr. Blind Bandit test device.")
+                    .accessibilityHint("Enter the number of another Mr. Blind Bandit tester.")
 
                 VStack(spacing: 12) {
                     ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
@@ -148,7 +157,7 @@ struct CallingHomeView: View {
                     Button {
                         communications.startCall(to: targetPhone, video: false)
                     } label: {
-                        Label("Voice Call", systemImage: "phone.fill")
+                        Label("Voice", systemImage: "phone.fill")
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
                     }
@@ -159,7 +168,7 @@ struct CallingHomeView: View {
                     Button {
                         communications.startCall(to: targetPhone, video: true)
                     } label: {
-                        Label("Video Call", systemImage: "video.fill")
+                        Label("Video", systemImage: "video.fill")
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
                     }
@@ -173,33 +182,28 @@ struct CallingHomeView: View {
                         .foregroundStyle(.secondary)
                         .accessibilityElement(children: .combine)
                 }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Development calling", systemImage: "hammer.fill")
-                        .font(.headline)
-                    Text("For this first test build, both phones must use the same LiveKit Cloud development token server and the receiving app must be running. A production directory, PushKit wake-up, verified identities, and server-issued tokens come next.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
             }
             .padding()
         }
         .refreshable { communications.restartInbox() }
         .navigationTitle("Phone")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink {
+                    CommunicationSettingsView()
+                } label: {
+                    Image(systemName: "gearshape")
+                }
+                .accessibilityLabel("Calling settings")
+            }
+        }
     }
 
     @ViewBuilder
     private func keypadButton(digit: String, letters: String) -> some View {
         Button {
             AppHaptics.keypad()
-            if digit == "0", !targetPhone.isEmpty {
-                targetPhone.append("0")
-            } else {
-                targetPhone.append(digit)
-            }
+            targetPhone.append(digit)
         } label: {
             VStack(spacing: 1) {
                 Text(digit)
@@ -231,7 +235,7 @@ struct MessagesHomeView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                TextField("Tester phone number", text: $targetPhone)
+                TextField("Phone number", text: $targetPhone)
                     .keyboardType(.phonePad)
                     .textContentType(.telephoneNumber)
                 if !targetPhone.isEmpty {
@@ -245,9 +249,9 @@ struct MessagesHomeView: View {
             .background(Color(uiColor: .secondarySystemBackground))
 
             if TestIdentity.routingKey(for: targetPhone).isEmpty {
-                ContentUnavailableView("Choose a tester",
+                ContentUnavailableView("New Message",
                                        systemImage: "message.fill",
-                                       description: Text("Enter the other tester's phone number to send realtime test messages."))
+                                       description: Text("Enter a phone number to start a conversation."))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollViewReader { proxy in
@@ -290,7 +294,12 @@ struct MessagesHomeView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button("Clear local test messages", role: .destructive) {
+                    NavigationLink {
+                        CommunicationSettingsView()
+                    } label: {
+                        Label("Message Settings", systemImage: "gearshape")
+                    }
+                    Button("Clear Message History", role: .destructive) {
                         communications.clearMessages()
                     }
                 } label: {
@@ -493,15 +502,18 @@ struct LiveKitVideoTrackView: UIViewRepresentable {
 struct MoreHubView: View {
     var body: some View {
         List {
-            Section("Communications") {
+            Section("Account & Communications") {
                 NavigationLink {
                     CommunicationSettingsView()
                 } label: {
-                    Label("Communications Settings", systemImage: "phone.badge.gearshape")
+                    Label("Calls & Messages", systemImage: "phone.and.waveform")
+                }
+                NavigationLink { Settings() } label: {
+                    Label("Settings", systemImage: "gearshape.fill")
                 }
             }
 
-            Section("Creator Tools") {
+            Section("Creator") {
                 NavigationLink { CreatorHubView() } label: {
                     Label("Creator Hub", systemImage: "wand.and.stars")
                 }
@@ -517,8 +529,8 @@ struct MoreHubView: View {
                 NavigationLink { ProfessionalHome() } label: {
                     Label("Home", systemImage: "house.fill")
                 }
-                NavigationLink { Settings() } label: {
-                    Label("App Settings", systemImage: "gearshape.fill")
+                NavigationLink { Website(path: "/media-tools/", title: "Media Tools") } label: {
+                    Label("Web Media Suite", systemImage: "globe")
                 }
             }
         }
@@ -537,17 +549,19 @@ struct CommunicationSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Test Identity") {
+            Section("Profile") {
                 TextField("Username", text: $username)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                 TextField("Phone number", text: $phoneNumber)
                     .keyboardType(.phonePad)
-                Text("Phone numbers are unverified routing identifiers in this development build. Changing yours reconnects your personal LiveKit test inbox.")
+                    .textContentType(.telephoneNumber)
+
+                Label("Phone verification disabled", systemImage: "checkmark.shield")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
-                Button("Save & Reconnect") {
+                Button("Save Changes") {
                     profile.save(username: username,
                                  phoneNumber: phoneNumber,
                                  tokenServerID: tokenServerID)
@@ -559,38 +573,47 @@ struct CommunicationSettingsView: View {
                           TestIdentity.routingKey(for: phoneNumber).isEmpty)
             }
 
-            Section("LiveKit Development") {
-                SecureField("Development token server ID", text: $tokenServerID)
+            Section("Calling Network") {
+                Toggle("LiveKit Test Network", isOn: .constant(true))
+                    .disabled(true)
+                SecureField("Development Token Server ID", text: $tokenServerID)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                LabeledContent("Status", value: communications.inboxStatus)
+                LabeledContent("Connection", value: communications.inboxStatus)
+                Label("Test mode is locked on for this build", systemImage: "hammer.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 if !communications.lastError.isEmpty {
                     Text(communications.lastError)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-                Text("Development token servers are intentionally insecure and must be replaced with a server-issued token endpoint before production release.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
 
-            Section("Call Sounds") {
+            Section("Calling") {
+                Toggle("Native CallKit", isOn: .constant(true))
+                    .disabled(true)
+                Toggle("High Quality Audio & Video", isOn: .constant(true))
+                    .disabled(true)
                 LabeledContent("Incoming ringtone", value: "iOS System Default")
-                Text("Apple does not let third-party apps browse your personal iPhone ringtone library. CallKit uses the native system ringtone now; custom Mr. Blind Bandit tones can be bundled with the app later.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
 
             Section("Message Alerts") {
-                Picker("Message alert", selection: $messageAlertMode) {
-                    Text("Sound & haptic").tag("sound")
-                    Text("Haptic only").tag("haptic")
+                Picker("Alert Style", selection: $messageAlertMode) {
+                    Text("Sound & Haptic").tag("sound")
+                    Text("Haptic Only").tag("haptic")
                     Text("Silent").tag("silent")
                 }
                 .onChange(of: messageAlertMode) { _, _ in AppHaptics.selection() }
             }
+
+            Section("Privacy") {
+                Label("No SMS verification", systemImage: "phone.badge.checkmark")
+                Label("No phone contact upload", systemImage: "person.crop.circle.badge.xmark")
+                Label("LiveKit API secret is not stored in the app", systemImage: "lock.shield.fill")
+            }
         }
-        .navigationTitle("Communications")
+        .navigationTitle("Calls & Messages")
         .onAppear {
             username = profile.username
             phoneNumber = profile.phoneNumber

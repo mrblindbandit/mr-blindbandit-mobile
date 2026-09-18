@@ -1,7 +1,7 @@
 import SwiftUI
 import AuthenticationServices
 
-/// Natural consumer onboarding — Google + email first; Apple gated (no Dev account yet).
+/// Natural consumer onboarding — Google + email first; Apple stays off until explicitly enabled.
 struct AuthGatewayView: View {
     @ObservedObject var auth: ClerkAuthService
     @EnvironmentObject private var preferences: AppPreferences
@@ -9,7 +9,7 @@ struct AuthGatewayView: View {
     @FocusState private var focusedField: Field?
 
     enum Mode { case landing, emailSignIn, emailSignUp }
-    enum Field { case email, password, name }
+    enum Field { case email, password, name, verificationCode }
 
     var body: some View {
         ZStack {
@@ -48,12 +48,13 @@ struct AuthGatewayView: View {
                             .foregroundStyle(.yellow)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal)
+                            .accessibilityLabel(auth.statusMessage)
                     }
 
                     legalFooter
 
                     if !AppConfig.isClerkConfigured {
-                        Text("Clerk publishable key missing — add Secrets.local.swift for production auth.")
+                        Text("Clerk publishable key missing — configure the public client key for production auth.")
                             .font(.caption)
                             .foregroundStyle(.orange)
                             .multilineTextAlignment(.center)
@@ -72,7 +73,6 @@ struct AuthGatewayView: View {
 
     private var landingCards: some View {
         VStack(spacing: 14) {
-            // Primary: Google + email (existing mrblindbandit.net Clerk). Apple off until Dev account.
             Button {
                 AppHaptics.medium()
                 Task { _ = await auth.beginGoogleSignIn() }
@@ -100,7 +100,7 @@ struct AuthGatewayView: View {
             .buttonStyle(.bordered)
             .tint(.yellow)
             .disabled(auth.busy)
-            .accessibilityHint("Opens email and password sign-in.")
+            .accessibilityHint("Opens Clerk email and password sign-in.")
 
             if AppConfig.enableSignInWithApple {
                 SignInWithAppleButton(.continue) { request in
@@ -140,7 +140,7 @@ struct AuthGatewayView: View {
             }
 
             if auth.busy {
-                ProgressView("Working…").tint(.yellow).accessibilityLabel("Signing in")
+                ProgressView("Working…").tint(.yellow).accessibilityLabel("Authentication in progress")
             }
         }
         .padding(20)
@@ -164,6 +164,7 @@ struct AuthGatewayView: View {
                     .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
                     .foregroundStyle(.white)
                     .accessibilityLabel("Display name")
+                    .disabled(auth.needsEmailVerification)
             }
 
             TextField("Email", text: $auth.emailDraft)
@@ -176,6 +177,7 @@ struct AuthGatewayView: View {
                 .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
                 .foregroundStyle(.white)
                 .accessibilityLabel("Email address")
+                .disabled(auth.needsEmailVerification)
 
             SecureField("Password", text: $auth.passwordDraft)
                 .textContentType(isSignUp ? .newPassword : .password)
@@ -185,26 +187,52 @@ struct AuthGatewayView: View {
                 .foregroundStyle(.white)
                 .accessibilityLabel("Password")
                 .accessibilityHint("At least 8 characters.")
+                .disabled(auth.needsEmailVerification)
 
-            Button {
-                AppHaptics.medium()
-                Task {
-                    if isSignUp {
-                        _ = await auth.signUpWithEmail(email: auth.emailDraft, password: auth.passwordDraft, name: auth.nameDraft)
-                    } else {
-                        _ = await auth.signInWithEmail(email: auth.emailDraft, password: auth.passwordDraft)
-                    }
+            if isSignUp && auth.needsEmailVerification {
+                TextField("Email verification code", text: $auth.verificationCodeDraft)
+                    .textContentType(.oneTimeCode)
+                    .keyboardType(.numberPad)
+                    .focused($focusedField, equals: .verificationCode)
+                    .padding()
+                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+                    .foregroundStyle(.white)
+                    .accessibilityLabel("Email verification code")
+
+                Button {
+                    AppHaptics.medium()
+                    Task { _ = await auth.verifyPendingEmail(code: auth.verificationCodeDraft) }
+                } label: {
+                    Text("Verify email and finish")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
                 }
-            } label: {
-                Text(isSignUp ? "Create account" : "Sign in")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                .buttonStyle(.borderedProminent)
+                .tint(.yellow)
+                .foregroundStyle(.black)
+                .disabled(auth.busy || auth.verificationCodeDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            } else {
+                Button {
+                    AppHaptics.medium()
+                    Task {
+                        if isSignUp {
+                            _ = await auth.signUpWithEmail(email: auth.emailDraft, password: auth.passwordDraft, name: auth.nameDraft)
+                        } else {
+                            _ = await auth.signInWithEmail(email: auth.emailDraft, password: auth.passwordDraft)
+                        }
+                    }
+                } label: {
+                    Text(isSignUp ? "Create account" : "Sign in")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.yellow)
+                .foregroundStyle(.black)
+                .disabled(auth.busy)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.yellow)
-            .foregroundStyle(.black)
-            .disabled(auth.busy)
 
             Button(isSignUp ? "Already have an account? Sign in" : "Need an account? Create one") {
                 AppHaptics.selection()
@@ -212,12 +240,14 @@ struct AuthGatewayView: View {
             }
             .font(.subheadline)
             .foregroundStyle(.white.opacity(0.8))
+            .disabled(auth.busy)
 
             Button("Back") {
                 AppHaptics.light()
                 mode = .landing
             }
             .foregroundStyle(.yellow)
+            .disabled(auth.busy)
 
             if auth.busy { ProgressView().tint(.yellow) }
         }

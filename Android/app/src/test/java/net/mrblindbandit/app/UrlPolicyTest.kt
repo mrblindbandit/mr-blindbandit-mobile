@@ -5,8 +5,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class UrlPolicyTest {
     @Test
     fun acceptsFirstPartyHttps() {
@@ -27,8 +29,8 @@ class UrlPolicyTest {
 
 class AppConfigVersionTest {
     @Test
-    fun versionNameIs15() {
-        // BuildConfig may be absent in pure JVM without AGP; soft-check constant in AppConfig
-        assertTrue(net.mrblindbandit.app.config.AppConfig.MARKETING_VERSION == "1.5")
+    fun versionNameIs16() {
+        // BuildConfig may be absent in pure JVM without AGP; validate the source-level release constant.
+        assertTrue(net.mrblindbandit.app.config.AppConfig.MARKETING_VERSION == "1.6")
     }
 }

@@ -16,7 +16,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -108,6 +107,22 @@ fun AuthGatewayScreen(auth: ClerkAuthService, reduceMotion: Boolean) {
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F), contentColor = Color.Black),
                     enabled = !auth.busy
                 ) { Text(if (signUp) "Create account" else "Sign in", fontWeight = FontWeight.Bold) }
+
+                if (auth.needsEmailVerification) {
+                    OutlinedTextField(
+                        value = auth.verificationCodeDraft,
+                        onValueChange = { auth.verificationCodeDraft = it.filter(Char::isDigit).take(8) },
+                        label = { Text("Verification code") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Button(
+                        onClick = { scope.launch { auth.verifyPendingEmail() } },
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        enabled = !auth.busy && auth.verificationCodeDraft.isNotBlank()
+                    ) { Text("Verify email", fontWeight = FontWeight.Bold) }
+                }
+
                 TextButton(onClick = { mode = if (signUp) "email" else "signup" }) {
                     Text(if (signUp) "Already have an account? Sign in" else "Need an account? Create one", color = Color.White.copy(0.8f))
                 }
@@ -120,7 +135,7 @@ fun AuthGatewayScreen(auth: ClerkAuthService, reduceMotion: Boolean) {
             Text(auth.statusMessage, color = Color(0xFFFFD54F), textAlign = TextAlign.Center)
         }
         if (!AppConfig.isClerkConfigured) {
-            Text("Clerk publishable key missing — set local.properties for production.", color = Color(0xFFFF9800), textAlign = TextAlign.Center)
+            Text("Authentication is temporarily unavailable.", color = Color(0xFFFF9800), textAlign = TextAlign.Center)
         }
 
         Text("By continuing you agree to the Terms of Use and acknowledge the Privacy Policy.",

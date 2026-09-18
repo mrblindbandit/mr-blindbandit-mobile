@@ -37,7 +37,7 @@ final class BlindbanditTests: XCTestCase {
     }
 
     func testAppConfigMarketingVersion() {
-        XCTAssertEqual(AppConfig.marketingVersion, "1.5")
+        XCTAssertEqual(AppConfig.marketingVersion, "1.6")
     }
 
     func testLiveKitDefaultRoom() {

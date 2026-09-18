@@ -18,8 +18,8 @@ struct Settings: View {
     @State private var clearing = false
 
     private var versionText: String {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.5"
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "5"
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.6"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "6"
         return "Version \(version) (\(build))"
     }
 
@@ -55,21 +55,16 @@ struct Settings: View {
                     AppHaptics.warning()
                     confirmDeleteAccount = true
                 }
-                .accessibilityHint("Requests permanent account deletion. Required for App Store compliance.")
-                if auth.deletionRequested {
-                    Text("A deletion request is on file for this device. Confirm on the website if prompted.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
+                .accessibilityHint("Permanently deletes your Blindbandit account after confirmation.")
             }
 
             Section("Communications") {
                 NavigationLink { ConnectHubView() } label: {
-                    Label("Calls, chat & voice notes", systemImage: "phone.and.waveform.fill")
+                    Label("Calls, messages & keypad", systemImage: "phone.and.waveform.fill")
                 }
-                LabeledContent("LiveKit", value: AppConfig.isLiveKitConfigured ? "Configured" : "Needs URL")
-                LabeledContent("Clerk", value: AppConfig.isClerkConfigured ? "Configured" : "Needs publishable key")
-                Text("Voice and video use LiveKit with short-lived server tokens. API secrets never ship in the app.")
+                LabeledContent("LiveKit", value: AppConfig.isLiveKitConfigured ? "Configured" : "Unavailable")
+                LabeledContent("Clerk", value: AppConfig.isClerkConfigured ? "Configured" : "Unavailable")
+                Text("Voice and video calls use short-lived LiveKit credentials minted by the Blindbandit server. Reusable API secrets are never stored in the app.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
 
@@ -98,13 +93,12 @@ struct Settings: View {
                 }
             }
 
-            
             Section("Sounds") {
                 Toggle("Play UI sounds", isOn: Binding(
                     get: { CallSounds.playUISounds },
                     set: { CallSounds.playUISounds = $0; AppHaptics.selection() }
                 ))
-                .accessibilityHint("Plays ringback, message, and call feedback sounds.")
+                .accessibilityHint("Plays call and message feedback sounds.")
 
                 Toggle("Haptic feedback", isOn: Binding(
                     get: { CallHaptics.hapticsEnabled },
@@ -122,7 +116,15 @@ struct Settings: View {
                 }
                 .accessibilityLabel("Ringtone picker")
 
-                Picker("Notification sound", selection: Binding(
+                Button {
+                    CallSounds.previewRingtone(CallSounds.selectedRingtone)
+                } label: {
+                    Label("Test ringtone", systemImage: "speaker.wave.2.fill")
+                }
+                .disabled(!CallSounds.playUISounds)
+                .accessibilityHint("Plays the currently selected ringtone once.")
+
+                Picker("Message tone", selection: Binding(
                     get: { CallSounds.selectedNotificationTone },
                     set: { CallSounds.selectedNotificationTone = $0; CallSounds.previewNotification($0) }
                 )) {
@@ -130,13 +132,20 @@ struct Settings: View {
                         Text(tone.title).tag(tone)
                     }
                 }
-                .accessibilityLabel("Notification sound picker")
+                .accessibilityLabel("Message tone picker")
 
-                Text("Ringback plays while an outgoing call is ringing. Sounds stay quiet when the Silent switch is on.")
+                Button {
+                    CallSounds.previewNotification(CallSounds.selectedNotificationTone)
+                } label: {
+                    Label("Test message tone", systemImage: "bell.badge.fill")
+                }
+                .disabled(!CallSounds.playUISounds)
+                .accessibilityHint("Plays the currently selected message notification tone once.")
+
+                Text("Ringback plays while an outgoing call is ringing. UI previews honor the device Silent setting.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-
 
             Section("Appearance & media") {
                 Toggle("Dark background for artwork tools", isOn: $preferDarkArtworkBackground)
@@ -153,14 +162,14 @@ struct Settings: View {
                 }
             }
 
-            Section("Camera, microphone & files") {
+            Section("Camera, microphone & photos") {
                 LabeledContent("Camera", value: privacy.text(for: privacy.camera))
                 if privacy.camera == .notDetermined {
                     Button("Allow camera access") {
                         AppHaptics.medium()
                         privacy.requestCamera()
                     }
-                    .accessibilityHint("Used for video calls and creator uploads you start.")
+                    .accessibilityHint("Used for video calls and media actions you start.")
                 }
                 LabeledContent("Microphone", value: privacy.text(for: privacy.microphone))
                 if privacy.microphone == .notDetermined {
@@ -170,13 +179,20 @@ struct Settings: View {
                     }
                     .accessibilityHint("Used for voice calls, voice notes, and recording tools.")
                 }
-                if privacy.camera == .denied || privacy.microphone == .denied {
+                LabeledContent("Photos", value: privacy.text(for: privacy.photoLibrary))
+                if privacy.photoLibrary == .notDetermined {
+                    Button("Allow photo access") {
+                        AppHaptics.medium()
+                        privacy.requestPhotoLibrary()
+                    }
+                }
+                if privacy.camera == .denied || privacy.microphone == .denied || privacy.photoLibrary == .denied {
                     Button("Open app permissions") {
                         AppHaptics.light()
                         openSystemSettings()
                     }
                 }
-                Text("Permissions are requested only when you start a call, voice note, or media action. Website tools request camera or microphone only on approved Mr. Blind Bandit domains.")
+                Text("Permission setup is offered on first launch. You can review or change those choices here and in iOS Settings.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
 
@@ -215,19 +231,16 @@ struct Settings: View {
                         UIApplication.shared.open(url)
                     }
                 }
-                Text("Controls use labels, hints, values, Dynamic Type, VoiceOver announcements, and standard focus order. Auth, Connect, Listen, and musician tools are labeled for VoiceOver.")
+                Text("Controls use labels, hints, values, Dynamic Type, VoiceOver announcements, and standard focus order. Authentication, Connect, Listen, and creator tools are labeled for VoiceOver.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
 
-            
-            Section("About Us") {
-                LabeledContent("App version", value: "1.5")
+            Section("About") {
+                LabeledContent("App version", value: versionText)
                 Link("Privacy Policy", destination: URL(string: "https://mrblindbandit.net/privacy")!)
-                // Fallback path if marketing site moves pages: https://mrblindbandit.net/legal/privacy
                 Link("Terms of Use", destination: URL(string: "https://mrblindbandit.net/terms")!)
-                // Fallback: https://mrblindbandit.net/legal/terms
                 Link("Support", destination: URL(string: "mailto:business@mrblindbandit.net")!)
-                Text("Mr. Blindbandit — music, creator tools, and studio Connect.")
+                Text("Mr. Blindbandit — music, creator tools, calls, messages, and Blindbandit Records.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -249,7 +262,7 @@ struct Settings: View {
                 }
                 Link("Privacy Policy", destination: URL(string: "https://mrblindbandit.net/privacy")!)
                 Link("Terms of Use", destination: URL(string: "https://mrblindbandit.net/terms/")!)
-                Text("See Privacy Policy for Clerk auth data, LiveKit call media, and push notification tokens.")
+                Text("See the Privacy Policy for Clerk authentication data, call media, message content, and push notification tokens.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
 
@@ -257,14 +270,14 @@ struct Settings: View {
                 NavigationLink { AdvancedSettingsView() } label: {
                     Label("Site Keys & API", systemImage: "key.horizontal.fill")
                 }
-                Text("Public client settings stay on device. Private owner tokens use the iOS Keychain. Clerk secret keys and LiveKit API secrets never ship in the binary.")
+                Text("Public client configuration stays on device. Private owner tokens use the iOS Keychain. Clerk secret keys and LiveKit API secrets never ship in the binary.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
 
             Section("Legal & compliance") {
-                LabeledContent("Export compliance", value: "HTTPS / standard encryption only")
+                LabeledContent("Export compliance", value: "HTTPS / standard encryption")
                 LabeledContent("Sign in with Apple", value: "Enabled")
-                LabeledContent("Account deletion", value: "In-app + web")
+                LabeledContent("Account deletion", value: "Available in app")
                 Link("Privacy Policy", destination: URL(string: "https://mrblindbandit.net/privacy")!)
                 Link("Terms of Use", destination: URL(string: "https://mrblindbandit.net/terms/")!)
             }
@@ -290,19 +303,14 @@ struct Settings: View {
         } message: {
             Text("This removes cookies and website storage used by the in-app browser. Other devices are not affected.")
         }
-        .confirmationDialog("Delete your Mr. Blind Bandit account?", isPresented: $confirmDeleteAccount, titleVisibility: .visible) {
-            Button("Delete account", role: .destructive) {
+        .confirmationDialog("Permanently delete your Mr. Blind Bandit account?", isPresented: $confirmDeleteAccount, titleVisibility: .visible) {
+            Button("Delete account permanently", role: .destructive) {
                 AppHaptics.heavy()
-                Task {
-                    _ = await auth.requestAccountDeletion()
-                    if let url = URL(string: "https://mrblindbandit.net/account") {
-                        await UIApplication.shared.open(url)
-                    }
-                }
+                Task { _ = await auth.requestAccountDeletion() }
             }
             Button("Cancel", role: .cancel) { AppHaptics.light() }
         } message: {
-            Text("This requests permanent deletion of your account and associated data (App Store Guideline 5.1.1). You will be signed out. Confirm on the website if prompted. This cannot be undone.")
+            Text("This permanently deletes your authentication account. Associated Blindbandit app data is also removed by the production account-deletion flow. This cannot be undone.")
         }
         .onAppear {
             UIApplication.shared.isIdleTimerDisabled = keepScreenAwake

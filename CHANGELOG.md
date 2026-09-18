@@ -6,6 +6,47 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 
 ---
 
+## [1.6] — 2026-09-18
+
+### Added
+
+- Production communications services on iOS and Android backed by authenticated Blindbandit API requests.
+- Server-issued, short-lived LiveKit room grants for voice/video calls.
+- Server-backed conversation/message loading and send flows.
+- First-launch native permission onboarding.
+- iOS `PrivacyInfo.xcprivacy` privacy manifest.
+- Source-side Sign in with Apple enablement and entitlement on iOS.
+- Production account-deletion services for app/auth data flows.
+- Android API 36 target and unsigned release-AAB validation in CI.
+
+### Changed
+
+- Canonical release moved to **iOS 1.6 build 6** and **Android 1.6.0 versionCode 6**.
+- Connect surfaces now use the production communications layer rather than local/demo DM state.
+- LiveKit access is obtained from authenticated server flows; the shipping source no longer includes a reusable/test participant-token fallback.
+- Android toolchain moved to AGP 8.10.1 / Gradle 8.11.1 with SDK 36 validation.
+- CI artifacts renamed for v1.6 and expanded to include Android unsigned release-bundle validation.
+- README, release process, integration notes, secrets examples, and store-compliance documentation updated to match v1.6.
+
+### Removed
+
+- Legacy iOS and Android LiveKit scaffold services.
+- Legacy local/demo direct-message stores.
+- Obsolete scaffold-token configuration from client examples and secrets bridges.
+
+### Fixed
+
+- iOS and Android unit tests that still asserted the v1.5 release number.
+- Stale v1.5 documentation and release metadata references in current-release guidance.
+
+### Security
+
+- Calls/messages require the active Clerk-authenticated production path.
+- Reusable Clerk secrets, LiveKit API credentials, OAuth client secrets, signing credentials, APNs private keys, and Firebase service credentials remain server/build-infrastructure only.
+- First-party HTTPS host restrictions remain enforced for in-app web content.
+
+---
+
 ## [1.5] — 2026-09-18
 
 ### Added
@@ -16,7 +57,6 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 - Auth: Google + email primary; Sign in with Apple and Phone OTP feature-flagged off (Clerk Production: Apple/Phone disabled).
 - About Us: Privacy Policy (https://mrblindbandit.net/privacy), Terms, Support mailto:business@mrblindbandit.net, version 1.5.
 - Brand visuals: gold loader, call background, DM empty-state art; App Icon source from gold/black mark.
-
 - Clerk authentication onboarding with **Continue with Apple**, **Continue with Google**, and **Continue with email** before unlocking the main app (App Store Guideline 4.8).
 - In-app **Delete account** path with web confirmation (App Store Guideline 5.1.1).
 - LiveKit Connect hub: voice calls, video calls, messaging, and voice notes (record / play / send) on iOS and Android.

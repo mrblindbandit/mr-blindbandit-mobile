@@ -14,7 +14,8 @@ packages:
     from: 2.6.0
   Clerk:
     url: https://github.com/clerk/clerk-ios
-    from: 1.2.0
+    # 1.2.0+ needs Swift tools 6.2; Xcode 16.4 CI cannot resolve. Last 5.10-compatible release:
+    exactVersion: 1.1.5
 targets:
   Blindbandit:
     type: application

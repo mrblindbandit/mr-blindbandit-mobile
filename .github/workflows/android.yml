@@ -58,19 +58,19 @@ jobs:
         run: |
           mkdir -p dist
           cp Android/app/build/outputs/apk/debug/app-debug.apk "dist/Mr-Blindbandit-Android-v1.6-debug.apk"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Mr-Blindbandit-Android-v1.6-debug-APK
           path: dist/Mr-Blindbandit-Android-v1.6-debug.apk
           if-no-files-found: error
           retention-days: 7
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Mr-Blindbandit-Android-v1.6-unsigned-AAB
           path: Android/app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error
           retention-days: 7
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: Mr-Blindbandit-Android-v1.6-lint-report

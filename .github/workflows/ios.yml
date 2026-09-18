@@ -33,7 +33,7 @@ jobs:
           xcodebuild test -project Blindbandit.xcodeproj -scheme Blindbandit -sdk iphonesimulator -destination "platform=iOS Simulator,id=$DEVICE_ID" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
       - name: Build unsigned IPA
         run: bash build-unsigned.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Mr-Blindbandit-iOS-v1.6-unsigned-IPA
           path: dist/Mr-Blindbandit-iOS-v1.6-unsigned.ipa

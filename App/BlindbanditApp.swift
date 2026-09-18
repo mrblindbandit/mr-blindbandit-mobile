@@ -121,7 +121,9 @@ struct BlindbanditApp: App {
             }
             .task {
                 auth.configure()
-                try? await Task.sleep(for: .milliseconds(900))
+                try? await Task.sleep(for: .milliseconds(450))
+                await privacy.requestInitialPermissionsIfNeeded(push: push)
+                try? await Task.sleep(for: .milliseconds(450))
                 withAnimation(preferences.reduceAppMotion ? nil : .easeOut(duration: 0.3)) {
                     showingLaunchCover = false
                 }
@@ -196,7 +198,6 @@ struct RoutedURL: Identifiable {
 }
 
 struct MainTabs: View {
-    /// Five-tab IA (Apple HIG): Home · Create · Connect · Listen · More
     enum Tab: Hashable { case home, create, connect, listen, more }
 
     @State private var routedURL: RoutedURL?
@@ -231,6 +232,14 @@ struct MainTabs: View {
         }
         .tint(.yellow)
         .onChange(of: selection) { _, _ in AppHaptics.selection() }
+        .onReceive(NotificationCenter.default.publisher(for: .blindbanditCallDeepLinkReceived)) { _ in
+            AppHaptics.doublePulse()
+            selection = .connect
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .blindbanditMessageDeepLinkReceived)) { _ in
+            AppHaptics.doublePulse()
+            selection = .connect
+        }
         .onReceive(NotificationCenter.default.publisher(for: .pushDeepLinkReceived)) { note in
             guard let url = note.object as? URL else { return }
             AppHaptics.doublePulse()

@@ -1,3 +1,9 @@
+# AGENTS.md
+
+## For other AIs
+
+**Work history:** read [`AI_CHANGELOG.md`](./AI_CHANGELOG.md) first (full 2026-09-18 Blindbandit day log and ongoing AI-assisted changes).
+
 # AGENTS.md — Mr. Blindbandit Mobile
 
 Instructions for coding agents (Cursor, ChatGPT, Copilot, Claude, etc.) working in this repository.

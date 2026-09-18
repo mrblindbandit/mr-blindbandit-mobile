@@ -44,7 +44,12 @@ android {
     }
 
     packaging {
-        resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        resources.excludes += setOf(
+            "/META-INF/{AL2.0,LGPL2.1}",
+            // okhttp 5.3.2 + jspecify both ship this; mergeDebugJavaResource fails otherwise
+            "META-INF/versions/9/OSGI-INF/MANIFEST.MF",
+            "META-INF/versions/**/OSGI-INF/MANIFEST.MF",
+        )
     }
 
     testOptions {

@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import io.livekit.android.LiveKit
 import io.livekit.android.room.Room
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import net.mrblindbandit.app.auth.ClerkAuthService
 import net.mrblindbandit.app.config.AppConfig
@@ -283,4 +284,4 @@ class ProductionCommunicationsService(
 }
 
 private fun kotlinx.coroutines.CoroutineScope.launchSafely(block: suspend () -> Unit) =
-    kotlinx.coroutines.launch { try { block() } catch (_: Exception) {} }
+    launch { try { block() } catch (_: Exception) {} }

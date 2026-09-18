@@ -1,68 +1,57 @@
-# Release Process
+# Release Process — Mr. Blindbandit Mobile
 
-This document defines the release checklist for **Mr. Blindbandit Mobile**.
-
-The goal is simple: the version shown in the apps, source configuration, GitHub Actions, documentation, pull requests, and downloadable artifacts must always agree.
+The version shown in the apps, source configuration, GitHub Actions, documentation, pull requests, and downloadable artifacts must always agree.
 
 ## Canonical release version
 
-Current release: **1.4**
+Current release: **1.5**
 
-- iOS: `MARKETING_VERSION = 1.4`
-- iOS build: `CURRENT_PROJECT_VERSION = 4`
-- Android: `versionName = 1.4.0`
-- Android build: `versionCode = 4`
+- iOS: `MARKETING_VERSION = 1.5`
+- iOS build: `CURRENT_PROJECT_VERSION = 5`
+- Android: `versionName = 1.5.0`
+- Android build: `versionCode = 5`
 
-## Required release checklist
+## App Store / Play Store readiness checklist
 
-Before merging a release:
+### Apple App Store
 
-- Update iOS `MARKETING_VERSION` in `project.yml`.
-- Increment iOS `CURRENT_PROJECT_VERSION`.
-- Update Android `versionName` in `Android/app/build.gradle.kts`.
-- Increment Android `versionCode`.
-- Update iOS CI artifact names in `.github/workflows/ios.yml`.
-- Update Android CI artifact names in `.github/workflows/android.yml`.
-- Update the versioned output filename in `build-unsigned.sh` if required.
-- Update the current-release table in `README.md`.
-- Add a complete entry to `CHANGELOG.md`.
-- Make the pull-request title and release notes use the same version.
-- Run iOS tests and confirm unsigned IPA packaging succeeds.
-- Run Android unit tests and lint.
-- Confirm Android debug APK compilation succeeds.
-- Verify that the generated artifact filenames contain the expected version.
-- Confirm the app Settings/About surface reports the expected version on both platforms.
+- [ ] Privacy Policy URL: `https://mrblindbandit.net/privacy/`
+- [ ] Terms of Use URL: `https://mrblindbandit.net/terms/`
+- [ ] Sign in with Apple enabled (capability + entitlement) alongside Google / email
+- [ ] Account deletion available in Settings → Delete account (Guideline 5.1.1)
+- [ ] Accurate `NSCameraUsageDescription`, `NSMicrophoneUsageDescription`, Bluetooth purpose strings
+- [ ] Permissions requested only at call / voice-note / upload time
+- [ ] Export compliance: app uses only HTTPS / standard encryption (LiveKit over TLS/DTLS) — answer **No** to proprietary non-exempt encryption if applicable under current Apple guidance for HTTPS-only apps
+- [ ] Age rating: content appropriate for music / creator tools (no UGC chat moderation gaps undocumented)
+- [ ] App icon 1024×1024 from Blindbandit Records gold logo; 6.7" / 6.5" / 5.5" screenshots for Home, Create, Connect, Listen, Settings
+- [ ] No private APIs; no “beta/preview” wording in metadata
+- [ ] Review notes: explain Clerk auth, LiveKit demo room, and that call tokens are minted server-side
 
-## Artifact naming standard
+### Google Play
 
-Use these formats:
+- [ ] Data safety form: Clerk account identifiers; LiveKit audio/video while in call; FCM tokens; WebView cookies for first-party sign-in
+- [ ] Privacy Policy URL in Play Console
+- [ ] Account deletion path in-app (Settings) + web
+- [ ] Camera / mic / Bluetooth permissions declared with clear in-app rationale
+- [ ] Target API 35; 64-bit; no cleartext traffic
+- [ ] Feature graphic + screenshots matching gold/black Blindbandit brand
+- [ ] Content rating questionnaire completed
 
-- iOS artifact: `Mr-Blindbandit-iOS-vX.Y-unsigned-IPA`
-- iOS file: `Mr-Blindbandit-iOS-vX.Y-unsigned.ipa`
-- Android artifact: `Mr-Blindbandit-Android-vX.Y-debug-APK`
-- Android file: `Mr-Blindbandit-Android-vX.Y-debug.apk`
+### Both
 
-Production store builds should use corresponding signed release naming and must not be described as unsigned/debug artifacts.
+- [ ] Update iOS `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `project.yml`
+- [ ] Update Android `versionName` / `versionCode` in `Android/app/build.gradle.kts`
+- [ ] Update CI artifact names in `.github/workflows/ios.yml` and `android.yml`
+- [ ] Update README current-release table and `CHANGELOG.md`
+- [ ] Never commit `App/Secrets.local.swift`, `Android/local.properties`, `google-services.json`, or API secrets
+- [ ] Run iOS tests + unsigned IPA; Android unit tests + lint + debug APK
+- [ ] VoiceOver and TalkBack smoke test on physical devices
 
-## Versioning rule
+## Artifact naming
 
-- Patch-level fixes that do not materially change the public app may increment a build number while keeping the same marketing version.
-- Public feature releases increment the marketing version.
-- iOS and Android should stay on the same public release line whenever both platforms ship together.
-
-## Changelog rule
-
-Every public release gets its own heading in `CHANGELOG.md` with the release date and relevant sections such as:
-
-- Added
-- Changed
-- Fixed
-- Accessibility
-- Security
-- Removed
-
-Do not silently rewrite historical release notes after publication except to correct factual errors.
+- iOS: `Mr-Blindbandit-iOS-v1.5-unsigned-IPA` / `Mr-Blindbandit-iOS-v1.5-unsigned.ipa`
+- Android: `Mr-Blindbandit-Android-v1.5-debug-APK` / `Mr-Blindbandit-Android-v1.5-debug.apk`
 
 ## Security rule
 
-Never commit signing keys, Apple private keys, Firebase server credentials, reusable master API secrets, production tokens, or other long-lived private credentials to the repository or mobile binaries.
+Never commit signing keys, Apple private keys, Firebase server credentials, Clerk **secret** keys, LiveKit **API secrets**, Google OAuth **client secrets**, or other long-lived private credentials.

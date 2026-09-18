@@ -64,4 +64,11 @@ class AndroidAppPreferences(context: Context) {
         _keepScreenAwake = value
         prefs.edit().putBoolean("keepScreenAwake", value).apply()
     }
+
+    val listenFavorites: Set<String>
+        get() = prefs.getStringSet("listenFavorites", emptySet())?.toSet() ?: emptySet()
+
+    fun setListenFavorites(value: Set<String>) {
+        prefs.edit().putStringSet("listenFavorites", value).apply()
+    }
 }

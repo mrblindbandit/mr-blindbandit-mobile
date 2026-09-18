@@ -1,8 +1,16 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+fun local(key: String, default: String = "") = (localProps.getProperty(key) ?: default).replace("\"", "\\\"")
 
 android {
     namespace = "net.mrblindbandit.app"
@@ -12,11 +20,15 @@ android {
         applicationId = "net.mrblindbandit.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.4.0"
+        versionCode = 5
+        versionName = "1.5.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("String", "WEB_BASE_URL", "\"https://mrblindbandit.net\"")
+        buildConfigField("String", "CLERK_PUBLISHABLE_KEY", "\"${local("CLERK_PUBLISHABLE_KEY")}\"")
+        buildConfigField("String", "LIVEKIT_URL", "\"${local("LIVEKIT_URL")}\"")
+        buildConfigField("String", "LIVEKIT_SCAFFOLD_TOKEN", "\"${local("LIVEKIT_SCAFFOLD_TOKEN")}\"")
+        buildConfigField("String", "GOOGLE_OAUTH_CLIENT_ID", "\"${local("GOOGLE_OAUTH_CLIENT_ID")}\"")
     }
 
     buildTypes {
@@ -60,6 +72,12 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.webkit:webkit:1.12.1")
     implementation("androidx.core:core-splashscreen:1.0.1")
+
+    // Clerk (publishable key only in client)
+    implementation("com.clerk:clerk-android-api:1.0.33")
+
+    // LiveKit realtime (tokens from server; scaffold token via local.properties only)
+    implementation("io.livekit:livekit-android:2.18.3")
 
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
     implementation("com.google.firebase:firebase-messaging")

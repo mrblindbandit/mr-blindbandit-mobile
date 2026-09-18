@@ -8,11 +8,25 @@ settings:
     SWIFT_VERSION: '5.0'
     CODE_SIGNING_ALLOWED: NO
     TARGETED_DEVICE_FAMILY: '1,2'
+packages:
+  LiveKitClient:
+    url: https://github.com/livekit/client-sdk-swift
+    from: 2.6.0
+  Clerk:
+    url: https://github.com/clerk/clerk-ios
+    from: 1.2.0
 targets:
   Blindbandit:
     type: application
     platform: iOS
-    sources: [App]
+    sources:
+      - path: App
+        excludes:
+          - "**/*.example"
+          - "**/Secrets.local.swift.example"
+      - path: App/Resources
+        buildPhase: resources
+        optional: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.mrblindbandit.privateapp
@@ -22,13 +36,21 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: Mr. Blindbandit
         INFOPLIST_KEY_CFBundleName: Mr. Blindbandit
         INFOPLIST_KEY_NSFaceIDUsageDescription: Unlock Mr. Blindbandit using Face ID.
-        INFOPLIST_KEY_NSCameraUsageDescription: Allow Mr. Blindbandit to use the camera for creator tools, profile media, and uploads you choose to make.
-        INFOPLIST_KEY_NSMicrophoneUsageDescription: Allow Mr. Blindbandit to use the microphone for recording and creator tools you choose to use.
+        INFOPLIST_KEY_NSCameraUsageDescription: Allow Mr. Blindbandit to use the camera for video calls, creator tools, profile media, and uploads you choose to make.
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: Allow Mr. Blindbandit to use the microphone for voice calls, voice notes, recording, and creator tools you choose to use.
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: Allow Mr. Blindbandit to choose photos and videos for creator tools and uploads you start.
         INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: Allow Mr. Blindbandit to save media you explicitly export to Photos.
+        INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: Allow Mr. Blindbandit to connect to Bluetooth audio devices during LiveKit voice and video calls.
+        INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription: Allow Mr. Blindbandit to use Bluetooth headsets during calls.
+        INFOPLIST_KEY_UIBackgroundModes: [audio, voip]
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        MARKETING_VERSION: '1.4'
-        CURRENT_PROJECT_VERSION: '4'
+        MARKETING_VERSION: '1.5'
+        CURRENT_PROJECT_VERSION: '5'
+    dependencies:
+      - package: LiveKitClient
+        product: LiveKit
+      - package: Clerk
+        product: ClerkKit
   BlindbanditTests:
     type: bundle.unit-test
     platform: iOS

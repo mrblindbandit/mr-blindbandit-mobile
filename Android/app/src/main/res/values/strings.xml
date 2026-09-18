@@ -1,3 +1,8 @@
 <resources>
     <string name="app_name">Mr. Blindbandit</string>
+    <string name="camera_permission_rationale">Camera is used for LiveKit video calls and creator uploads you start.</string>
+    <string name="mic_permission_rationale">Microphone is used for LiveKit voice calls, voice notes, and recording tools you start.</string>
+    <string name="bluetooth_permission_rationale">Bluetooth connects headsets during voice and video calls.</string>
+    <string name="privacy_policy_url">https://mrblindbandit.net/privacy/</string>
+    <string name="terms_url">https://mrblindbandit.net/terms/</string>
 </resources>

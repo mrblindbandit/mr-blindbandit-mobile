@@ -60,6 +60,23 @@ struct ProfessionalHome: View {
                 }
 
                 VStack(alignment: .leading, spacing: 14) {
+                    Text("Connect")
+                        .font(.title2.bold())
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityAddTraits(.isHeader)
+
+                    NavigationLink { ConnectHubView() } label: {
+                        WideDashboardCard(icon: "phone.and.waveform.fill", title: "Calls & Chat", subtitle: "LiveKit voice, video, messaging, and voice notes")
+                    }
+                    .buttonStyle(.plain)
+
+                    NavigationLink { MusicianStudioView() } label: {
+                        WideDashboardCard(icon: "metronome.fill", title: "Musician Studio", subtitle: "Metronome, setlists, lyrics, release checklist, and more")
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                VStack(alignment: .leading, spacing: 14) {
                     Text("Blindbandit Records")
                         .font(.title2.bold())
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -116,7 +133,7 @@ struct BrandHeroPanel: View {
             VStack(alignment: .leading, spacing: 8) {
                 BrandMark(size: 72)
                 Text("MR. BLIND BANDIT").font(.system(.title, design: .rounded, weight: .heavy)).foregroundStyle(.white).accessibilityAddTraits(.isHeader)
-                Text("Music · Creator Tools · Blindbandit Records").font(.headline).foregroundStyle(.white.opacity(0.86))
+                Text("Music · Creator Tools · Calls · Blindbandit Records").font(.headline).foregroundStyle(.white.opacity(0.86))
                 Text("mrblindbandit.net").font(.subheadline.monospaced()).foregroundStyle(.yellow)
             }
             .padding(24)
@@ -214,6 +231,18 @@ struct CreatorHubView: View {
             Section("Website tools") {
                 NavigationLink { Website(path: "/media-tools/", title: "Media Suite") } label: { Label("Online Media Suite", systemImage: "globe") }
                 NavigationLink { Website(path: "/support/", title: "Support") } label: { Label("Support", systemImage: "questionmark.circle") }
+            }
+
+            Section("Musician Studio") {
+                NavigationLink { MusicianStudioView() } label: { Label("Musician Studio", systemImage: "metronome.fill") }
+                NavigationLink { MetronomeView() } label: { Label("Metronome", systemImage: "metronome.fill") }
+                NavigationLink { SetlistNotesView() } label: { Label("Setlist Notes", systemImage: "list.bullet.rectangle") }
+                NavigationLink { LyricScratchpadView() } label: { Label("Lyric Scratchpad", systemImage: "pencil.and.list.clipboard") }
+                NavigationLink { ReleaseChecklistView() } label: { Label("Release Checklist", systemImage: "checklist") }
+            }
+
+            Section("Connect") {
+                NavigationLink { ConnectHubView() } label: { Label("Calls, chat & voice notes", systemImage: "phone.and.waveform.fill") }
             }
 
             Section("Publishing") {

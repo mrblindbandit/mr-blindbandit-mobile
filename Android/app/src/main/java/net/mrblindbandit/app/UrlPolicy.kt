@@ -1,9 +1,9 @@
 package net.mrblindbandit.app
 
-import java.net.URI
+import android.net.Uri
 
 object UrlPolicy {
-    val firstPartyHosts = setOf(
+    private val firstPartyHosts = setOf(
         "mrblindbandit.net",
         "www.mrblindbandit.net",
         "portal.mrblindbandit.net",
@@ -12,10 +12,15 @@ object UrlPolicy {
         "accounts.mrblindbandit.net"
     )
 
-    fun isFirstParty(url: String?): Boolean {
-        if (url.isNullOrBlank()) return false
-        val uri = runCatching { URI(url) }.getOrNull() ?: return false
-        val host = uri.host?.lowercase() ?: return false
-        return uri.scheme.equals("https", ignoreCase = true) && firstPartyHosts.contains(host)
+    fun isFirstParty(raw: String?): Boolean {
+        if (raw.isNullOrBlank()) return false
+        return try {
+            val uri = Uri.parse(raw)
+            val scheme = uri.scheme?.lowercase()
+            val host = uri.host?.lowercase()
+            scheme == "https" && host != null && host in firstPartyHosts
+        } catch (_: Exception) {
+            false
+        }
     }
 }

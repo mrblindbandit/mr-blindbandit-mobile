@@ -9,7 +9,8 @@ final class BlindbanditTests: XCTestCase {
             "https://www.mrblindbandit.net/media-tools/",
             "https://portal.mrblindbandit.net/portal/",
             "https://api.mrblindbandit.net/v1/status",
-            "https://accounts.mrblindbandit.net/"
+            "https://accounts.mrblindbandit.net/",
+            "https://clerk.mrblindbandit.net/"
         ]
         for raw in urls {
             XCTAssertTrue(Browser.isFirstPartyURL(try XCTUnwrap(URL(string: raw))), raw)
@@ -33,5 +34,21 @@ final class BlindbanditTests: XCTestCase {
         let preferences = AppPreferences()
         XCTAssertTrue(preferences.announcePageLoads)
         XCTAssertFalse(preferences.reduceAppMotion)
+    }
+
+    func testAppConfigMarketingVersion() {
+        XCTAssertEqual(AppConfig.marketingVersion, "1.5")
+    }
+
+    func testLiveKitDefaultRoom() {
+        XCTAssertEqual(AppConfig.defaultLiveKitRoom, "mrblindbandit")
+    }
+
+    func testClerkPublishableKeyFormatWhenPresent() {
+        let key = AppConfig.clerkPublishableKey
+        if !key.isEmpty {
+            XCTAssertTrue(key.hasPrefix("pk_"), "Publishable keys must start with pk_")
+            XCTAssertFalse(key.hasPrefix("sk_"), "Secret keys must never appear in the client")
+        }
     }
 }

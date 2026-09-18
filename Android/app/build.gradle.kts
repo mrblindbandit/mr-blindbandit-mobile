@@ -14,7 +14,7 @@ fun local(key: String, default: String = "") = (localProps.getProperty(key) ?: d
 
 android {
     namespace = "net.mrblindbandit.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "net.mrblindbandit.app"
@@ -58,17 +58,6 @@ android {
     kotlinOptions { jvmTarget = "17" }
 }
 
-
-// Clerk 1.0.33 pulls browser 1.10 / okhttp-android 5.4 (need compileSdk 36 + AGP ≥ 8.9.1).
-// Prefer AGP 8.9 + SDK 36 when CI can edit workflows (`workflow` scope); until then force SDK-35-safe deps.
-configurations.configureEach {
-    resolutionStrategy {
-        force("androidx.browser:browser:1.8.0")
-        force("com.squareup.okhttp3:okhttp:5.3.2")
-        force("com.squareup.okhttp3:okhttp-android:5.3.2")
-        force("com.squareup.okhttp3:logging-interceptor:5.3.2")
-    }
-}
 
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))

@@ -54,6 +54,11 @@ class ClerkAuthService(context: Context) {
             statusMessage = "Clerk authentication is not configured."
             return
         }
+        if (Clerk.isInitialized.value) {
+            configured = true
+            refresh()
+            return
+        }
         configured = true
         Clerk.initialize(appContext, publishableKey = AppConfig.clerkPublishableKey)
         val ready = withTimeoutOrNull(10_000) { Clerk.isInitialized.first { it } } ?: false
@@ -229,6 +234,7 @@ class ClerkAuthService(context: Context) {
                 statusMessage = "No signed-in Clerk account was found."
                 false
             } else {
+                AccountDeletionService.deleteBlindbanditData(this)
                 var ok = false
                 user.delete()
                     .onSuccess { ok = true }
@@ -236,12 +242,12 @@ class ClerkAuthService(context: Context) {
                 if (ok) {
                     deletionRequested = true
                     state = AuthState.SignedOut
-                    statusMessage = "Your account was deleted."
+                    statusMessage = "Your Blindbandit account and associated app data were deleted."
                     true
                 } else false
             }
         } catch (e: Exception) {
-            statusMessage = e.localizedMessage ?: "The account could not be deleted."
+            statusMessage = e.localizedMessage ?: "The account could not be deleted. No partial deletion was reported as complete."
             false
         } finally {
             busy = false

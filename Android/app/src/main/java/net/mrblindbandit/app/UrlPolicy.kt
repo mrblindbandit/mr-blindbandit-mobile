@@ -1,6 +1,6 @@
 package net.mrblindbandit.app
 
-import android.net.Uri
+import java.net.URI
 
 object UrlPolicy {
     private val firstPartyHosts = setOf(
@@ -15,7 +15,7 @@ object UrlPolicy {
     fun isFirstParty(raw: String?): Boolean {
         if (raw.isNullOrBlank()) return false
         return try {
-            val uri = Uri.parse(raw)
+            val uri = URI(raw)
             val scheme = uri.scheme?.lowercase()
             val host = uri.host?.lowercase()
             scheme == "https" && host != null && host in firstPartyHosts

@@ -106,16 +106,16 @@ enum BlindbanditAPI {
     }
 
     static func currentProfile() async throws -> BlindbanditSocialProfile {
-        try JSONDecoder().decode(BlindbanditSocialProfile.self, from: request("v1/social/me"))
+        try JSONDecoder().decode(BlindbanditSocialProfile.self, from: try await request("v1/social/me"))
     }
 
     static func conversations() async throws -> [BlindbanditConversation] {
-        try JSONDecoder().decode(ConversationListResponse.self, from: request("v1/social/messages?limit=100")).items
+        try JSONDecoder().decode(ConversationListResponse.self, from: try await request("v1/social/messages?limit=100")).items
     }
 
     static func messages(conversationID: String) async throws -> [BlindbanditServerMessage] {
         let escaped = conversationID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? conversationID
-        return try JSONDecoder().decode(MessageListResponse.self, from: request("v1/social/messages/\(escaped)?limit=100")).items
+        return try JSONDecoder().decode(MessageListResponse.self, from: try await request("v1/social/messages/\(escaped)?limit=100")).items
     }
 
     static func sendMessage(recipient: String, body: String) async throws -> BlindbanditMessageResponse {

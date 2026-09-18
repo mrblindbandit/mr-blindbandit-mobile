@@ -12,6 +12,11 @@ val localProps = Properties().apply {
 }
 fun local(key: String, default: String = "") = (localProps.getProperty(key) ?: default).replace("\"", "\\\"")
 
+// Client-safe production identifiers/endpoints only. Never place reusable server credentials here.
+val productionClerkPublishableKey = "pk_live_Y2xlcmsubXJibGluZGJhbmRpdC5uZXQk"
+val productionLiveKitUrl = "wss://mrblindbandit-net-bpd8we2l.livekit.cloud"
+val productionGoogleOAuthClientId = "734579493984-oiet9j1hv9lhp7rkcjs9cqhf02biuatg.apps.googleusercontent.com"
+
 android {
     namespace = "net.mrblindbandit.app"
     compileSdk = 36
@@ -25,10 +30,11 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("String", "WEB_BASE_URL", "\"https://mrblindbandit.net\"")
-        buildConfigField("String", "CLERK_PUBLISHABLE_KEY", "\"${local("CLERK_PUBLISHABLE_KEY")}\"")
-        buildConfigField("String", "LIVEKIT_URL", "\"${local("LIVEKIT_URL")}\"")
+        buildConfigField("String", "CLERK_PUBLISHABLE_KEY", "\"${local("CLERK_PUBLISHABLE_KEY", productionClerkPublishableKey)}\"")
+        buildConfigField("String", "LIVEKIT_URL", "\"${local("LIVEKIT_URL", productionLiveKitUrl)}\"")
+        // Scaffold token is intentionally local-only. Production tokens must come from the server.
         buildConfigField("String", "LIVEKIT_SCAFFOLD_TOKEN", "\"${local("LIVEKIT_SCAFFOLD_TOKEN")}\"")
-        buildConfigField("String", "GOOGLE_OAUTH_CLIENT_ID", "\"${local("GOOGLE_OAUTH_CLIENT_ID")}\"")
+        buildConfigField("String", "GOOGLE_OAUTH_CLIENT_ID", "\"${local("GOOGLE_OAUTH_CLIENT_ID", productionGoogleOAuthClientId)}\"")
     }
 
     buildTypes {

@@ -12,7 +12,6 @@ enum ProductionPublicConfig {
 enum _LocalSecretsBridge {
     static var clerkPublishableKey = ""
     static var liveKitURL = ""
-    static var liveKitScaffoldToken = ""
     static var googleOAuthClientID = ""
 }
 
@@ -27,12 +26,6 @@ enum AppSecrets {
         if !_LocalSecretsBridge.liveKitURL.isEmpty { return _LocalSecretsBridge.liveKitURL }
         if let env = ProcessInfo.processInfo.environment["LIVEKIT_URL"], !env.isEmpty { return env }
         return ProductionPublicConfig.liveKitURL
-    }
-
-    /// Development-only fallback. Production should obtain short-lived participant tokens from the server.
-    static var liveKitScaffoldToken: String {
-        if !_LocalSecretsBridge.liveKitScaffoldToken.isEmpty { return _LocalSecretsBridge.liveKitScaffoldToken }
-        return ProcessInfo.processInfo.environment["LIVEKIT_TOKEN"] ?? ""
     }
 
     static var googleOAuthClientID: String {

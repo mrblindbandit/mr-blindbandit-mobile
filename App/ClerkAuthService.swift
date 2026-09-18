@@ -221,14 +221,15 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
         defer { busy = false }
         do {
             guard let user = Clerk.shared.user else { return fail("No signed-in Clerk account was found.") }
+            try await AccountDeletionService.deleteBlindbanditData()
             _ = try await user.delete()
             deletionRequested = true
             state = .signedOut
-            statusMessage = "Your Clerk account was deleted."
+            statusMessage = "Your Blindbandit account and associated app data were deleted."
             AppHaptics.warning()
             return true
         } catch {
-            return fail(clerkMessage(error, fallback: "The account could not be deleted."))
+            return fail(clerkMessage(error, fallback: "The account could not be deleted. No partial deletion was reported as complete."))
         }
     }
 

@@ -51,4 +51,13 @@ Cross-links:
 
 ---
 
+## 2026-09-18 — Production public mobile configuration (ChatGPT)
+
+- Added client-safe production defaults for the Clerk publishable key, LiveKit WebSocket endpoint, and Google OAuth client ID on iOS and Android.
+- Kept local/environment overrides available for development and CI.
+- Deliberately kept LiveKit participant JWTs, Clerk secret keys, LiveKit API credentials, Google OAuth client secret, VAPID private key, and push service credentials out of the mobile source and binaries.
+- LiveKit production calls remain designed to obtain short-lived participant tokens from the server; scaffold tokens remain local-only.
+
+---
+
 *Append dated sections after substantial AI-assisted work.*

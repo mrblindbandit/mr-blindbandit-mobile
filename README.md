@@ -2,14 +2,14 @@
 
 # Mr. Blindbandit Mobile
 
-### Version 1.5 — App Store / Play ready creator + communications platform
+### Version 1.6 — accessibility-first creator + communications app
 
 **Accessibility-first • Creator-focused • Security-conscious • Cross-platform**
 
-Mr. Blindbandit Mobile is an accessibility-first creator platform for iOS and Android with native media tools, secure integrations, and connected ecosystem features.
+Mr. Blindbandit Mobile is the native iOS and Android companion for the Mr. Blindbandit / Blindbandit Records ecosystem, combining creator tools, music, secure account access, voice/video calling, messaging, and trusted first-party web experiences.
 
 [![Website](https://img.shields.io/badge/Website-mrblindbandit.net-111111?style=for-the-badge&logo=googlechrome&logoColor=white)](https://mrblindbandit.net)
-[![Release](https://img.shields.io/badge/Release-v1.5-111111?style=for-the-badge)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/Release-v1.6-111111?style=for-the-badge)](CHANGELOG.md)
 [![iOS](https://img.shields.io/badge/iOS-17%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](#ios)
 [![Android](https://img.shields.io/badge/Android-26%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)](#android)
 [![Accessibility](https://img.shields.io/badge/Accessibility-VoiceOver_%2B_TalkBack-111111?style=for-the-badge)](#accessibility)
@@ -22,239 +22,133 @@ Mr. Blindbandit Mobile is an accessibility-first creator platform for iOS and An
 
 ## Current release
 
-**Mr. Blindbandit Mobile 1.5** is the current store-ready flagship release.
-
-| Platform | Public version | Build | Minimum OS | CI artifact |
+| Platform | Public version | Build/code | Minimum OS | CI validation artifact |
 |---|---:|---:|---:|---|
-| iOS | 1.5 | 5 | iOS 17 | `Mr-Blindbandit-iOS-v1.5-unsigned-IPA` |
-| Android | 1.5.0 | 5 | Android 8.0 / API 26 | `Mr-Blindbandit-Android-v1.5-debug-APK` |
+| iOS | 1.6 | 6 | iOS 17 | `Mr-Blindbandit-iOS-v1.6-unsigned-IPA` |
+| Android | 1.6.0 | 6 | Android 8 / API 26 | `Mr-Blindbandit-Android-v1.6-debug-APK` + unsigned AAB |
 
-Version 1.5 ships Clerk auth (Apple / Google / email), LiveKit voice & video calls, messaging, voice notes, Listen music services, Musician Studio tools, branded gold loaders, full accessibility polish, and App Store / Play compliance (account deletion, privacy/terms, Sign in with Apple).
+Version 1.6 productionizes authentication and communications: Clerk-backed sessions, Sign in with Apple on iOS, server-authorized LiveKit room grants, server-backed calls/messages, first-launch permission onboarding, account deletion, an iOS privacy manifest, Android API 36 targeting, and stricter store-validation CI.
 
-See **[CHANGELOG.md](CHANGELOG.md)** for the complete version history.
+The CI artifacts are **validation builds**, not store-signed releases. App Store/TestFlight and Google Play distribution still require the appropriate signing, provisioning, store-console declarations, screenshots/metadata, and final device verification.
 
----
-
-## What this project is
-
-Mr. Blindbandit Mobile is the native iOS and Android layer for the broader **Mr. Blindbandit** and **Blindbandit Records** ecosystem.
-
-The apps combine native mobile controls with trusted first-party web experiences from `mrblindbandit.net`. The goal is to keep content and account features connected to the website while adding the things a real mobile app should handle natively: navigation, accessibility, local permissions, file selection, notifications, security, device integration, media utilities, and polished loading/error states.
-
-The project is designed around three ideas:
-
-1. **Accessibility is core architecture.** VoiceOver and TalkBack support are product requirements, not cleanup work.
-2. **Creators should be able to work from a phone.** Media utilities and creator workflows should be usable without a desktop-first assumption.
-3. **Mobile clients should never become a secret vault.** Reusable backend credentials stay server-side and device clients receive only the access they actually need.
+See [CHANGELOG.md](CHANGELOG.md) and [RELEASING.md](RELEASING.md).
 
 ---
 
-## Version 1.5 highlights
+## Product principles
 
-### Auth & compliance
-- Natural Clerk onboarding: Continue with Apple, Google, and email
-- In-app account deletion + Privacy Policy / Terms links
-- Publishable keys only; secrets gitignored
+1. **Accessibility is architecture.** VoiceOver and TalkBack support are release requirements.
+2. **Creators should be able to work from a phone.** Native media and creator workflows should not assume a desktop.
+3. **Mobile clients are inspectable.** Reusable backend credentials stay server-side.
+4. **Communications are authenticated.** Calls and messages use the active Clerk session and the Blindbandit production API.
+5. **Web content stays bounded.** Only approved HTTPS first-party hosts remain inside the trusted in-app browser surface.
 
-### Communications
-- LiveKit voice calls, video calls, chat, and voice notes
-- Connect tab with professional call controls
+---
 
-### Listen & web
-- Music service deep links (Spotify, Apple Music, Amazon, Audiomack, and more)
-- First-party website hub (portal, store, music, support, account)
+## Version 1.6 highlights
 
-### Creator tools
+### Authentication and account safety
+
+- Clerk-backed Google and email sign-in
+- Sign in with Apple enabled on iOS with the required entitlement
+- Native session gating
+- Device-owner authentication support on iOS
+- In-app account deletion wired to the production deletion flow
+- Privacy Policy and Terms access from the app
+- Client binaries contain only client-safe public identifiers/endpoints
+
+### Calls and messaging
+
+- Native Calls / Messages / Keypad surfaces
+- Voice and video calling through LiveKit
+- Short-lived LiveKit grants minted by the authenticated server flow
+- Server-backed conversations and messages
+- Incoming call/message deep-link routing
+- Mute, camera, call-state, and accessible call controls
+- No reusable LiveKit token or test-token fallback in the v1.6 shipping path
+
+### Creator and music features
 
 - Native creator-tool hub
-- Native audio conversion workflow
-- Native art-track generation workflow
-- Expanded creator utility set
-- Dedicated media-tool tabs and navigation
-- Improved file import/export flows
-- Haptic feedback for supported native actions
+- Audio conversion workflow
+- Art-track generation workflow
+- Additional native media utilities
+- File import/export flows
+- Listen hub with external music-service handoff
+- First-party site, portal, account, support, and ecosystem links
+
+### Permissions and privacy
+
+- First-launch native permission onboarding
+- Camera and microphone runtime handling
+- Photo/file access for user-started actions
+- Notification permission handling
+- Bluetooth usage descriptions for compatible call audio
+- `PrivacyInfo.xcprivacy` included on iOS
+- HTTPS-first trusted-host policy
 
 ### Accessibility
 
-- VoiceOver-first iOS navigation and labels
-- TalkBack-first Android navigation and semantics
+- VoiceOver-conscious labels, hints, focus, and announcements on iOS
+- TalkBack-focused Compose semantics on Android
 - Dynamic Type / large-text support
 - Reduced-motion preferences
-- Page-load announcements
-- Accessible loading progress and branded launch states
-- Native accessibility-settings shortcuts
-- Screen-reader-aware WebView integration
-
-### Platform integration
-
-- Camera and microphone permission handling
-- Native file pickers/uploads
-- APNs registration framework on iOS
-- Firebase Cloud Messaging scaffold on Android
-- Deep-link routing
-- External-link handoff to the operating system
-- Native app/version information in Settings
-
-### Engineering
-
-- iOS unit-test and unsigned-IPA pipeline
-- Android unit-test, lint, and APK pipeline
-- Hardened Android SDK setup in CI
-- First-party URL policy tests
-- Version-aligned artifact naming
-- Professional release documentation and changelog discipline
-
----
-
-## Downloads and CI artifacts
-
-GitHub Actions produces temporary development artifacts for testing.
-
-### iOS
-
-Artifact:
-
-`Mr-Blindbandit-iOS-v1.5-unsigned-IPA`
-
-File inside the artifact:
-
-`Mr-Blindbandit-iOS-v1.5-unsigned.ipa`
-
-The iOS artifact is **unsigned**. It is a build-validation artifact and must be properly signed/provisioned before installation on a normal iPhone.
-
-Workflow: `.github/workflows/ios.yml`
-
-### Android
-
-Artifact:
-
-`Mr-Blindbandit-Android-v1.5-debug-APK`
-
-File inside the artifact:
-
-`Mr-Blindbandit-Android-v1.5-debug.apk`
-
-The Android artifact is a **debug APK** for development and device testing. It is not a production Google Play release and is not signed with a production Play signing key.
-
-Workflow: `.github/workflows/android.yml`
-
-> GitHub Actions artifacts are temporary. Public production distribution should use signed builds delivered through the appropriate Apple or Google release channels, or permanent GitHub Releases where appropriate.
+- Accessible loading, error, and call states
+- Screen-reader-aware first-party WebView integration
+- Physical-device VoiceOver/TalkBack verification remains part of release QA
 
 ---
 
 # iOS
 
-The iOS app is built with **SwiftUI** and **WKWebView** and targets iOS 17 or later.
+The iOS app uses **SwiftUI**, **WKWebView**, ClerkKit, and LiveKit and targets iOS 17+.
 
-## Current capabilities
+Core capabilities include native tab navigation, authentication, calls/messages, creator tools, trusted first-party browsing, native file selection, permissions, APNs registration plumbing, accessibility settings, branded launch/loading states, account deletion, and privacy-manifest declarations.
 
-- Native SwiftUI application shell
-- Native tab navigation
-- Native Settings and advanced settings
-- WKWebView for trusted first-party web content
-- VoiceOver-conscious semantics and controls
-- Dynamic Type-friendly interfaces
-- Device-owner authentication support
-- Background privacy handling
-- Native back, forward, reload, and browser controls
-- First-party deep-link handling
-- Camera and microphone permission framework
-- Native file-upload support
-- APNs registration framework
-- Notification permission state
-- Branded launch and loading presentation
-- Reduced-motion preference
-- Page-load announcements
-- Native creator toolkit
-- Native audio-conversion tools
-- Native art-track generation tools
-- Additional creator utilities
-- Automated tests and unsigned-IPA compilation
+### iOS CI artifact
 
-### iOS push notifications
+- Artifact: `Mr-Blindbandit-iOS-v1.6-unsigned-IPA`
+- File: `Mr-Blindbandit-iOS-v1.6-unsigned.ipa`
 
-The APNs framework is present, but production remote push still requires Apple signing/entitlements and server-side token registration/delivery. Production server credentials must never be embedded in the mobile binary.
+The IPA is intentionally unsigned and exists to validate compilation. A normal iPhone/App Store build requires Apple signing and provisioning.
 
 ---
 
 # Android
 
-The Android app is built with **Kotlin**, **Jetpack Compose**, **Android System WebView**, **AndroidX**, and **Material 3**.
+The Android app uses **Kotlin**, **Jetpack Compose**, Clerk, LiveKit, Android System WebView, AndroidX, Material 3, and Firebase libraries.
 
-## Current capabilities
+Release metadata:
 
-- Native Kotlin/Compose application shell
-- Home, Website, Create/Media, and Settings surfaces
-- Android System WebView for trusted first-party content
-- TalkBack-focused navigation and semantics
-- Native file/document picker
-- Camera and microphone runtime permissions
-- Android notification permission handling
-- Safe Browsing and HTTPS-first policy
-- Restricted direct file access
-- DOM storage support
-- Browser text-zoom preference
-- Page-load announcements
-- Reduced-motion preference
-- Keep-screen-awake preference
-- Native Back, Reload, and Browser controls
-- External HTTPS/email/telephone routing
-- First-party deep-link policy
-- Adaptive launcher icon and branded loading state
-- Firebase Cloud Messaging scaffold
-- Native creator toolkit and utility collection
-- Automated unit tests, lint, and APK compilation
+- `versionName = 1.6.0`
+- `versionCode = 6`
+- `minSdk = 26`
+- `targetSdk = 36`
 
-### Firebase Cloud Messaging
+Core capabilities include native authentication, Calls / Messages / Keypad, creator tools, trusted WebView content, TalkBack semantics, file selection, runtime permissions, notification handling, deep links, accessibility preferences, account deletion, and production communications API integration.
 
-Remote Android push delivery is not active until a production Firebase project/configuration is connected. Production credentials belong on trusted backend infrastructure, not in the APK.
+### Android CI artifacts
+
+- Debug APK artifact: `Mr-Blindbandit-Android-v1.6-debug-APK`
+- Debug file: `Mr-Blindbandit-Android-v1.6-debug.apk`
+- Store-validation bundle artifact: `Mr-Blindbandit-Android-v1.6-unsigned-AAB`
+
+The debug APK and unsigned AAB are CI validation outputs. Google Play release signing remains a deployment responsibility.
 
 ---
 
-# Accessibility
+# Production communications model
 
-Accessibility is a product requirement, not a post-build add-on.
+The app does not mint privileged LiveKit credentials locally.
 
-## iOS targets
+1. User authenticates through Clerk.
+2. The native app sends the active Clerk bearer token to `https://api.mrblindbandit.net`.
+3. The Blindbandit API authorizes call/message operations.
+4. For calls, the server returns a short-lived LiveKit room grant.
+5. The client connects to LiveKit with that short-lived grant.
+6. Messages/conversations are handled through authenticated Blindbandit API endpoints.
 
-- VoiceOver
-- Dynamic Type
-- Native control semantics
-- Logical focus order
-- Descriptive labels and hints
-- Reduced Motion
-- Accessible loading/error states
-- Keyboard and switch-control compatibility where supported by native controls
-
-## Android targets
-
-- TalkBack
-- Large text and display scaling
-- High-contrast configurations
-- Switch Access
-- Keyboard navigation
-- Native Compose semantics
-- Accessible WebView focus
-- Reduced animation
-- Spoken page-load feedback
-
-Because the apps intentionally load first-party web content, real accessibility quality depends on **both native app accessibility and website accessibility**. Physical-device VoiceOver and TalkBack testing remains part of release validation.
-
----
-
-# Security model
-
-The app does not ship reusable master backend secrets.
-
-The security model separates:
-
-1. **Device security** — Face ID, Touch ID, passcode, and Android device protections.
-2. **Website authentication** — user sign-in and session state.
-3. **Server authorization** — protected APIs and account roles.
-4. **Domain policy** — only approved first-party hosts remain inside the trusted in-app web surface.
-5. **Platform permissions** — camera, microphone, notifications, photos/files, and related capabilities remain operating-system controlled.
-
-Mobile binaries should always be treated as inspectable. Long-lived private server credentials must remain server-side.
+Reusable Clerk secrets, LiveKit API keys/secrets, OAuth client secrets, APNs private keys, Firebase service-account credentials, and signing keys must never be committed to the mobile repository or embedded in the app binaries.
 
 ---
 
@@ -269,7 +163,32 @@ Current trusted HTTPS hosts include:
 - `clerk.mrblindbandit.net`
 - `accounts.mrblindbandit.net`
 
-Cleartext HTTP and look-alike/spoofed domains are not treated as trusted first-party destinations.
+Cleartext HTTP and look-alike domains are not trusted first-party destinations.
+
+---
+
+# Building locally
+
+## Android
+
+Requirements: JDK 17, Android SDK/platform 36, and a Gradle environment compatible with the project.
+
+```bash
+gradle -p Android testDebugUnitTest --stacktrace
+gradle -p Android lintDebug --stacktrace
+gradle -p Android assembleDebug --stacktrace
+gradle -p Android bundleRelease --stacktrace
+```
+
+## iOS
+
+Requirements: macOS, Xcode, and XcodeGen.
+
+```bash
+bash build-unsigned.sh
+```
+
+The script generates the Xcode project, builds the Release configuration without code signing, and packages the versioned unsigned IPA in `dist/`.
 
 ---
 
@@ -283,6 +202,7 @@ Cleartext HTTP and look-alike/spoofed domains are not treated as trusted first-p
 ├── App/
 ├── AppTests/
 ├── Android/
+├── Config/
 ├── scripts/
 ├── build-unsigned.sh
 ├── project.yml
@@ -293,67 +213,30 @@ Cleartext HTTP and look-alike/spoofed domains are not treated as trusted first-p
 
 ---
 
-# Building locally
-
-## Android
-
-Requirements:
-
-- JDK 17
-- Android SDK
-- Android platform/build tools matching the project configuration
-- Gradle 8.9 or compatible project-supported Gradle environment
-
-```bash
-gradle -p Android testDebugUnitTest
-gradle -p Android lintDebug
-gradle -p Android assembleDebug
-```
-
-## iOS
-
-Requirements:
-
-- macOS
-- Xcode
-- XcodeGen
-
-```bash
-bash build-unsigned.sh
-```
-
-The script generates the Xcode project, builds the release configuration without code signing, packages the `.app`, and creates the versioned unsigned IPA in `dist/`.
-
----
-
 # Release discipline
 
-The canonical public version is **1.5**.
+The canonical public release is **1.6**.
 
-Every release must update all version surfaces together:
+Every release must update together:
 
 - iOS `MARKETING_VERSION`
 - iOS `CURRENT_PROJECT_VERSION`
 - Android `versionName`
 - Android `versionCode`
-- GitHub Actions artifact names
-- README current-release table
+- CI validation and artifact names
+- README current-release metadata
 - `CHANGELOG.md`
-- Pull-request/release title and release notes
+- store metadata/release notes
 
-The detailed release checklist lives in **[RELEASING.md](RELEASING.md)**.
+The detailed source and store checklist lives in [RELEASING.md](RELEASING.md). Store policy notes live in [Config/STORE_COMPLIANCE.md](Config/STORE_COMPLIANCE.md).
 
 ---
 
 # Distribution status
 
-This repository is under active development.
+This repository builds and validates the v1.6 source, but source-control readiness is not the same as a completed store submission.
 
-- CI-generated iOS IPAs are unsigned development artifacts.
-- CI-generated Android APKs are debug development artifacts.
-- Production App Store/TestFlight and Google Play builds require the appropriate signing, provisioning, store configuration, and release pipelines.
-
-Do not commit private signing keys, reusable backend secrets, APNs keys, Firebase server credentials, or other production secrets to this repository.
+Before public distribution, use production signing/provisioning, verify account deletion and communications against the deployed production API, complete Apple privacy and Google Play Data safety declarations from actual behavior, provide required review information, run physical-device accessibility/call tests, and upload final screenshots/metadata.
 
 ---
 
@@ -361,6 +244,5 @@ Do not commit private signing keys, reusable backend secrets, APNs keys, Firebas
 
 Mr. Blindbandit is an artist, creator, and platform project spanning music, creator tools, accessibility-focused technology, community features, and Blindbandit Records.
 
-**Website:** https://mrblindbandit.net
-
+**Website:** https://mrblindbandit.net  
 **GitHub:** https://github.com/mrblindbandit

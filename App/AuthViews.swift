@@ -1,15 +1,15 @@
 import SwiftUI
 import AuthenticationServices
 
-/// Natural consumer onboarding — Google + email first; Apple gated (no Dev account yet).
+/// Production Clerk onboarding — Google OAuth + passwordless email-code sign-in.
 struct AuthGatewayView: View {
     @ObservedObject var auth: ClerkAuthService
     @EnvironmentObject private var preferences: AppPreferences
     @State private var mode: Mode = .landing
     @FocusState private var focusedField: Field?
 
-    enum Mode { case landing, emailSignIn, emailSignUp }
-    enum Field { case email, password, name }
+    enum Mode { case landing, emailSignIn, emailSignUp, verifyCode }
+    enum Field { case email, name, code }
 
     var body: some View {
         ZStack {
@@ -28,7 +28,7 @@ struct AuthGatewayView: View {
                             .font(.headline)
                             .foregroundStyle(.white.opacity(0.78))
                             .multilineTextAlignment(.center)
-                        Text("Sign in to unlock your studio, calls, and messages.")
+                        Text("Sign in securely with Clerk to use calls and messages.")
                             .font(.subheadline)
                             .foregroundStyle(.white.opacity(0.65))
                             .multilineTextAlignment(.center)
@@ -40,6 +40,7 @@ struct AuthGatewayView: View {
                     case .landing: landingCards
                     case .emailSignIn: emailForm(isSignUp: false)
                     case .emailSignUp: emailForm(isSignUp: true)
+                    case .verifyCode: verificationForm
                     }
 
                     if !auth.statusMessage.isEmpty {
@@ -48,12 +49,13 @@ struct AuthGatewayView: View {
                             .foregroundStyle(.yellow)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal)
+                            .accessibilityAddTraits(.updatesFrequently)
                     }
 
                     legalFooter
 
                     if !AppConfig.isClerkConfigured {
-                        Text("Clerk publishable key missing — add Secrets.local.swift for production auth.")
+                        Text("Clerk publishable key missing. Authentication is unavailable on this build.")
                             .font(.caption)
                             .foregroundStyle(.orange)
                             .multilineTextAlignment(.center)
@@ -66,13 +68,16 @@ struct AuthGatewayView: View {
         }
         .onAppear {
             auth.configure()
+            if auth.pendingVerification != nil { mode = .verifyCode }
             AppHaptics.soft()
+        }
+        .onChange(of: auth.pendingVerification) { _, pending in
+            if pending != nil { mode = .verifyCode }
         }
     }
 
     private var landingCards: some View {
         VStack(spacing: 14) {
-            // Primary: Google + email (existing mrblindbandit.net Clerk). Apple off until Dev account.
             Button {
                 AppHaptics.medium()
                 Task { _ = await auth.beginGoogleSignIn() }
@@ -85,8 +90,8 @@ struct AuthGatewayView: View {
             .buttonStyle(.borderedProminent)
             .tint(.white)
             .foregroundStyle(.black)
-            .disabled(auth.busy)
-            .accessibilityHint("Signs in with Google through Clerk.")
+            .disabled(auth.busy || !AppConfig.isClerkConfigured)
+            .accessibilityHint("Signs in with Google using the production Clerk account system.")
 
             Button {
                 AppHaptics.selection()
@@ -99,8 +104,8 @@ struct AuthGatewayView: View {
             }
             .buttonStyle(.bordered)
             .tint(.yellow)
-            .disabled(auth.busy)
-            .accessibilityHint("Opens email and password sign-in.")
+            .disabled(auth.busy || !AppConfig.isClerkConfigured)
+            .accessibilityHint("Clerk emails you a one-time sign-in code. No password is stored by this app.")
 
             if AppConfig.enableSignInWithApple {
                 SignInWithAppleButton(.continue) { request in
@@ -124,12 +129,6 @@ struct AuthGatewayView: View {
                 .accessibilityLabel("Continue with Apple")
             }
 
-            if AppConfig.enablePhoneOTP {
-                Text("Phone OTP available when enabled in Clerk.")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.5))
-            }
-
             Button {
                 AppHaptics.selection()
                 mode = .emailSignUp
@@ -138,9 +137,12 @@ struct AuthGatewayView: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.yellow)
             }
+            .disabled(auth.busy || !AppConfig.isClerkConfigured)
 
             if auth.busy {
-                ProgressView("Working…").tint(.yellow).accessibilityLabel("Signing in")
+                ProgressView("Working with Clerk…")
+                    .tint(.yellow)
+                    .accessibilityLabel("Authenticating with Clerk")
             }
         }
         .padding(20)
@@ -156,6 +158,11 @@ struct AuthGatewayView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityAddTraits(.isHeader)
 
+            Text("Clerk will send a one-time verification code to your email.")
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.7))
+                .frame(maxWidth: .infinity, alignment: .leading)
+
             if isSignUp {
                 TextField("Display name", text: $auth.nameDraft)
                     .textContentType(.name)
@@ -167,7 +174,7 @@ struct AuthGatewayView: View {
             }
 
             TextField("Email", text: $auth.emailDraft)
-                .textContentType(.username)
+                .textContentType(.emailAddress)
                 .keyboardType(.emailAddress)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -177,26 +184,19 @@ struct AuthGatewayView: View {
                 .foregroundStyle(.white)
                 .accessibilityLabel("Email address")
 
-            SecureField("Password", text: $auth.passwordDraft)
-                .textContentType(isSignUp ? .newPassword : .password)
-                .focused($focusedField, equals: .password)
-                .padding()
-                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
-                .foregroundStyle(.white)
-                .accessibilityLabel("Password")
-                .accessibilityHint("At least 8 characters.")
-
             Button {
                 AppHaptics.medium()
                 Task {
+                    let success: Bool
                     if isSignUp {
-                        _ = await auth.signUpWithEmail(email: auth.emailDraft, password: auth.passwordDraft, name: auth.nameDraft)
+                        success = await auth.beginEmailSignUp(email: auth.emailDraft, name: auth.nameDraft)
                     } else {
-                        _ = await auth.signInWithEmail(email: auth.emailDraft, password: auth.passwordDraft)
+                        success = await auth.beginEmailSignIn(email: auth.emailDraft)
                     }
+                    if success, auth.pendingVerification != nil { mode = .verifyCode }
                 }
             } label: {
-                Text(isSignUp ? "Create account" : "Sign in")
+                Text(isSignUp ? "Create account & send code" : "Send sign-in code")
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
@@ -215,6 +215,7 @@ struct AuthGatewayView: View {
 
             Button("Back") {
                 AppHaptics.light()
+                auth.cancelEmailVerification()
                 mode = .landing
             }
             .foregroundStyle(.yellow)
@@ -224,6 +225,57 @@ struct AuthGatewayView: View {
         .padding(20)
         .background(.ultraThinMaterial.opacity(0.9), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.yellow.opacity(0.28), lineWidth: 1))
+    }
+
+    private var verificationForm: some View {
+        VStack(spacing: 14) {
+            Text("Check your email")
+                .font(.title2.bold())
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityAddTraits(.isHeader)
+
+            Text("Enter the one-time Clerk code sent to \(auth.pendingVerification?.email ?? auth.emailDraft).")
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.72))
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            TextField("Verification code", text: $auth.verificationCodeDraft)
+                .keyboardType(.numberPad)
+                .textContentType(.oneTimeCode)
+                .focused($focusedField, equals: .code)
+                .padding()
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+                .foregroundStyle(.white)
+                .accessibilityLabel("Verification code")
+
+            Button {
+                AppHaptics.medium()
+                Task { _ = await auth.verifyEmailCode(auth.verificationCodeDraft) }
+            } label: {
+                Text("Verify & continue")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.yellow)
+            .foregroundStyle(.black)
+            .disabled(auth.busy || auth.verificationCodeDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+            Button("Use a different email") {
+                AppHaptics.light()
+                auth.cancelEmailVerification()
+                mode = .emailSignIn
+            }
+            .foregroundStyle(.yellow)
+
+            if auth.busy { ProgressView("Verifying…").tint(.yellow) }
+        }
+        .padding(20)
+        .background(.ultraThinMaterial.opacity(0.9), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.yellow.opacity(0.28), lineWidth: 1))
+        .onAppear { focusedField = .code }
     }
 
     private var legalFooter: some View {

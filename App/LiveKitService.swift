@@ -144,7 +144,7 @@ final class LiveKitService: ObservableObject {
             let newRoom = Room()
             newRoom.add(delegate: self)
             try await newRoom.connect(url: AppConfig.liveKitURL, token: resolved.token)
-            room = newRoom
+            self.room = newRoom
             dataConnected = true
             connectionState = .connected
             refreshParticipants()
@@ -155,7 +155,7 @@ final class LiveKitService: ObservableObject {
                 statusMessage = usingScaffoldToken
                     ? (asVideo ? "Video call connected — TEST SCAFFOLD" : "Voice call connected — TEST SCAFFOLD")
                     : (asVideo ? "Video call connected" : "Voice call connected")
-                appendSystem("Joined room \(room) via \(tokenSourceLabel)")
+                appendSystem("Joined room \(roomName) via \(tokenSourceLabel)")
             } else {
                 statusMessage = usingScaffoldToken
                     ? "Messaging connected — TEST SCAFFOLD (temporary token)"
@@ -167,7 +167,7 @@ final class LiveKitService: ObservableObject {
             connectionState = .error
             isInCall = false
             dataConnected = false
-            room = nil
+            self.room = nil
             statusMessage = "Connect failed: \(error.localizedDescription)"
             CallSounds.busyOrFailed()
             AppHaptics.error()
@@ -197,8 +197,8 @@ final class LiveKitService: ObservableObject {
     func disconnect() {
         stopTicker()
         Task {
-            await room?.localParticipant.setMicrophone(enabled: false)
-            await room?.localParticipant.setCamera(enabled: false)
+            try? await room?.localParticipant.setMicrophone(enabled: false)
+            try? await room?.localParticipant.setCamera(enabled: false)
             await room?.disconnect()
             room = nil
         }
@@ -219,8 +219,8 @@ final class LiveKitService: ObservableObject {
     func endCallKeepMessaging() {
         stopTicker()
         Task {
-            await room?.localParticipant.setMicrophone(enabled: false)
-            await room?.localParticipant.setCamera(enabled: false)
+            try? await room?.localParticipant.setMicrophone(enabled: false)
+            try? await room?.localParticipant.setCamera(enabled: false)
         }
         isInCall = false
         isVideoCall = false
@@ -486,7 +486,7 @@ final class LiveKitService: ObservableObject {
         guard let room else { return false }
         do {
             let data = try JSONEncoder().encode(env)
-            try await room.localParticipant.publish(data: data, options: DataPublishOptions(reliable: true, topic: DMEnvelope.topic))
+            try await room.localParticipant.publish(data: data, options: DataPublishOptions(topic: DMEnvelope.topic, reliable: true))
             return true
         } catch {
             statusMessage = "DM send failed: \(error.localizedDescription)"
@@ -675,6 +675,8 @@ extension LiveKitService: RoomDelegate {
                 self.refreshParticipants()
             case .connecting, .reconnecting:
                 self.connectionState = connectionState == .reconnecting ? .reconnecting : .connecting
+            case .disconnecting:
+                self.connectionState = .connecting
             case .disconnected:
                 self.connectionState = .disconnected
                 self.dataConnected = false

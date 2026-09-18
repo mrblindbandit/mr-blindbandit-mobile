@@ -7,11 +7,11 @@ on:
 permissions:
   contents: read
 env:
-  APP_VERSION: '1.5'
+  APP_VERSION: '1.6'
 jobs:
   test-and-build:
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - name: Install XcodeGen
@@ -22,8 +22,10 @@ jobs:
           xcodegen generate
       - name: Verify iOS release version
         run: |
-          grep -q "MARKETING_VERSION: '1.5'" project.yml
-          grep -q "CURRENT_PROJECT_VERSION: '5'" project.yml
+          grep -q "MARKETING_VERSION: '1.6'" project.yml
+          grep -q "CURRENT_PROJECT_VERSION: '6'" project.yml
+          test -f App/PrivacyInfo.xcprivacy
+          grep -q 'com.apple.developer.applesignin' App/Blindbandit.entitlements
       - name: Run iOS unit tests
         run: |
           DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; ids=[x["udid"] for values in d.values() for x in values if x.get("isAvailable") and "iPhone" in x.get("name","")]; print(ids[0] if ids else "")')
@@ -33,7 +35,7 @@ jobs:
         run: bash build-unsigned.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: Mr-Blindbandit-iOS-v1.5-unsigned-IPA
-          path: dist/Mr-Blindbandit-iOS-v1.5-unsigned.ipa
+          name: Mr-Blindbandit-iOS-v1.6-unsigned-IPA
+          path: dist/Mr-Blindbandit-iOS-v1.6-unsigned.ipa
           if-no-files-found: error
           retention-days: 7

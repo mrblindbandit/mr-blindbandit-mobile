@@ -1,0 +1,36 @@
+# Local secrets — never commit
+App/Secrets.local.swift
+App/Config.local.xcconfig
+Android/local.properties
+**/google-services.json
+**/GoogleService-Info.plist
+Config/Secrets.local.*
+*.local.swift
+*.local.xcconfig
+
+# Keys dropped beside the tree
+/workspace/mrblindbandit-*-keys.txt
+mrblindbandit-*-keys.txt
+*-keys.txt
+*.pem
+*.p8
+*.p12
+*.mobileprovision
+
+# Build / IDE
+build/
+dist/
+DerivedData/
+.gradle/
+**/build/
+*.xcodeproj/
+*.xcworkspace/
+.idea/
+*.iml
+.DS_Store
+*.apk
+*.aab
+*.ipa
+local.properties
+
+**/Secrets.local.swift

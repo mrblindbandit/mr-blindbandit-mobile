@@ -69,27 +69,41 @@ struct BlindbanditApp: App {
     @StateObject private var push = PushNotifications()
     @StateObject private var privacy = PrivacyPermissions()
     @StateObject private var preferences = AppPreferences()
+    @StateObject private var auth = ClerkAuthService()
     @Environment(\.scenePhase) private var phase
     @State private var showingLaunchCover = true
 
     var body: some Scene {
         WindowGroup {
             ZStack {
-                if lock.unlocked {
-                    MainTabs()
-                        .environmentObject(lock)
-                        .environmentObject(push)
-                        .environmentObject(privacy)
+                switch auth.state {
+                case .unknown:
+                    ZStack {
+                        Color.black.ignoresSafeArea()
+                        SpinningBrandLogo(size: 112, reduceMotion: preferences.reduceAppMotion)
+                    }
+                    .accessibilityLabel("Starting Mr. Blind Bandit")
+                case .signedOut:
+                    AuthGatewayView(auth: auth)
                         .environmentObject(preferences)
-                        .accessibilityHidden(phase != .active)
-                } else {
-                    LockedView(lock: lock)
+                case .signedIn:
+                    if lock.unlocked {
+                        MainTabs()
+                            .environmentObject(lock)
+                            .environmentObject(push)
+                            .environmentObject(privacy)
+                            .environmentObject(preferences)
+                            .environmentObject(auth)
+                            .accessibilityHidden(phase != .active)
+                    } else {
+                        LockedView(lock: lock)
+                    }
                 }
 
-                if phase != .active {
+                if phase != .active, case .signedIn = auth.state {
                     Color(uiColor: .systemBackground).ignoresSafeArea()
                     VStack(spacing: 12) {
-                        BrandMark(size: 56)
+                        BlindbanditLogoImage(size: 56)
                         Text("Mr. Blind Bandit")
                             .font(.headline)
                         Label("App locked", systemImage: "lock.fill")
@@ -106,6 +120,7 @@ struct BlindbanditApp: App {
                 }
             }
             .task {
+                auth.configure()
                 try? await Task.sleep(for: .milliseconds(900))
                 withAnimation(preferences.reduceAppMotion ? nil : .easeOut(duration: 0.3)) {
                     showingLaunchCover = false
@@ -136,7 +151,7 @@ struct LaunchCover: View {
                     .foregroundStyle(.white)
                 WaveformLoader(reduceMotion: reduceMotion)
                     .foregroundStyle(.yellow)
-                Text("Music · Creator Tools · Blindbandit Records")
+                Text("Music · Creator Tools · Calls · Blindbandit Records")
                     .font(.headline)
                     .foregroundStyle(.white.opacity(0.78))
             }
@@ -181,7 +196,8 @@ struct RoutedURL: Identifiable {
 }
 
 struct MainTabs: View {
-    enum Tab: Hashable { case home, create, audio, artTrack, settings }
+    /// Five-tab IA (Apple HIG): Home · Create · Connect · Listen · More
+    enum Tab: Hashable { case home, create, connect, listen, more }
 
     @State private var routedURL: RoutedURL?
     @State private var selection: Tab = .home
@@ -191,22 +207,27 @@ struct MainTabs: View {
             NavigationStack { ProfessionalHome() }
                 .tabItem { Label("Home", systemImage: "house.fill") }
                 .tag(Tab.home)
+                .accessibilityLabel("Home tab")
 
             NavigationStack { CreatorHubView() }
                 .tabItem { Label("Create", systemImage: "wand.and.stars") }
                 .tag(Tab.create)
+                .accessibilityLabel("Create tab")
 
-            NavigationStack { NativeAudioConverterView() }
-                .tabItem { Label("Audio", systemImage: "waveform") }
-                .tag(Tab.audio)
+            NavigationStack { ConnectHubView() }
+                .tabItem { Label("Connect", systemImage: "phone.and.waveform.fill") }
+                .tag(Tab.connect)
+                .accessibilityLabel("Connect tab for calls and chat")
 
-            NavigationStack { NativeArtTrackGeneratorView() }
-                .tabItem { Label("Art Track", systemImage: "play.rectangle.fill") }
-                .tag(Tab.artTrack)
+            NavigationStack { ListenHubView() }
+                .tabItem { Label("Listen", systemImage: "headphones") }
+                .tag(Tab.listen)
+                .accessibilityLabel("Listen tab for music services")
 
-            NavigationStack { Settings() }
-                .tabItem { Label("Settings", systemImage: "gearshape.fill") }
-                .tag(Tab.settings)
+            NavigationStack { MoreHubView() }
+                .tabItem { Label("More", systemImage: "ellipsis.circle.fill") }
+                .tag(Tab.more)
+                .accessibilityLabel("More tab for profile, web, and settings")
         }
         .tint(.yellow)
         .onChange(of: selection) { _, _ in AppHaptics.selection() }

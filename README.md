@@ -2,56 +2,34 @@
 
 # Mr. Blindbandit Mobile
 
-### Version 1.4 — iOS and Android creator platform for the Mr. Blindbandit ecosystem
+### Version 1.5 — App Store / Play ready creator + communications platform
 
 **Accessibility-first • Creator-focused • Security-conscious • Cross-platform**
 
 Mr. Blindbandit Mobile is an accessibility-first creator platform for iOS and Android with native media tools, secure integrations, and connected ecosystem features.
 
 [![Website](https://img.shields.io/badge/Website-mrblindbandit.net-111111?style=for-the-badge&logo=googlechrome&logoColor=white)](https://mrblindbandit.net)
-[![Release](https://img.shields.io/badge/Release-v1.4-111111?style=for-the-badge)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/Release-v1.5-111111?style=for-the-badge)](CHANGELOG.md)
 [![iOS](https://img.shields.io/badge/iOS-17%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](#ios)
 [![Android](https://img.shields.io/badge/Android-26%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)](#android)
 [![Accessibility](https://img.shields.io/badge/Accessibility-VoiceOver_%2B_TalkBack-111111?style=for-the-badge)](#accessibility)
 
 **Repository:** [`mrblindbandit/mr-blindbandit-mobile`](https://github.com/mrblindbandit/mr-blindbandit-mobile)
 
-[![Website API](https://img.shields.io/badge/API_host-ChatGPT_Sites-111111?style=for-the-badge)](https://mrblindbandit.net)
-[![Privacy](https://img.shields.io/badge/Privacy-mrblindbandit.net%2Fprivacy-111111?style=for-the-badge)](https://mrblindbandit.net/privacy)
-[![Flagship](https://img.shields.io/badge/Flagship_1.5-PR_%2314_Clerk%2BLiveKit-111111?style=for-the-badge)](https://github.com/mrblindbandit/mr-blindbandit-mobile/pull/14)
-
 </div>
-
----
-
-## Flagship direction (1.5)
-
-**Main** currently tracks the **1.4** creator-suite baseline. The store-ready **1.5** flagship (Clerk + LiveKit + DMs/voice notes + store compliance) is developed on [`flagship/1.5-clerk-livekit`](https://github.com/mrblindbandit/mr-blindbandit-mobile/tree/flagship/1.5-clerk-livekit) via [PR #14](https://github.com/mrblindbandit/mr-blindbandit-mobile/pull/14).
-
-| Item | Detail |
-|---|---|
-| Auth | Clerk — **Google + email** (Sign in with Apple **off** until Apple Developer is available) |
-| Realtime | LiveKit voice/video, chat, voice notes (tokens from website Worker) |
-| API / web host | **ChatGPT Sites** → https://mrblindbandit.net (not Cloudflare-as-product-host) |
-| Privacy | https://mrblindbandit.net/privacy |
-| iOS bundle | `net.mrblindbandit.privateapp` family |
-| Android applicationId | `net.mrblindbandit.app` |
-| Static web mirror | https://mrblindbandit.github.io/ (HTML only) |
-
-Agents: see **[AGENTS.md](AGENTS.md)** and **[AI_CHANGELOG.md](AI_CHANGELOG.md)**.
 
 ---
 
 ## Current release
 
-**Mr. Blindbandit Mobile 1.4** is the current development release.
+**Mr. Blindbandit Mobile 1.5** is the current store-ready flagship release.
 
 | Platform | Public version | Build | Minimum OS | CI artifact |
 |---|---:|---:|---:|---|
-| iOS | 1.4 | 4 | iOS 17 | `Mr-Blindbandit-iOS-v1.4-unsigned-IPA` |
-| Android | 1.4.0 | 4 | Android 8.0 / API 26 | `Mr-Blindbandit-Android-v1.4-debug-APK` |
+| iOS | 1.5 | 5 | iOS 17 | `Mr-Blindbandit-iOS-v1.5-unsigned-IPA` |
+| Android | 1.5.0 | 5 | Android 8.0 / API 26 | `Mr-Blindbandit-Android-v1.5-debug-APK` |
 
-Version 1.4 expands the project into a substantially more native creator app on both platforms. It adds native creator utilities, dedicated media-tool surfaces, accessibility improvements, stronger CI, and consistent public release metadata across source, documentation, and build artifacts.
+Version 1.5 ships Clerk auth (Apple / Google / email), LiveKit voice & video calls, messaging, voice notes, Listen music services, Musician Studio tools, branded gold loaders, full accessibility polish, and App Store / Play compliance (account deletion, privacy/terms, Sign in with Apple).
 
 See **[CHANGELOG.md](CHANGELOG.md)** for the complete version history.
 
@@ -71,7 +49,20 @@ The project is designed around three ideas:
 
 ---
 
-## Version 1.4 highlights
+## Version 1.5 highlights
+
+### Auth & compliance
+- Natural Clerk onboarding: Continue with Apple, Google, and email
+- In-app account deletion + Privacy Policy / Terms links
+- Publishable keys only; secrets gitignored
+
+### Communications
+- LiveKit voice calls, video calls, chat, and voice notes
+- Connect tab with professional call controls
+
+### Listen & web
+- Music service deep links (Spotify, Apple Music, Amazon, Audiomack, and more)
+- First-party website hub (portal, store, music, support, account)
 
 ### Creator tools
 
@@ -123,11 +114,11 @@ GitHub Actions produces temporary development artifacts for testing.
 
 Artifact:
 
-`Mr-Blindbandit-iOS-v1.4-unsigned-IPA`
+`Mr-Blindbandit-iOS-v1.5-unsigned-IPA`
 
 File inside the artifact:
 
-`Mr-Blindbandit-iOS-v1.4-unsigned.ipa`
+`Mr-Blindbandit-iOS-v1.5-unsigned.ipa`
 
 The iOS artifact is **unsigned**. It is a build-validation artifact and must be properly signed/provisioned before installation on a normal iPhone.
 
@@ -137,11 +128,11 @@ Workflow: `.github/workflows/ios.yml`
 
 Artifact:
 
-`Mr-Blindbandit-Android-v1.4-debug-APK`
+`Mr-Blindbandit-Android-v1.5-debug-APK`
 
 File inside the artifact:
 
-`Mr-Blindbandit-Android-v1.4-debug.apk`
+`Mr-Blindbandit-Android-v1.5-debug.apk`
 
 The Android artifact is a **debug APK** for development and device testing. It is not a production Google Play release and is not signed with a production Play signing key.
 
@@ -337,7 +328,7 @@ The script generates the Xcode project, builds the release configuration without
 
 # Release discipline
 
-The canonical public version is **1.4**.
+The canonical public version is **1.5**.
 
 Every release must update all version surfaces together:
 
@@ -370,14 +361,6 @@ Do not commit private signing keys, reusable backend secrets, APNs keys, Firebas
 
 Mr. Blindbandit is an artist, creator, and platform project spanning music, creator tools, accessibility-focused technology, community features, and Blindbandit Records.
 
-**Production website (ChatGPT Sites):** https://mrblindbandit.net
-
-**Privacy:** https://mrblindbandit.net/privacy
-
-**Static Pages mirror:** https://mrblindbandit.github.io/
-
-**Website source:** https://github.com/mrblindbandit/mr-blindbandit-website
+**Website:** https://mrblindbandit.net
 
 **GitHub:** https://github.com/mrblindbandit
-
-**Governance:** [LICENSE](LICENSE) · [SECURITY](SECURITY.md) · [CONTRIBUTING](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [AGENTS](AGENTS.md)

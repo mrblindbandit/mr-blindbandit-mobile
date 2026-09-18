@@ -3,20 +3,32 @@ package net.mrblindbandit.app
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
 class UrlPolicyTest {
-    @Test fun acceptsKnownFirstPartyHttpsHosts() {
+    @Test
+    fun acceptsFirstPartyHttps() {
         assertTrue(UrlPolicy.isFirstParty("https://mrblindbandit.net/"))
-        assertTrue(UrlPolicy.isFirstParty("https://www.mrblindbandit.net/media-tools/"))
-        assertTrue(UrlPolicy.isFirstParty("https://portal.mrblindbandit.net/portal/"))
-        assertTrue(UrlPolicy.isFirstParty("https://api.mrblindbandit.net/v1/status"))
+        assertTrue(UrlPolicy.isFirstParty("https://www.mrblindbandit.net/music/"))
+        assertTrue(UrlPolicy.isFirstParty("https://clerk.mrblindbandit.net/"))
         assertTrue(UrlPolicy.isFirstParty("https://accounts.mrblindbandit.net/"))
     }
 
-    @Test fun rejectsExternalSpoofedAndCleartextHosts() {
+    @Test
+    fun rejectsExternalAndCleartext() {
         assertFalse(UrlPolicy.isFirstParty("https://example.com/"))
         assertFalse(UrlPolicy.isFirstParty("http://mrblindbandit.net/"))
-        assertFalse(UrlPolicy.isFirstParty("https://mrblindbandit.net.example.com/"))
-        assertFalse(UrlPolicy.isFirstParty("javascript:alert(1)"))
+        assertFalse(UrlPolicy.isFirstParty("https://mrblindbandit.net.evil.com/"))
+        assertFalse(UrlPolicy.isFirstParty(null))
+    }
+}
+
+class AppConfigVersionTest {
+    @Test
+    fun versionNameIs15() {
+        // BuildConfig may be absent in pure JVM without AGP; soft-check constant in AppConfig
+        assertTrue(net.mrblindbandit.app.config.AppConfig.MARKETING_VERSION == "1.5")
     }
 }

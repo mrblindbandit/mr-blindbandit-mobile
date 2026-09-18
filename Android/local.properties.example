@@ -1,0 +1,10 @@
+## Copy to Android/local.properties (gitignored). Do not commit secrets.
+sdk.dir=/Users/YOU/Library/Android/sdk
+
+# Client-safe keys only:
+CLERK_PUBLISHABLE_KEY=pk_live_REPLACE_ME
+LIVEKIT_URL=wss://REPLACE_ME.livekit.cloud
+LIVEKIT_SCAFFOLD_TOKEN=
+GOOGLE_OAUTH_CLIENT_ID=REPLACE_ME.apps.googleusercontent.com
+
+# NEVER put CLERK_SECRET_KEY, LIVEKIT_API_SECRET, or GOOGLE_OAUTH_CLIENT_SECRET here for shipping builds.

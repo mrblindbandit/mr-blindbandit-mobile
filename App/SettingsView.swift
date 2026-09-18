@@ -7,17 +7,19 @@ struct Settings: View {
     @EnvironmentObject private var push: PushNotifications
     @EnvironmentObject private var privacy: PrivacyPermissions
     @EnvironmentObject private var preferences: AppPreferences
+    @EnvironmentObject private var auth: ClerkAuthService
 
     @AppStorage("keepScreenAwake") private var keepScreenAwake = false
     @AppStorage("hapticsEnabled") private var hapticsEnabled = true
     @AppStorage("preferDarkArtworkBackground") private var preferDarkArtworkBackground = true
     @AppStorage("confirmBeforeExternalLinks") private var confirmBeforeExternalLinks = false
     @State private var confirmClearSessions = false
+    @State private var confirmDeleteAccount = false
     @State private var clearing = false
 
     private var versionText: String {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.4"
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "4"
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.5"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "5"
         return "Version \(version) (\(build))"
     }
 
@@ -25,24 +27,50 @@ struct Settings: View {
         Form {
             Section {
                 HStack(spacing: 14) {
-                    BrandMark(size: 54)
+                    BlindbanditLogoImage(size: 54)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Mr. Blind Bandit").font(.headline)
                         Text(versionText).foregroundStyle(.secondary)
                     }
                 }
+                .accessibilityElement(children: .combine)
             }
 
-            Section("Advanced") {
-                NavigationLink { AdvancedSettingsView() } label: {
-                    Label("Site Keys & API", systemImage: "key.horizontal.fill")
+            Section("Account") {
+                switch auth.state {
+                case .signedIn(let name, let email):
+                    LabeledContent("Signed in", value: name)
+                    LabeledContent("Email", value: email)
+                    Button("Sign out", role: .destructive) {
+                        AppHaptics.warning()
+                        Task { await auth.signOut() }
+                    }
+                default:
+                    Text("Not signed in")
                 }
                 NavigationLink { Website(path: "/account", title: "Account") } label: {
-                    Label("Account & Security", systemImage: "person.crop.circle.badge.checkmark")
+                    Label("Manage account on the web", systemImage: "person.crop.circle.badge.checkmark")
                 }
-                Text("Public client settings can be saved on device. Private owner access is stored in the iOS Keychain, not plain preferences.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                Button("Delete account…", role: .destructive) {
+                    AppHaptics.warning()
+                    confirmDeleteAccount = true
+                }
+                .accessibilityHint("Requests permanent account deletion. Required for App Store compliance.")
+                if auth.deletionRequested {
+                    Text("A deletion request is on file for this device. Confirm on the website if prompted.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Section("Communications") {
+                NavigationLink { ConnectHubView() } label: {
+                    Label("Calls, chat & voice notes", systemImage: "phone.and.waveform.fill")
+                }
+                LabeledContent("LiveKit", value: AppConfig.isLiveKitConfigured ? "Configured" : "Needs URL")
+                LabeledContent("Clerk", value: AppConfig.isClerkConfigured ? "Configured" : "Needs publishable key")
+                Text("Voice and video use LiveKit with short-lived server tokens. API secrets never ship in the app.")
+                    .font(.footnote).foregroundStyle(.secondary)
             }
 
             Section("Notifications") {
@@ -70,33 +98,69 @@ struct Settings: View {
                 }
             }
 
-            Section("Creator Tools") {
+            
+            Section("Sounds") {
+                Toggle("Play UI sounds", isOn: Binding(
+                    get: { CallSounds.playUISounds },
+                    set: { CallSounds.playUISounds = $0; AppHaptics.selection() }
+                ))
+                .accessibilityHint("Plays ringback, message, and call feedback sounds.")
+
+                Toggle("Haptic feedback", isOn: Binding(
+                    get: { CallHaptics.hapticsEnabled },
+                    set: { CallHaptics.hapticsEnabled = $0; if $0 { AppHaptics.success() } }
+                ))
+                .accessibilityHint("Vibration feedback for calls and messages.")
+
+                Picker("Ringtone", selection: Binding(
+                    get: { CallSounds.selectedRingtone },
+                    set: { CallSounds.selectedRingtone = $0; CallSounds.previewRingtone($0) }
+                )) {
+                    ForEach(CallSounds.Ringtone.allCases) { tone in
+                        Text(tone.title).tag(tone)
+                    }
+                }
+                .accessibilityLabel("Ringtone picker")
+
+                Picker("Notification sound", selection: Binding(
+                    get: { CallSounds.selectedNotificationTone },
+                    set: { CallSounds.selectedNotificationTone = $0; CallSounds.previewNotification($0) }
+                )) {
+                    ForEach(CallSounds.NotificationTone.allCases) { tone in
+                        Text(tone.title).tag(tone)
+                    }
+                }
+                .accessibilityLabel("Notification sound picker")
+
+                Text("Ringback plays while an outgoing call is ringing. Sounds stay quiet when the Silent switch is on.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+
+            Section("Appearance & media") {
+                Toggle("Dark background for artwork tools", isOn: $preferDarkArtworkBackground)
+                    .onChange(of: preferDarkArtworkBackground) { _, _ in AppHaptics.selection() }
+                Toggle("Haptics", isOn: $hapticsEnabled)
+                    .onChange(of: hapticsEnabled) { _, value in
+                        if value { AppHaptics.success() }
+                    }
                 NavigationLink { NativeAudioConverterView() } label: {
                     Label("Audio Converter", systemImage: "waveform")
                 }
                 NavigationLink { NativeArtTrackGeneratorView() } label: {
                     Label("Art Track Generator", systemImage: "play.rectangle.fill")
                 }
-                Toggle("Dark background for artwork tools", isOn: $preferDarkArtworkBackground)
-                    .onChange(of: preferDarkArtworkBackground) { _, _ in AppHaptics.selection() }
-                Toggle("Haptics", isOn: $hapticsEnabled)
-                    .onChange(of: hapticsEnabled) { _, value in
-                        if value { AppHaptics.success() }
-                        else {
-                            let generator = UIImpactFeedbackGenerator(style: .medium)
-                            generator.prepare()
-                            generator.impactOccurred(intensity: 0.8)
-                        }
-                    }
             }
 
-            Section("Camera, Microphone & Files") {
+            Section("Camera, microphone & files") {
                 LabeledContent("Camera", value: privacy.text(for: privacy.camera))
                 if privacy.camera == .notDetermined {
                     Button("Allow camera access") {
                         AppHaptics.medium()
                         privacy.requestCamera()
                     }
+                    .accessibilityHint("Used for video calls and creator uploads you start.")
                 }
                 LabeledContent("Microphone", value: privacy.text(for: privacy.microphone))
                 if privacy.microphone == .notDetermined {
@@ -104,6 +168,7 @@ struct Settings: View {
                         AppHaptics.medium()
                         privacy.requestMicrophone()
                     }
+                    .accessibilityHint("Used for voice calls, voice notes, and recording tools.")
                 }
                 if privacy.camera == .denied || privacy.microphone == .denied {
                     Button("Open app permissions") {
@@ -111,9 +176,8 @@ struct Settings: View {
                         openSystemSettings()
                     }
                 }
-                Text("Native media tools use the iOS document picker. Website-backed tools can request camera or microphone access only from approved Mr. Blind Bandit domains.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                Text("Permissions are requested only when you start a call, voice note, or media action. Website tools request camera or microphone only on approved Mr. Blind Bandit domains.")
+                    .font(.footnote).foregroundStyle(.secondary)
             }
 
             Section("Browser") {
@@ -147,14 +211,28 @@ struct Settings: View {
                     }
                 Button("Open iOS accessibility settings") {
                     AppHaptics.light()
-                    UIApplication.shared.open(URL(string: "App-Prefs:ACCESSIBILITY") ?? URL(string: UIApplication.openSettingsURLString)!)
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url)
+                    }
                 }
-                Text("Native controls use semantic labels, Dynamic Type, system focus order, VoiceOver announcements, and standard iOS dialogs. Web screens retain their semantic accessibility tree.")
+                Text("Controls use labels, hints, values, Dynamic Type, VoiceOver announcements, and standard focus order. Auth, Connect, Listen, and musician tools are labeled for VoiceOver.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+
+            
+            Section("About Us") {
+                LabeledContent("App version", value: "1.5")
+                Link("Privacy Policy", destination: URL(string: "https://mrblindbandit.net/privacy")!)
+                // Fallback path if marketing site moves pages: https://mrblindbandit.net/legal/privacy
+                Link("Terms of Use", destination: URL(string: "https://mrblindbandit.net/terms")!)
+                // Fallback: https://mrblindbandit.net/legal/terms
+                Link("Support", destination: URL(string: "mailto:business@mrblindbandit.net")!)
+                Text("Mr. Blindbandit — music, creator tools, and studio Connect.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
 
-            Section("Privacy & Security") {
+            Section("Privacy & security") {
                 Label("Device authentication enabled", systemImage: "lock.shield.fill")
                 Button("Lock app now") {
                     AppHaptics.rigid()
@@ -169,12 +247,34 @@ struct Settings: View {
                     AppHaptics.light()
                     openSystemSettings()
                 }
+                Link("Privacy Policy", destination: URL(string: "https://mrblindbandit.net/privacy")!)
+                Link("Terms of Use", destination: URL(string: "https://mrblindbandit.net/terms/")!)
+                Text("See Privacy Policy for Clerk auth data, LiveKit call media, and push notification tokens.")
+                    .font(.footnote).foregroundStyle(.secondary)
             }
 
-            Section("App Information") {
+            Section("Advanced") {
+                NavigationLink { AdvancedSettingsView() } label: {
+                    Label("Site Keys & API", systemImage: "key.horizontal.fill")
+                }
+                Text("Public client settings stay on device. Private owner tokens use the iOS Keychain. Clerk secret keys and LiveKit API secrets never ship in the binary.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+
+            Section("Legal & compliance") {
+                LabeledContent("Export compliance", value: "HTTPS / standard encryption only")
+                LabeledContent("Sign in with Apple", value: "Enabled")
+                LabeledContent("Account deletion", value: "In-app + web")
+                Link("Privacy Policy", destination: URL(string: "https://mrblindbandit.net/privacy")!)
+                Link("Terms of Use", destination: URL(string: "https://mrblindbandit.net/terms/")!)
+            }
+
+            Section("App information") {
                 LabeledContent("Name", value: "Mr. Blind Bandit")
                 LabeledContent("Version", value: versionText)
                 LabeledContent("iOS requirement", value: "iOS 17+")
+                LabeledContent("Auth", value: "Clerk")
+                LabeledContent("Realtime", value: "LiveKit")
                 LabeledContent("Web engine", value: "Apple WebKit")
                 LabeledContent("Native media", value: "AVFoundation")
                 LabeledContent("Private token storage", value: "iOS Keychain")
@@ -189,6 +289,20 @@ struct Settings: View {
             Button("Cancel", role: .cancel) { AppHaptics.light() }
         } message: {
             Text("This removes cookies and website storage used by the in-app browser. Other devices are not affected.")
+        }
+        .confirmationDialog("Delete your Mr. Blind Bandit account?", isPresented: $confirmDeleteAccount, titleVisibility: .visible) {
+            Button("Delete account", role: .destructive) {
+                AppHaptics.heavy()
+                Task {
+                    _ = await auth.requestAccountDeletion()
+                    if let url = URL(string: "https://mrblindbandit.net/account") {
+                        await UIApplication.shared.open(url)
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) { AppHaptics.light() }
+        } message: {
+            Text("This requests permanent deletion of your account and associated data (App Store Guideline 5.1.1). You will be signed out. Confirm on the website if prompted. This cannot be undone.")
         }
         .onAppear {
             UIApplication.shared.isIdleTimerDisabled = keepScreenAwake

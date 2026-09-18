@@ -42,4 +42,13 @@ Cross-links:
 
 ---
 
+## 2026-09-18 — Mobile v1.5 release integration (ChatGPT)
+
+- Integrated the flagship 1.5 iOS + Android branch with the current `main` governance/Dependabot files without committing secrets.
+- Preserved the v1.5 CI workflows for iOS 1.5 (build 5) unsigned IPA and Android 1.5.0 (versionCode 5) debug APK.
+- PR #14 CI was green for both iOS and Android before release integration.
+- Release artifacts remain development builds: iOS unsigned IPA and Android debug APK; store signing/provisioning is separate.
+
+---
+
 *Append dated sections after substantial AI-assisted work.*

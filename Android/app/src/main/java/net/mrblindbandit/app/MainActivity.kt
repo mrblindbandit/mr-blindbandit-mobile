@@ -70,6 +70,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -91,6 +92,21 @@ import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
+
+import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Phone
+import kotlinx.coroutines.launch
+import net.mrblindbandit.app.auth.AuthGatewayScreen
+import net.mrblindbandit.app.auth.AuthState
+import net.mrblindbandit.app.auth.ClerkAuthService
+import net.mrblindbandit.app.brand.BrandProgressOverlay
+import net.mrblindbandit.app.brand.BlindbanditLogo
+import net.mrblindbandit.app.brand.PulsingBrandLogo
+import net.mrblindbandit.app.brand.SpinningBrandLogo
+import net.mrblindbandit.app.brand.WaveformLoader
+import net.mrblindbandit.app.connect.ConnectHubScreen
+import net.mrblindbandit.app.creator.NativeCreatorToolkitScreen
 
 class MainActivity : ComponentActivity() {
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
@@ -181,20 +197,24 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class AppTab(val label: String) {
-    HOME("Home"), CREATOR("Create"), WEB("Website"), MEDIA("Media"), SETTINGS("Settings")
+    HOME("Home"), CREATOR("Create"), CONNECT("Connect"), LISTEN("Listen"), MORE("More")
 }
 
 @Composable
 fun BlindbanditAndroidApp(activity: MainActivity, deepLinkState: MutableState<String?>) {
     val context = LocalContext.current
     val prefs = remember { AndroidAppPreferences(context) }
+    val auth = remember { ClerkAuthService(context) }
     var tab by rememberSaveable { mutableStateOf(AppTab.HOME) }
     var currentUrl by rememberSaveable { mutableStateOf(BuildConfig.WEB_BASE_URL + "/") }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
+    var showWeb by rememberSaveable { mutableStateOf(false) }
 
+    LaunchedEffect(Unit) { auth.configure() }
     LaunchedEffect(deepLinkState.value) {
         deepLinkState.value?.let {
             currentUrl = it
-            tab = AppTab.WEB
+            showWeb = true
             deepLinkState.value = null
         }
     }
@@ -203,47 +223,83 @@ fun BlindbanditAndroidApp(activity: MainActivity, deepLinkState: MutableState<St
         else activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
-    Scaffold(bottomBar = {
-        NavigationBar {
-            AppTab.entries.forEach { item ->
-                val icon = when (item) {
-                    AppTab.HOME -> Icons.Default.Home
-                    AppTab.CREATOR -> Icons.Default.Build
-                    AppTab.WEB -> Icons.Default.Web
-                    AppTab.MEDIA -> Icons.Default.UploadFile
-                    AppTab.SETTINGS -> Icons.Default.Settings
-                }
-                NavigationBarItem(
-                    selected = tab == item,
-                    onClick = {
-                        tab = item
-                        if (item == AppTab.WEB) currentUrl = BuildConfig.WEB_BASE_URL + "/"
-                        if (item == AppTab.MEDIA) currentUrl = BuildConfig.WEB_BASE_URL + "/media-tools/"
-                    },
-                    icon = { Icon(icon, contentDescription = item.label) },
-                    label = { Text(item.label) }
-                )
-            }
+    when (auth.state) {
+        AuthState.Unknown -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            SpinningBrandLogo(112.dp, prefs.reduceMotion)
         }
-    }) { inner ->
-        Box(Modifier.fillMaxSize().padding(inner)) {
-            when (tab) {
-                AppTab.HOME -> HomeScreen(
-                    onOpen = { currentUrl = it; tab = AppTab.WEB },
-                    onCreator = { tab = AppTab.CREATOR },
-                    onMedia = { currentUrl = BuildConfig.WEB_BASE_URL + "/media-tools/"; tab = AppTab.MEDIA },
-                    onSettings = { tab = AppTab.SETTINGS }
-                )
-                AppTab.CREATOR -> NativeCreatorToolkitScreen()
-                AppTab.WEB, AppTab.MEDIA -> BlindbanditWebView(activity, currentUrl, prefs)
-                AppTab.SETTINGS -> SettingsScreen(activity, prefs)
+        AuthState.SignedOut -> AuthGatewayScreen(auth, prefs.reduceMotion)
+        is AuthState.SignedIn -> {
+            if (showSettings) {
+                Scaffold { inner ->
+                    Box(Modifier.fillMaxSize().padding(inner)) {
+                        SettingsScreen(activity, prefs, auth, onBack = { showSettings = false })
+                    }
+                }
+            } else if (showWeb) {
+                Scaffold(topBar = {
+                    NavigationBar {
+                        NavigationBarItem(selected = false, onClick = { showWeb = false }, icon = { Text("Close") }, label = { Text("Back") })
+                    }
+                }) { inner ->
+                    Box(Modifier.fillMaxSize().padding(inner)) {
+                        BlindbanditWebView(activity, currentUrl, prefs)
+                    }
+                }
+            } else {
+                Scaffold(bottomBar = {
+                    NavigationBar {
+                        AppTab.entries.forEach { item ->
+                            val icon = when (item) {
+                                AppTab.HOME -> Icons.Default.Home
+                                AppTab.CREATOR -> Icons.Default.Build
+                                AppTab.CONNECT -> Icons.Default.Phone
+                                AppTab.LISTEN -> Icons.Default.Headphones
+                                AppTab.MORE -> Icons.Default.MoreHoriz
+                            }
+                            NavigationBarItem(
+                                selected = tab == item,
+                                onClick = { tab = item },
+                                icon = { Icon(icon, contentDescription = item.label) },
+                                label = { Text(item.label) }
+                            )
+                        }
+                    }
+                }) { inner ->
+                    Box(Modifier.fillMaxSize().padding(inner)) {
+                        when (tab) {
+                            AppTab.HOME -> HomeScreen(
+                                onOpen = { currentUrl = it; showWeb = true },
+                                onCreator = { tab = AppTab.CREATOR },
+                                onMedia = { currentUrl = BuildConfig.WEB_BASE_URL + "/media-tools/"; showWeb = true },
+                                onSettings = { showSettings = true },
+                                onConnect = { tab = AppTab.CONNECT },
+                                onListen = { tab = AppTab.LISTEN }
+                            )
+                            AppTab.CREATOR -> NativeCreatorToolkitScreen()
+                            AppTab.CONNECT -> ConnectHubScreen(prefs.reduceMotion)
+                            AppTab.LISTEN -> ListenHubScreen(onOpenSite = { currentUrl = it; showWeb = true }, prefs = prefs)
+                            AppTab.MORE -> MoreHubScreen(
+                                auth = auth,
+                                onOpenSite = { currentUrl = it; showWeb = true },
+                                onOpenSettings = { showSettings = true }
+                            )
+                        }
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun HomeScreen(onOpen: (String) -> Unit, onCreator: () -> Unit, onMedia: () -> Unit, onSettings: () -> Unit) {
+private fun HomeScreen(
+    onOpen: (String) -> Unit,
+    onCreator: () -> Unit,
+    onMedia: () -> Unit,
+    onSettings: () -> Unit,
+    onConnect: () -> Unit = {},
+    onListen: () -> Unit = {}
+) {
     val links = listOf(
         "Public website" to BuildConfig.WEB_BASE_URL + "/",
         "Profile and account" to BuildConfig.WEB_BASE_URL + "/account",
@@ -262,7 +318,9 @@ private fun HomeScreen(onOpen: (String) -> Unit, onCreator: () -> Unit, onMedia:
                 }
             }
         }
-        item { Button(onClick = onCreator, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Build, null); Spacer(Modifier.width(8.dp)); Text("Open 20-Tool Native Creator Toolkit") } }
+        item { Button(onClick = onCreator, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Build, null); Spacer(Modifier.width(8.dp)); Text("Open Creator Toolkit") } }
+        item { Button(onClick = onConnect, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Phone, null); Spacer(Modifier.width(8.dp)); Text("Calls, chat & voice notes") } }
+        item { Button(onClick = onListen, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Headphones, null); Spacer(Modifier.width(8.dp)); Text("Listen — music services") } }
         item { Button(onClick = onMedia, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.UploadFile, null); Spacer(Modifier.width(8.dp)); Text("Open Online Media Suite") } }
         items(links) { (label, url) -> Button(onClick = { onOpen(url) }, modifier = Modifier.fillMaxWidth()) { Text(label) } }
         item {
@@ -351,7 +409,7 @@ private fun BlindbanditWebView(activity: MainActivity, url: String, prefs: Andro
             Button(onClick = { webViewRef?.reload() }) { Icon(Icons.Default.Refresh, contentDescription = "Reload page") }
             Button(onClick = { runCatching { activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(webViewRef?.url ?: url))) } }) { Text("Browser") }
         }
-        if (loading) BrandedLoadingOverlay(progress, prefs.reduceMotion)
+        if (loading) BrandProgressOverlay("Loading page", progress, prefs.reduceMotion)
     }
 }
 
@@ -403,7 +461,7 @@ private fun WaveformLoader(reduceMotion: Boolean) {
 }
 
 @Composable
-private fun SettingsScreen(activity: MainActivity, prefs: AndroidAppPreferences) {
+private fun SettingsScreen(activity: MainActivity, prefs: AndroidAppPreferences, auth: ClerkAuthService? = null, onBack: (() -> Unit)? = null) {
     val context = LocalContext.current
     var firebaseStatus by remember { mutableStateOf("Checking Google push services") }
     LaunchedEffect(Unit) {
@@ -417,6 +475,29 @@ private fun SettingsScreen(activity: MainActivity, prefs: AndroidAppPreferences)
 
     LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { Text("Settings", fontSize = 30.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() }) }
+        if (onBack != null) item { Button(onClick = onBack) { Text("Back") } }
+        item { SettingsCard("Account") {
+            val scope = rememberCoroutineScope()
+            when (val s = auth?.state) {
+                is AuthState.SignedIn -> {
+                    Text("Signed in as ${s.displayName}")
+                    Text(s.email, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Button(onClick = { scope.launch { auth.signOut() } }) { Text("Sign out") }
+                }
+                else -> Text("Not signed in")
+            }
+            Button(onClick = { scope.launch { auth?.requestAccountDeletion() } }, colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) {
+                Text("Delete account")
+            }
+            Text("Account deletion meets store requirements. Confirm on mrblindbandit.net/account if prompted.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (auth?.deletionRequested == true) Text("Deletion requested on this device.")
+        } }
+        item { SettingsCard("Legal") {
+            val ctx = LocalContext.current
+            Button(onClick = { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://mrblindbandit.net/privacy/"))) }) { Text("Privacy Policy") }
+            Button(onClick = { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://mrblindbandit.net/terms/"))) }) { Text("Terms of Use") }
+            Text("Data: Clerk auth identifiers, LiveKit call media while connected, FCM push tokens, and first-party website cookies you create while signed in.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } }
         item { SettingsCard("Creator Tools") {
             Text("Twenty native offline creator utilities are available from the Create tab. They do not use WebView.")
         } }
@@ -453,7 +534,7 @@ private fun SettingsScreen(activity: MainActivity, prefs: AndroidAppPreferences)
         } }
         item { SettingsCard("About") {
             Text("Mr. Blind Bandit Android version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
-            Text("Native Jetpack Compose creator toolkit · Android System WebView · Material 3 · Firebase Cloud Messaging scaffold")
+            Text("Clerk auth · LiveKit calls · Jetpack Compose · WebView · Material 3 · FCM")
             Text("Accessibility target: TalkBack, large text, display scaling, high contrast, switch access, keyboard navigation, and system reduced-animation preferences.")
         } }
         item { Spacer(Modifier.height(24.dp)) }

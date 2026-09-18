@@ -6,6 +6,51 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 
 ---
 
+## [1.5] — 2026-09-18
+
+### Added
+
+- LiveKit Connect scaffold: real Room.connect using gitignored scaffold token (falls back to POST /v1/livekit/token when available); TEST SCAFFOLD UI labeling.
+- Full Connect DMs: 1:1 threads, text + attachments + hold-to-talk voice notes over LiveKit data packets, typing + sent/delivered/read receipts, local thread persistence.
+- Connect UI sounds + haptics (ringback, selectable ringtones including ambient pack, notification tones, call/DM event feedback) with Settings toggles and pickers.
+- Auth: Google + email primary; Sign in with Apple and Phone OTP feature-flagged off (Clerk Production: Apple/Phone disabled).
+- About Us: Privacy Policy (https://mrblindbandit.net/privacy), Terms, Support mailto:business@mrblindbandit.net, version 1.5.
+- Brand visuals: gold loader, call background, DM empty-state art; App Icon source from gold/black mark.
+
+- Clerk authentication onboarding with **Continue with Apple**, **Continue with Google**, and **Continue with email** before unlocking the main app (App Store Guideline 4.8).
+- In-app **Delete account** path with web confirmation (App Store Guideline 5.1.1).
+- LiveKit Connect hub: voice calls, video calls, messaging, and voice notes (record / play / send) on iOS and Android.
+- Listen hub with Spotify, Apple Music, Amazon Music, Audiomack, YouTube Music, SoundCloud, Tidal deep links plus first-party music pages and on-device pins.
+- More hub: profile, account, website shortcuts, legal links, share, sign out, settings.
+- Musician Studio tools: metronome, key/BPM helper, setlist notes, release checklist, lyric scratchpad, loudness tips, cover size checker, hashtag/blurb helper, capo/transpose, practice timer (Android mirrors core set).
+- Branded spinning Blindbandit Records gold logo loaders and progress overlays on both platforms.
+- Privacy Policy and Terms of Use links in auth, Settings, and More.
+- Secrets scaffolding via gitignored `Secrets.local.swift` / `Android/local.properties` with `Config/Secrets.example`.
+- Store compliance notes (export encryption, Play Data safety, Sign in with Apple entitlement).
+
+### Changed
+
+- Canonical public release version aligned to **1.5**.
+- iOS version set to **1.5 (build 5)**; Android **1.5.0 (versionCode 5)**.
+- Main navigation: **Home · Create · Connect · Listen · More** (Settings via More).
+- Camera / microphone usage strings updated for voice/video calls and voice notes; Bluetooth usage for call headsets.
+- Settings reorganized: Account, Communications, Notifications, Appearance & media, Permissions, Browser, Accessibility, Privacy & security, Legal & compliance, About.
+- CI artifact names and release documentation updated for 1.5.
+
+### Accessibility
+
+- VoiceOver labels/hints on auth, Connect, Listen, More, musician tools, and loaders.
+- TalkBack content descriptions, headings, live regions, and 48dp touch targets on new Android surfaces.
+- Reduced-motion respected by spinning / pulsing brand loaders.
+
+### Security
+
+- Clerk publishable key and LiveKit URL only in client; secret keys and LiveKit API secrets remain server-side.
+- Short-lived LiveKit tokens via secure config pattern (scaffold token gitignored).
+- First-party HTTPS URL policy unchanged for in-app WebView.
+
+---
+
 ## [1.4] — 2026-09-15
 
 ### Added

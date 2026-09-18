@@ -92,7 +92,7 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     androidTestImplementation(platform("androidx.compose:compose-bom:2024.12.01"))
 
-    implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.core:core-ktx:1.19.0")
     implementation("androidx.activity:activity-compose:1.10.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.compose.ui:ui")

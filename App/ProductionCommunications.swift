@@ -72,7 +72,11 @@ private struct APIErrorEnvelope: Decodable {
 enum BlindbanditAPI {
     private static func url(_ path: String) -> URL {
         let trimmed = path.hasPrefix("/") ? String(path.dropFirst()) : path
-        return AppConfig.apiBaseURL.appendingPathComponent(trimmed)
+        let pieces = trimmed.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        var components = URLComponents(url: AppConfig.apiBaseURL, resolvingAgainstBaseURL: false)!
+        components.path = "/" + String(pieces[0])
+        if pieces.count > 1 { components.percentEncodedQuery = String(pieces[1]) }
+        return components.url!
     }
 
     private static func request(

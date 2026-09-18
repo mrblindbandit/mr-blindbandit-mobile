@@ -69,18 +69,26 @@ struct BlindbanditApp: App {
     @StateObject private var push = PushNotifications()
     @StateObject private var privacy = PrivacyPermissions()
     @StateObject private var preferences = AppPreferences()
+    @StateObject private var testProfile = TestProfileStore()
+    @StateObject private var communications = LiveKitCommunicationManager()
     @Environment(\.scenePhase) private var phase
     @State private var showingLaunchCover = true
 
     var body: some Scene {
         WindowGroup {
             ZStack {
-                if lock.unlocked {
+                if !testProfile.isConfigured {
+                    TestProfileOnboardingView()
+                        .environmentObject(testProfile)
+                        .environmentObject(communications)
+                } else if lock.unlocked {
                     MainTabs()
                         .environmentObject(lock)
                         .environmentObject(push)
                         .environmentObject(privacy)
                         .environmentObject(preferences)
+                        .environmentObject(testProfile)
+                        .environmentObject(communications)
                         .accessibilityHidden(phase != .active)
                 } else {
                     LockedView(lock: lock)
@@ -92,11 +100,12 @@ struct BlindbanditApp: App {
                         BrandMark(size: 56)
                         Text("Mr. Blind Bandit")
                             .font(.headline)
-                        Label("App locked", systemImage: "lock.fill")
+                        Label(communications.currentCall == nil ? "App locked" : "Call in progress",
+                              systemImage: communications.currentCall == nil ? "lock.fill" : "phone.fill")
                             .foregroundStyle(.secondary)
                     }
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Mr. Blind Bandit. App locked.")
+                    .accessibilityLabel(communications.currentCall == nil ? "Mr. Blind Bandit. App locked." : "Mr. Blind Bandit. Call in progress.")
                 }
 
                 if showingLaunchCover && phase == .active {
@@ -105,17 +114,25 @@ struct BlindbanditApp: App {
                         .accessibilityHidden(true)
                 }
             }
+            .environmentObject(testProfile)
+            .environmentObject(communications)
             .task {
+                communications.attach(profile: testProfile)
+                if testProfile.isConfigured { communications.startInbox() }
+
                 try? await Task.sleep(for: .milliseconds(900))
                 withAnimation(preferences.reduceAppMotion ? nil : .easeOut(duration: 0.3)) {
                     showingLaunchCover = false
                 }
             }
             .onChange(of: phase) { _, value in
-                if value == .background { lock.lock() }
+                if value == .background, communications.currentCall == nil { lock.lock() }
                 if value == .active {
                     privacy.refresh()
                     Task { await push.refresh() }
+                    if testProfile.isConfigured && communications.inboxStatus != "Ready for calls & messages" {
+                        communications.restartInbox()
+                    }
                 }
             }
         }
@@ -136,7 +153,7 @@ struct LaunchCover: View {
                     .foregroundStyle(.white)
                 WaveformLoader(reduceMotion: reduceMotion)
                     .foregroundStyle(.yellow)
-                Text("Music · Creator Tools · Blindbandit Records")
+                Text("Calls · Messages · Music · Creator Tools")
                     .font(.headline)
                     .foregroundStyle(.white.opacity(0.78))
             }
@@ -157,7 +174,7 @@ struct LockedView: View {
                 Text("Mr. Blind Bandit")
                     .font(.largeTitle.bold())
                     .accessibilityAddTraits(.isHeader)
-                Text(lock.configured ? "Protected with your iPhone security" : "Secure your private creator workspace")
+                Text(lock.configured ? "Protected with your iPhone security" : "Secure your private communications and creator workspace")
                     .font(.headline)
                     .multilineTextAlignment(.center)
                 Text("Use Face ID, Touch ID, or your device passcode to open the app.")
@@ -181,13 +198,22 @@ struct RoutedURL: Identifiable {
 }
 
 struct MainTabs: View {
-    enum Tab: Hashable { case home, create, audio, artTrack, settings }
+    enum Tab: Hashable { case phone, messages, home, create, more }
 
+    @EnvironmentObject private var communications: LiveKitCommunicationManager
     @State private var routedURL: RoutedURL?
-    @State private var selection: Tab = .home
+    @State private var selection: Tab = .phone
 
     var body: some View {
         TabView(selection: $selection) {
+            NavigationStack { CallingHomeView() }
+                .tabItem { Label("Phone", systemImage: "phone.fill") }
+                .tag(Tab.phone)
+
+            NavigationStack { MessagesHomeView() }
+                .tabItem { Label("Messages", systemImage: "message.fill") }
+                .tag(Tab.messages)
+
             NavigationStack { ProfessionalHome() }
                 .tabItem { Label("Home", systemImage: "house.fill") }
                 .tag(Tab.home)
@@ -196,17 +222,9 @@ struct MainTabs: View {
                 .tabItem { Label("Create", systemImage: "wand.and.stars") }
                 .tag(Tab.create)
 
-            NavigationStack { NativeAudioConverterView() }
-                .tabItem { Label("Audio", systemImage: "waveform") }
-                .tag(Tab.audio)
-
-            NavigationStack { NativeArtTrackGeneratorView() }
-                .tabItem { Label("Art Track", systemImage: "play.rectangle.fill") }
-                .tag(Tab.artTrack)
-
-            NavigationStack { Settings() }
-                .tabItem { Label("Settings", systemImage: "gearshape.fill") }
-                .tag(Tab.settings)
+            NavigationStack { MoreHubView() }
+                .tabItem { Label("More", systemImage: "ellipsis.circle.fill") }
+                .tag(Tab.more)
         }
         .tint(.yellow)
         .onChange(of: selection) { _, _ in AppHaptics.selection() }
@@ -228,6 +246,10 @@ struct MainTabs: View {
                         }
                     }
             }
+        }
+        .fullScreenCover(item: $communications.currentCall) { call in
+            CallScreen(callID: call.id)
+                .environmentObject(communications)
         }
     }
 }

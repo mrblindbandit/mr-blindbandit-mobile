@@ -59,6 +59,17 @@ android {
 }
 
 
+// Clerk 1.0.33 pulls browser 1.10 which requires AGP ≥ 8.9.1; CI pins Gradle 8.9 → AGP 8.7.3.
+// Keep compileSdk 36 for Clerk AAR metadata; force SDK/AGP-safe transitive versions.
+configurations.configureEach {
+    resolutionStrategy {
+        force("androidx.browser:browser:1.8.0")
+        force("com.squareup.okhttp3:okhttp:5.3.2")
+        force("com.squareup.okhttp3:okhttp-android:5.3.2")
+        force("com.squareup.okhttp3:logging-interceptor:5.3.2")
+    }
+}
+
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     androidTestImplementation(platform("androidx.compose:compose-bom:2024.12.01"))

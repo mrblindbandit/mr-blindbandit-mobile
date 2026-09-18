@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import AuthenticationServices
+import ClerkKit
 
 enum AuthSessionState: Equatable {
     case unknown
@@ -8,7 +9,6 @@ enum AuthSessionState: Equatable {
     case signedIn(displayName: String, email: String)
 }
 
-/// Protocol so UI compiles without Clerk SPM; production wires ClerkKit behind this façade.
 @MainActor
 protocol ClerkAuthServing: AnyObject {
     var state: AuthSessionState { get }
@@ -18,9 +18,11 @@ protocol ClerkAuthServing: AnyObject {
     func refresh() async
     func signInWithEmail(email: String, password: String) async -> Bool
     func signUpWithEmail(email: String, password: String, name: String) async -> Bool
+    func verifyPendingEmail(code: String) async -> Bool
     func beginGoogleSignIn() async -> Bool
     func beginAppleSignIn(credential: ASAuthorizationAppleIDCredential) async -> Bool
     func requestAccountDeletion() async -> Bool
+    func sessionToken() async throws -> String
     func signOut() async
 }
 
@@ -32,32 +34,66 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
     @Published var emailDraft = ""
     @Published var passwordDraft = ""
     @Published var nameDraft = ""
+    @Published var verificationCodeDraft = ""
+    @Published private(set) var needsEmailVerification = false
     @Published private(set) var deletionRequested = false
 
-    private let defaultsKey = "clerkScaffoldSession"
-    private let deletionKey = "clerkDeletionRequested"
+    private var configured = false
+    private var authEventsTask: Task<Void, Never>?
+
+    deinit { authEventsTask?.cancel() }
 
     func configure() {
-        deletionRequested = UserDefaults.standard.bool(forKey: deletionKey)
+        guard !configured else { return }
         guard AppConfig.isClerkConfigured else {
             state = .signedOut
-            statusMessage = "Add your Clerk publishable key in Secrets.local.swift for production auth."
+            statusMessage = "Clerk authentication is not configured."
             return
         }
-        statusMessage = ""
-        // Production: Clerk.configure(publishableKey: AppConfig.clerkPublishableKey)
-        Task { await refresh() }
+
+        configured = true
+        _ = Clerk.configure(publishableKey: AppConfig.clerkPublishableKey)
+        authEventsTask = Task { [weak self] in
+            guard let self else { return }
+            for await _ in Clerk.shared.auth.events {
+                if Task.isCancelled { break }
+                await self.refresh()
+            }
+        }
+        Task { await refreshWhenReady() }
+    }
+
+    private func refreshWhenReady() async {
+        for _ in 0..<40 {
+            if Clerk.shared.isLoaded { break }
+            try? await Task.sleep(for: .milliseconds(150))
+        }
+        await refresh()
     }
 
     func refresh() async {
-        if let data = UserDefaults.standard.dictionary(forKey: defaultsKey),
-           let email = data["email"] as? String,
-           let name = data["name"] as? String,
-           !email.isEmpty {
-            state = .signedIn(displayName: name.isEmpty ? email : name, email: email)
-        } else {
+        guard configured else {
             state = .signedOut
+            return
         }
+        guard let user = Clerk.shared.user else {
+            state = .signedOut
+            return
+        }
+        let email = user.primaryEmailAddress?.emailAddress
+            ?? user.emailAddresses.first?.emailAddress
+            ?? ""
+        let joinedName = [user.firstName, user.lastName]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        let displayName = !joinedName.isEmpty
+            ? joinedName
+            : (user.username?.isEmpty == false ? user.username! : (email.split(separator: "@").first.map(String.init) ?? "Blindbandit User"))
+        state = .signedIn(displayName: displayName, email: email)
+        needsEmailVerification = false
+        deletionRequested = false
+        statusMessage = ""
     }
 
     func signInWithEmail(email: String, password: String) async -> Bool {
@@ -65,15 +101,20 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
         defer { busy = false }
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard trimmed.contains("@"), password.count >= 8 else {
-            statusMessage = "Enter a valid email and a password of at least 8 characters."
-            AppHaptics.warning()
-            return false
+            return fail("Enter a valid email and a password of at least 8 characters.")
         }
-        // Production: ClerkKit signIn.create(strategy: .identifier(email, password:))
-        persistSession(name: String(trimmed.split(separator: "@").first ?? "Artist"), email: trimmed)
-        statusMessage = "Signed in with email."
-        AppHaptics.success()
-        return true
+        do {
+            _ = try await Clerk.shared.auth.signInWithPassword(identifier: trimmed, password: password)
+            await refresh()
+            if case .signedIn = state {
+                statusMessage = "Signed in."
+                AppHaptics.success()
+                return true
+            }
+            return fail("Clerk requires another verification step for this account. Complete it in your account settings, then sign in again.")
+        } catch {
+            return fail(clerkMessage(error, fallback: "Clerk could not sign you in."))
+        }
     }
 
     func signUpWithEmail(email: String, password: String, name: String) async -> Bool {
@@ -81,80 +122,131 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
         defer { busy = false }
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard trimmed.contains("@"), password.count >= 8 else {
-            statusMessage = "Enter a valid email and a password of at least 8 characters."
-            AppHaptics.warning()
-            return false
+            return fail("Enter a valid email and a password of at least 8 characters.")
         }
-        let display = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        persistSession(name: display.isEmpty ? String(trimmed.split(separator: "@").first ?? "Artist") : display, email: trimmed)
-        statusMessage = "Account ready."
-        AppHaptics.success()
-        return true
+        let components = name.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: " ", maxSplits: 1).map(String.init)
+        do {
+            let signUp = try await Clerk.shared.auth.signUp(
+                emailAddress: trimmed,
+                password: password,
+                firstName: components.first,
+                lastName: components.count > 1 ? components[1] : nil
+            )
+            if signUp.createdSessionId != nil {
+                await refresh()
+                AppHaptics.success()
+                return true
+            }
+            _ = try await signUp.sendEmailCode()
+            needsEmailVerification = true
+            statusMessage = "We sent a verification code to \(trimmed). Enter it below to finish creating your account."
+            AppHaptics.success()
+            return false
+        } catch {
+            return fail(clerkMessage(error, fallback: "Clerk could not create the account."))
+        }
+    }
+
+    func verifyPendingEmail(code: String) async -> Bool {
+        busy = true
+        defer { busy = false }
+        let cleanCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanCode.isEmpty, let signUp = Clerk.shared.auth.currentSignUp else {
+            return fail("Start account creation first, then enter the email verification code.")
+        }
+        do {
+            let verified = try await signUp.verifyEmailCode(cleanCode)
+            guard verified.createdSessionId != nil else {
+                return fail("That code was accepted, but Clerk still needs another required account field.")
+            }
+            verificationCodeDraft = ""
+            needsEmailVerification = false
+            await refresh()
+            statusMessage = "Email verified. Your account is ready."
+            AppHaptics.success()
+            return true
+        } catch {
+            return fail(clerkMessage(error, fallback: "That verification code was not accepted."))
+        }
     }
 
     func beginGoogleSignIn() async -> Bool {
         busy = true
         defer { busy = false }
-        guard !AppConfig.googleOAuthClientID.isEmpty else {
-            statusMessage = "Google sign-in is unavailable until the OAuth client ID is configured."
-            AppHaptics.warning()
-            return false
+        do {
+            _ = try await Clerk.shared.auth.signInWithOAuth(provider: .google, transferable: true)
+            await refresh()
+            if case .signedIn = state {
+                statusMessage = "Signed in with Google."
+                AppHaptics.success()
+                return true
+            }
+            return fail("Google authentication completed, but Clerk did not create an active session.")
+        } catch {
+            return fail(clerkMessage(error, fallback: "Google sign-in was cancelled or failed."))
         }
-        // Production: Clerk OAuth .oauth(.google) or Google ID token → Clerk
-        persistSession(name: "Blindbandit Artist", email: "artist@mrblindbandit.net")
-        statusMessage = "Continued with Google."
-        AppHaptics.success()
-        return true
     }
 
-    /// App Store Guideline 4.8 — Sign in with Apple must be offered alongside other third-party logins.
+    /// Apple sign-in intentionally remains disabled until the owner explicitly enables it
+    /// and the corresponding Apple Developer configuration exists.
     func beginAppleSignIn(credential: ASAuthorizationAppleIDCredential) async -> Bool {
-        busy = true
-        defer { busy = false }
-        let email = credential.email
-            ?? UserDefaults.standard.string(forKey: "appleRelayEmail")
-            ?? "apple-user@privaterelay.appleid.com"
-        if let email = credential.email {
-            UserDefaults.standard.set(email, forKey: "appleRelayEmail")
-        }
-        let given = [credential.fullName?.givenName, credential.fullName?.familyName]
-            .compactMap { $0 }
-            .joined(separator: " ")
-        let name = given.isEmpty ? "Apple User" : given
-        // Production: exchange Apple identity token with Clerk (Sign in with Apple strategy)
-        persistSession(name: name, email: email)
-        statusMessage = "Continued with Apple."
-        AppHaptics.success()
-        return true
+        _ = credential
+        return fail("Sign in with Apple is not enabled for this build.")
     }
 
-    /// App Store Guideline 5.1.1(v) — account deletion must be available in-app.
+    func sessionToken() async throws -> String {
+        guard let token = try await Clerk.shared.auth.getToken(), !token.isEmpty else {
+            throw AuthServiceError.noActiveSession
+        }
+        return token
+    }
+
     func requestAccountDeletion() async -> Bool {
         busy = true
         defer { busy = false }
-        // Production: Clerk user.delete() or server endpoint that deletes Clerk user + app data.
-        UserDefaults.standard.set(true, forKey: deletionKey)
-        deletionRequested = true
-        UserDefaults.standard.removeObject(forKey: defaultsKey)
-        state = .signedOut
-        statusMessage = "Account deletion requested. We also opened the web account page to confirm."
-        AppHaptics.warning()
-        return true
+        do {
+            guard let user = Clerk.shared.user else { return fail("No signed-in Clerk account was found.") }
+            _ = try await user.delete()
+            deletionRequested = true
+            state = .signedOut
+            statusMessage = "Your Clerk account was deleted."
+            AppHaptics.warning()
+            return true
+        } catch {
+            return fail(clerkMessage(error, fallback: "The account could not be deleted."))
+        }
     }
 
     func signOut() async {
-        UserDefaults.standard.removeObject(forKey: defaultsKey)
-        state = .signedOut
-        emailDraft = ""
-        passwordDraft = ""
-        statusMessage = "Signed out."
-        AppHaptics.soft()
+        busy = true
+        defer { busy = false }
+        do {
+            try await Clerk.shared.auth.signOut()
+            state = .signedOut
+            emailDraft = ""
+            passwordDraft = ""
+            verificationCodeDraft = ""
+            needsEmailVerification = false
+            statusMessage = "Signed out."
+            AppHaptics.soft()
+        } catch {
+            _ = fail(clerkMessage(error, fallback: "Clerk could not sign you out."))
+        }
     }
 
-    private func persistSession(name: String, email: String) {
-        UserDefaults.standard.set(["name": name, "email": email], forKey: defaultsKey)
-        UserDefaults.standard.set(false, forKey: deletionKey)
-        deletionRequested = false
-        state = .signedIn(displayName: name, email: email)
+    private func fail(_ message: String) -> Bool {
+        statusMessage = message
+        AppHaptics.warning()
+        return false
     }
+
+    private func clerkMessage(_ error: Error, fallback: String) -> String {
+        let message = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        return message.isEmpty ? fallback : message
+    }
+}
+
+enum AuthServiceError: LocalizedError {
+    case noActiveSession
+    var errorDescription: String? { "Sign in with Clerk before using calls or messages." }
 }

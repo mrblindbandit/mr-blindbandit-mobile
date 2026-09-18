@@ -43,10 +43,10 @@ targets:
         INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: Allow Mr. Blindbandit to save media you explicitly export to Photos.
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: Allow Mr. Blindbandit to connect to Bluetooth audio devices during LiveKit voice and video calls.
         INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription: Allow Mr. Blindbandit to use Bluetooth headsets during calls.
-        INFOPLIST_KEY_UIBackgroundModes: [audio, voip]
+        INFOPLIST_KEY_UIBackgroundModes: [audio]
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        MARKETING_VERSION: '1.5'
-        CURRENT_PROJECT_VERSION: '5'
+        MARKETING_VERSION: '1.6'
+        CURRENT_PROJECT_VERSION: '6'
     dependencies:
       - package: LiveKitClient
         product: LiveKit

@@ -98,6 +98,46 @@ struct Settings: View {
                 }
             }
 
+            
+            Section("Sounds") {
+                Toggle("Play UI sounds", isOn: Binding(
+                    get: { CallSounds.playUISounds },
+                    set: { CallSounds.playUISounds = $0; AppHaptics.selection() }
+                ))
+                .accessibilityHint("Plays ringback, message, and call feedback sounds.")
+
+                Toggle("Haptic feedback", isOn: Binding(
+                    get: { CallHaptics.hapticsEnabled },
+                    set: { CallHaptics.hapticsEnabled = $0; if $0 { AppHaptics.success() } }
+                ))
+                .accessibilityHint("Vibration feedback for calls and messages.")
+
+                Picker("Ringtone", selection: Binding(
+                    get: { CallSounds.selectedRingtone },
+                    set: { CallSounds.selectedRingtone = $0; CallSounds.previewRingtone($0) }
+                )) {
+                    ForEach(CallSounds.Ringtone.allCases) { tone in
+                        Text(tone.title).tag(tone)
+                    }
+                }
+                .accessibilityLabel("Ringtone picker")
+
+                Picker("Notification sound", selection: Binding(
+                    get: { CallSounds.selectedNotificationTone },
+                    set: { CallSounds.selectedNotificationTone = $0; CallSounds.previewNotification($0) }
+                )) {
+                    ForEach(CallSounds.NotificationTone.allCases) { tone in
+                        Text(tone.title).tag(tone)
+                    }
+                }
+                .accessibilityLabel("Notification sound picker")
+
+                Text("Ringback plays while an outgoing call is ringing. Sounds stay quiet when the Silent switch is on.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+
             Section("Appearance & media") {
                 Toggle("Dark background for artwork tools", isOn: $preferDarkArtworkBackground)
                     .onChange(of: preferDarkArtworkBackground) { _, _ in AppHaptics.selection() }
@@ -179,6 +219,19 @@ struct Settings: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
 
+            
+            Section("About Us") {
+                LabeledContent("App version", value: "1.5")
+                Link("Privacy Policy", destination: URL(string: "https://mrblindbandit.net/privacy")!)
+                // Fallback path if marketing site moves pages: https://mrblindbandit.net/legal/privacy
+                Link("Terms of Use", destination: URL(string: "https://mrblindbandit.net/terms")!)
+                // Fallback: https://mrblindbandit.net/legal/terms
+                Link("Support", destination: URL(string: "mailto:business@mrblindbandit.net")!)
+                Text("Mr. Blindbandit — music, creator tools, and studio Connect.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Privacy & security") {
                 Label("Device authentication enabled", systemImage: "lock.shield.fill")
                 Button("Lock app now") {
@@ -194,7 +247,7 @@ struct Settings: View {
                     AppHaptics.light()
                     openSystemSettings()
                 }
-                Link("Privacy Policy", destination: URL(string: "https://mrblindbandit.net/privacy/")!)
+                Link("Privacy Policy", destination: URL(string: "https://mrblindbandit.net/privacy")!)
                 Link("Terms of Use", destination: URL(string: "https://mrblindbandit.net/terms/")!)
                 Text("See Privacy Policy for Clerk auth data, LiveKit call media, and push notification tokens.")
                     .font(.footnote).foregroundStyle(.secondary)
@@ -212,7 +265,7 @@ struct Settings: View {
                 LabeledContent("Export compliance", value: "HTTPS / standard encryption only")
                 LabeledContent("Sign in with Apple", value: "Enabled")
                 LabeledContent("Account deletion", value: "In-app + web")
-                Link("Privacy Policy", destination: URL(string: "https://mrblindbandit.net/privacy/")!)
+                Link("Privacy Policy", destination: URL(string: "https://mrblindbandit.net/privacy")!)
                 Link("Terms of Use", destination: URL(string: "https://mrblindbandit.net/terms/")!)
             }
 

@@ -1,7 +1,7 @@
 import SwiftUI
 import AuthenticationServices
 
-/// Natural consumer onboarding — Continue with Apple, Google, and email (App Store 4.8).
+/// Natural consumer onboarding — Google + email first; Apple gated (no Dev account yet).
 struct AuthGatewayView: View {
     @ObservedObject var auth: ClerkAuthService
     @EnvironmentObject private var preferences: AppPreferences
@@ -72,27 +72,7 @@ struct AuthGatewayView: View {
 
     private var landingCards: some View {
         VStack(spacing: 14) {
-            // Sign in with Apple first (Guideline 4.8 equivalent prominence)
-            SignInWithAppleButton(.continue) { request in
-                request.requestedScopes = [.fullName, .email]
-            } onCompletion: { result in
-                switch result {
-                case .success(let authResult):
-                    guard let credential = authResult.credential as? ASAuthorizationAppleIDCredential else {
-                        auth.statusMessage = "Apple sign-in did not return a usable credential."
-                        AppHaptics.warning()
-                        return
-                    }
-                    Task { _ = await auth.beginAppleSignIn(credential: credential) }
-                case .failure(let error):
-                    auth.statusMessage = "Apple sign-in cancelled or failed: \(error.localizedDescription)"
-                    AppHaptics.warning()
-                }
-            }
-            .signInWithAppleButtonStyle(.white)
-            .frame(height: 52)
-            .accessibilityLabel("Continue with Apple")
-
+            // Primary: Google + email (existing mrblindbandit.net Clerk). Apple off until Dev account.
             Button {
                 AppHaptics.medium()
                 Task { _ = await auth.beginGoogleSignIn() }
@@ -121,6 +101,34 @@ struct AuthGatewayView: View {
             .tint(.yellow)
             .disabled(auth.busy)
             .accessibilityHint("Opens email and password sign-in.")
+
+            if AppConfig.enableSignInWithApple {
+                SignInWithAppleButton(.continue) { request in
+                    request.requestedScopes = [.fullName, .email]
+                } onCompletion: { result in
+                    switch result {
+                    case .success(let authResult):
+                        guard let credential = authResult.credential as? ASAuthorizationAppleIDCredential else {
+                            auth.statusMessage = "Apple sign-in did not return a usable credential."
+                            AppHaptics.warning()
+                            return
+                        }
+                        Task { _ = await auth.beginAppleSignIn(credential: credential) }
+                    case .failure(let error):
+                        auth.statusMessage = "Apple sign-in cancelled or failed: \(error.localizedDescription)"
+                        AppHaptics.warning()
+                    }
+                }
+                .signInWithAppleButtonStyle(.white)
+                .frame(height: 52)
+                .accessibilityLabel("Continue with Apple")
+            }
+
+            if AppConfig.enablePhoneOTP {
+                Text("Phone OTP available when enabled in Clerk.")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.5))
+            }
 
             Button {
                 AppHaptics.selection()
@@ -225,7 +233,7 @@ struct AuthGatewayView: View {
                 .foregroundStyle(.white.opacity(0.45))
                 .multilineTextAlignment(.center)
             HStack(spacing: 16) {
-                Link("Privacy Policy", destination: URL(string: "https://mrblindbandit.net/privacy/")!)
+                Link("Privacy Policy", destination: URL(string: "https://mrblindbandit.net/privacy")!)
                 Link("Terms of Use", destination: URL(string: "https://mrblindbandit.net/terms/")!)
             }
             .font(.caption.weight(.semibold))

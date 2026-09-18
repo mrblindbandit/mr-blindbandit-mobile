@@ -23,3 +23,14 @@
 ## Token pattern
 Mobile requests `POST /v1/livekit/token` with Clerk session → server returns JWT for room join.
 Scaffold token in gitignored Secrets.local / local.properties for device QA only.
+
+## LiveKit token: scaffold vs production
+- **Scaffold (device QA):** gitignored `LIVEKIT_SCAFFOLD_TOKEN` / `liveKitScaffoldToken` in Secrets.local.swift or Android `local.properties`. UI shows **TEST SCAFFOLD**. Never commit tokens.
+- **Production:** `POST /v1/livekit/token` with Clerk session → short-lived room JWT. Client tries server first, then scaffold fallback.
+- Data messages use reliable packets on topic `mb.dm` (JSON envelope).
+
+## Clerk Production (mrblindbandit.net)
+- App: "mr. blindbandit - Blindbandit Records"
+- Email ON (code + link), Google OAuth ON, Apple OFF, Phone OFF
+- Hosted OAuth callback: `https://clerk.mrblindbandit.net/v1/oauth_callback`
+- Mobile deep link: `blindbandit://oauth-callback` (iOS URL scheme + Android VIEW intent-filter)

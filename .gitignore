@@ -32,3 +32,5 @@ DerivedData/
 *.aab
 *.ipa
 local.properties
+
+**/Secrets.local.swift

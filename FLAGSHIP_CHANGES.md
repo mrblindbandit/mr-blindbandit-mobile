@@ -4,6 +4,9 @@ Branch target: `flagship/1.5-clerk-livekit`
 
 ## Summary
 
+**1.5 Connect polish:** LiveKit scaffold connect (real Room.connect), full DMs (data channel + receipts/typing/voice notes/attachments), ambient SFX/haptics pickers, Clerk Google+email (Apple/Phone off), About/privacy links, store compliance notes.
+
+
 App Store / Play–ready upgrade: Clerk auth (Apple / Google / email), LiveKit voice/video/chat/voice notes, Listen music services, Musician Studio, branded gold loaders, accessibility, account deletion, privacy/terms, version **1.5 / build 5**.
 
 ## Secrets (gitignored — do not commit)
@@ -115,3 +118,17 @@ Android/settings.gradle.kts
 ### CI
 .github/workflows/android.yml
 .github/workflows/ios.yml
+
+## Connect / SFX additions
+
+App/CallSounds.swift
+App/CallHaptics.swift
+App/DirectMessaging.swift
+App/InteractiveMotion.swift
+App/Resources/Sounds/
+App/Resources/Visuals/
+Android/.../connect/CallSounds.kt
+Android/.../connect/CallHaptics.kt
+Android/.../connect/DirectMessaging.kt
+Android/app/src/main/res/raw/
+

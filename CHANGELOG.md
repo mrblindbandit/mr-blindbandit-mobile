@@ -10,6 +10,13 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 
 ### Added
 
+- LiveKit Connect scaffold: real Room.connect using gitignored scaffold token (falls back to POST /v1/livekit/token when available); TEST SCAFFOLD UI labeling.
+- Full Connect DMs: 1:1 threads, text + attachments + hold-to-talk voice notes over LiveKit data packets, typing + sent/delivered/read receipts, local thread persistence.
+- Connect UI sounds + haptics (ringback, selectable ringtones including ambient pack, notification tones, call/DM event feedback) with Settings toggles and pickers.
+- Auth: Google + email primary; Sign in with Apple and Phone OTP feature-flagged off (Clerk Production: Apple/Phone disabled).
+- About Us: Privacy Policy (https://mrblindbandit.net/privacy), Terms, Support mailto:business@mrblindbandit.net, version 1.5.
+- Brand visuals: gold loader, call background, DM empty-state art; App Icon source from gold/black mark.
+
 - Clerk authentication onboarding with **Continue with Apple**, **Continue with Google**, and **Continue with email** before unlocking the main app (App Store Guideline 4.8).
 - In-app **Delete account** path with web confirmation (App Store Guideline 5.1.1).
 - LiveKit Connect hub: voice calls, video calls, messaging, and voice notes (record / play / send) on iOS and Android.

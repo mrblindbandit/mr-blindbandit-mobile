@@ -10,6 +10,6 @@ rm -rf dist/Payload/*
 cp -R "$APP" dist/Payload/
 (
   cd dist
-  zip -qr "Mr-Blindbandit-iOS-v1.5-unsigned.ipa" Payload
+  zip -qr "Mr-Blindbandit-iOS-v1.6-unsigned.ipa" Payload
 )
-echo "Wrote dist/Mr-Blindbandit-iOS-v1.5-unsigned.ipa"
+echo "Wrote dist/Mr-Blindbandit-iOS-v1.6-unsigned.ipa"

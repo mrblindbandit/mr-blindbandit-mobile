@@ -11,7 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import io.livekit.android.LiveKit
 import io.livekit.android.room.Room
-import io.livekit.android.room.datastream.DataPublishReliability
+import io.livekit.android.room.track.DataPublishReliability
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -254,14 +254,12 @@ class LiveKitService(private val context: Context) {
     private suspend fun publishJson(obj: JSONObject): Boolean {
         val r = room ?: return false
         return try {
-            @Suppress("DEPRECATION")
-            r.localParticipant.publishData(obj.toString().toByteArray(Charsets.UTF_8), reliable = true)
-            true
+            r.localParticipant.publishData(
+                data = obj.toString().toByteArray(Charsets.UTF_8),
+                reliability = DataPublishReliability.RELIABLE,
+            ).isSuccess
         } catch (_: Exception) {
-            try {
-                r.localParticipant.publishData(obj.toString().toByteArray(Charsets.UTF_8))
-                true
-            } catch (_: Exception) { false }
+            false
         }
     }
 

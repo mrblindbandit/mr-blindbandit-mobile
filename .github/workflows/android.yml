@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 env:
-  APP_VERSION: '1.4'
+  APP_VERSION: '1.5'
 jobs:
   test-lint-build:
     runs-on: ubuntu-24.04
@@ -43,8 +43,8 @@ jobs:
           gradle-version: '8.9'
       - name: Verify Android release version
         run: |
-          grep -q 'versionCode = 4' Android/app/build.gradle.kts
-          grep -q 'versionName = "1.4.0"' Android/app/build.gradle.kts
+          grep -q 'versionCode = 5' Android/app/build.gradle.kts
+          grep -q 'versionName = "1.5.0"' Android/app/build.gradle.kts
       - name: Unit tests
         run: gradle -p Android testDebugUnitTest --stacktrace
       - name: Android lint
@@ -54,17 +54,17 @@ jobs:
       - name: Package versioned APK
         run: |
           mkdir -p dist
-          cp Android/app/build/outputs/apk/debug/app-debug.apk "dist/Mr-Blindbandit-Android-v1.4-debug.apk"
+          cp Android/app/build/outputs/apk/debug/app-debug.apk "dist/Mr-Blindbandit-Android-v1.5-debug.apk"
       - uses: actions/upload-artifact@v4
         with:
-          name: Mr-Blindbandit-Android-v1.4-debug-APK
-          path: dist/Mr-Blindbandit-Android-v1.4-debug.apk
+          name: Mr-Blindbandit-Android-v1.5-debug-APK
+          path: dist/Mr-Blindbandit-Android-v1.5-debug.apk
           if-no-files-found: error
           retention-days: 7
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: Mr-Blindbandit-Android-v1.4-lint-report
+          name: Mr-Blindbandit-Android-v1.5-lint-report
           path: Android/app/build/reports/lint-results-debug.html
           if-no-files-found: ignore
           retention-days: 7

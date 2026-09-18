@@ -55,6 +55,13 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    lint {
+        // AGP 8.7+ aborts on LintError from broken 3rd-party lint.jars; keep analysis on our sources.
+        checkDependencies = false
+        abortOnError = true
+        warningsAsErrors = false
+    }
 }
 
 kotlin {
@@ -72,6 +79,8 @@ configurations.configureEach {
         force("com.squareup.okhttp3:okhttp:5.3.2")
         force("com.squareup.okhttp3:okhttp-android:5.3.2")
         force("com.squareup.okhttp3:logging-interceptor:5.3.2")
+        // LiveKit pulls timber 4.7.0 whose lint.jar crashes AGP 8.7 LintJarApiMigration (NegativeArraySizeException).
+        force("com.jakewharton.timber:timber:5.0.1")
     }
 }
 

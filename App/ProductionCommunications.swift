@@ -119,7 +119,7 @@ enum BlindbanditAPI {
     }
 
     static func sendMessage(recipient: String, body: String) async throws -> BlindbanditMessageResponse {
-        try JSONDecoder().decode(BlindbanditMessageResponse.self, from: request(
+        try JSONDecoder().decode(BlindbanditMessageResponse.self, from: try await request(
             "v1/mobile-native/messages",
             method: "POST",
             body: ["recipient": recipient, "body": body]
@@ -127,7 +127,7 @@ enum BlindbanditAPI {
     }
 
     static func startCall(recipient: String, video: Bool) async throws -> BlindbanditCallResponse {
-        try JSONDecoder().decode(BlindbanditCallResponse.self, from: request(
+        try JSONDecoder().decode(BlindbanditCallResponse.self, from: try await request(
             "v1/mobile-native/calls",
             method: "POST",
             body: ["recipient": recipient, "kind": video ? "video" : "voice"]
@@ -136,7 +136,7 @@ enum BlindbanditAPI {
 
     static func joinCall(id: String) async throws -> BlindbanditCallResponse {
         let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
-        return try JSONDecoder().decode(BlindbanditCallResponse.self, from: request(
+        return try JSONDecoder().decode(BlindbanditCallResponse.self, from: try await request(
             "v1/social/calls/\(escaped)/join",
             method: "POST",
             body: [:]

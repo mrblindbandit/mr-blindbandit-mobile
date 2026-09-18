@@ -1,64 +1,41 @@
-# AGENTS.md
+# AGENTS.md — Blindbandit Mobile (iOS + Android)
 
-## For other AIs
+> **Other AIs:** read [`AI_CHANGELOG.md`](./AI_CHANGELOG.md) first, then this file.
 
-**Work history:** read [`AI_CHANGELOG.md`](./AI_CHANGELOG.md) first (full 2026-09-18 Blindbandit day log and ongoing AI-assisted changes).
+## Mission
 
-# AGENTS.md — Mr. Blindbandit Mobile
+You have **broad authority** to maintain this flagship iOS/Android communications + music app: Clerk auth, LiveKit calls/DMs, UI polish, accessibility (VoiceOver/TalkBack), haptics/SFX, store compliance, CI, and docs. Act like a staff mobile engineer for Blindbandit Records.
 
-Instructions for coding agents (Cursor, ChatGPT, Copilot, Claude, etc.) working in this repository.
+**Backend / website production:** **ChatGPT Sites** — https://mrblindbandit.net (API `/api/v1`).  
+Privacy: https://mrblindbandit.net/privacy
 
-## What this repo is
+## Broad access (you MAY)
 
-Native **iOS + Android** flagship apps for the Blindbandit / Mr. Blindbandit ecosystem:
+- Edit `App/` (iOS/SwiftUI) and `Android/` (Kotlin/Compose)
+- Fix CI, dependencies, LiveKit/Clerk integration issues
+- Add features that fit a flagship messenger + musician toolkit
+- Update README, governance, `AI_CHANGELOG.md`, store compliance docs
+- Keep packages aligned: Android `net.mrblindbandit.app` (and iOS bundle as configured)
 
-- iOS (SwiftUI) under `App/` — package-ish: `net.mrblindbandit.privateapp` family
-- Android (Kotlin) under `Android/` — application id: `net.mrblindbandit.app`
-- CI workflows under `.github/workflows/` (`ios.yml`, `android.yml`)
-- Flagship 1.5 work (Clerk + LiveKit + DMs/voice notes) lands via PR [#14](https://github.com/mrblindbandit/mr-blindbandit-mobile/pull/14) on branch `flagship/1.5-clerk-livekit`
+## Hard rails (you MUST NOT)
 
-## Production host (critical)
+1. **Never commit secrets** — `Secrets.local.swift`, `local.properties` values, API keys, google-services with private keys, `.p8`, service accounts
+2. **Never enable Sign in with Apple** unless the owner explicitly asks (no Apple Developer yet historically)
+3. **Never strip accessibility** or ship beta-looking broken auth flows
+4. **Never force-push `main`** or rewrite published release history carelessly
+5. **Never paste production secrets** into Issues/PRs/chat
+6. Breaking store policy (privacy nutrition, permissions without purpose) requires human confirmation
 
-Backend / website APIs run on **ChatGPT Sites (OpenAI Sites)** at **https://mrblindbandit.net** — **not** “hosted on Cloudflare” as the product host.
+## Quality bar
 
-- Privacy: https://mrblindbandit.net/privacy
-- Terms / legal: https://mrblindbandit.net/ (legal pages)
-- GitHub Pages (`https://mrblindbandit.github.io/`) is a **static mirror** only — no Worker/D1/Clerk runtime there
+- Flagship polish: no “beta” feel; branded loaders/visuals when touching UI
+- Calls/DMs must remain testable (receipts, typing, voice notes patterns)
+- Prefer fixing CI over disabling checks long-term
+- Document env/setup in example files only
 
-## Related repos
+## Related
 
-| Repo | Role |
-|---|---|
-| `mrblindbandit/mr-blindbandit-mobile` | This repo (iOS + Android) |
-| `mrblindbandit/mr-blindbandit-website` | Website + Worker/API + D1 source |
-| `mrblindbandit/mrblindbandit.github.io` | Static Pages mirror |
-| `mrblindbandit/mrblindbandit` | GitHub profile README |
+- Website: `mrblindbandit/mr-blindbandit-website`
+- Pages mirror: `mrblindbandit/mrblindbandit.github.io`
 
-## Auth & integrations
-
-- **Clerk**: email + Google on; **Apple Sign In off** for now (no Apple Developer account yet — keep feature-flagged off)
-- **LiveKit**: voice/video/chat/voice notes — tokens minted by website Worker, never hardcode secrets in the app
-- **Push**: APNs (iOS) + FCM (Android) scaffolds — production credentials stay server-side / CI secrets
-- Publishable Clerk keys only in-app; secrets in gitignored local files (`Secrets.local.swift`, `local.properties`, etc.)
-
-## Hard rules
-
-1. Never commit secrets (Clerk `sk_`, LiveKit API secrets, PEMs, `google-services.json` with private keys, signing keystores)
-2. Do not break existing CI workflows unless intentionally updating them
-3. Prefer additive, reviewable changes; keep accessibility (VoiceOver / TalkBack) intact
-4. Link privacy/terms to `mrblindbandit.net` — do not invent alternate legal URLs
-5. Prefer updating `AI_CHANGELOG.md` when you make substantial AI-assisted changes
-6. If OAuth rejects workflow-scope pushes, put YAML under `docs/github-workflows/` instead of forcing `.github/workflows/`
-
-## Read next
-
-- `README.md` — overview + release table
-- `RELEASING.md` — version discipline
-- `CHANGELOG.md` — shipped history
-- `AI_CHANGELOG.md` — AI-assisted change log
-- `SECURITY.md` — vulnerability reporting
-- Flagship notes (when present on branch): `FLAGSHIP_CHANGES.md`, `Config/STORE_COMPLIANCE.md`, `Config/INTEGRATION_NOTES.md`
-
-## Contact
-
-business@mrblindbandit.net
+Contact: business@mrblindbandit.net

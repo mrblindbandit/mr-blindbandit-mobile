@@ -1,29 +1,45 @@
-# AI_CHANGELOG.md — Mr. Blindbandit Mobile
+# AI_CHANGELOG.md
 
-Machine-readable history of **AI-assisted** changes to this repository. Update when agents make substantial changes.
+> **For other AIs:** this is the work-history file. Also read `AGENTS.md`. Never commit secrets.
 
-## 2026-09-18
-
-### Governance & professionalism
-- Added full open-source governance suite: `LICENSE`, `SECURITY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `.github/CODEOWNERS`, issue templates, PR template
-- Added `AGENTS.md` + this `AI_CHANGELOG.md` for coding-agent context
-- Repo topics/description/homepage set via `gh repo edit`
-- README professionalism pass: flagship Clerk/LiveKit framing, ChatGPT Sites API host, privacy URL, package IDs
-
-### Flagship 1.5 (PR #14 — `flagship/1.5-clerk-livekit`)
-- Clerk auth (Google + email; Apple/Phone off) with store compliance (account deletion, privacy/terms links)
-- LiveKit voice & video calls, Connect hub
-- Direct messages: data channel, receipts, typing, voice notes, attachments
-- Ambient SFX + haptics pickers
-- Listen music services hub + Musician Studio / creator tools polish
-- CI fixes (Android AGP/lint/Timber, JVM unit-test URI policy, LiveKit publishData API, iOS/Android workflow alignment)
-- Store readiness docs (`Config/STORE_COMPLIANCE.md`, integration notes)
-
-### Earlier 2026-09 AI-assisted phases
-- Cross-platform creator suite (v1.4): native media tools, accessibility polish, CI unsigned IPA / debug APK artifacts
-- Professional README + releasing discipline (`RELEASING.md`)
-- Dependabot for Gradle and GitHub Actions
+Cross-links:
+- Website: https://github.com/mrblindbandit/mr-blindbandit-website/blob/main/AI_CHANGELOG.md
+- Mobile: https://github.com/mrblindbandit/mr-blindbandit-mobile/blob/main/AI_CHANGELOG.md
+- Bio/profile: https://github.com/mrblindbandit/mrblindbandit/blob/main/AI_CHANGELOG.md
+- Pages: https://github.com/mrblindbandit/mrblindbandit.github.io/blob/main/AI_CHANGELOG.md
 
 ---
 
-*Agents: append dated sections; never paste secret values. Point to commits/PRs when known.*
+## 2026-09-18 — Full Blindbandit GitHub / product day (Grok Bot)
+
+### YouTube (@MrBlindbandit)
+- Overnight SEO, cinematic thumbs, playlists, channel settings, end screens/cards
+- Viral Short (Runway stills + Clairvoyant Castle + SFX) uploaded; MP4 to business@mrblindbandit.net
+
+### GitHub account
+- Login as mrblindbandit via Google; Cursor SCM connected
+- Vulnerability alerts + automated security fixes enabled on all four repos
+- Marketplace app install (e.g. Renovate) **blocked by GitHub sudo-mode 2FA** — pending Mobile approval
+
+### Mobile (`mr-blindbandit-mobile`)
+- Flagship iOS+Android: Clerk (email+Google; Apple off) + LiveKit calls/DMs
+- DMs: attachments, hold voice notes, receipts, typing; SFX/haptics/visuals
+- Privacy → mrblindbandit.net/privacy; PR #14 / v1.5 CI hardening
+
+### Website (`mr-blindbandit-website`) — production = **ChatGPT Sites** (mrblindbandit.net)
+- Social `/mobile`, Label Portal/Social Admin, API `/api/v1`, LiveKit, push wiring
+- Migrations **0007** + **0008**; legal master package; thin shells → 0
+- Public repo + Pages mirror https://mrblindbandit.github.io/
+- Governance suite + AGENTS.md / AI_CHANGELOG.md / CI workflows
+- Drive zip after quota fix
+
+### Bio repo (`mrblindbandit`) + Pages (`mrblindbandit.github.io`)
+- Professionalization, AGENTS.md, AI_CHANGELOG.md, topics/security alerts
+
+### Still pending often
+- FCM service-account JSON + APNs on ChatGPT Sites secrets
+- Marketplace apps after user completes GitHub Mobile sudo 2FA
+
+---
+
+*Append dated sections after substantial AI-assisted work.*

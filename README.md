@@ -16,7 +16,29 @@ Mr. Blindbandit Mobile is an accessibility-first creator platform for iOS and An
 
 **Repository:** [`mrblindbandit/mr-blindbandit-mobile`](https://github.com/mrblindbandit/mr-blindbandit-mobile)
 
+[![Website API](https://img.shields.io/badge/API_host-ChatGPT_Sites-111111?style=for-the-badge)](https://mrblindbandit.net)
+[![Privacy](https://img.shields.io/badge/Privacy-mrblindbandit.net%2Fprivacy-111111?style=for-the-badge)](https://mrblindbandit.net/privacy)
+[![Flagship](https://img.shields.io/badge/Flagship_1.5-PR_%2314_Clerk%2BLiveKit-111111?style=for-the-badge)](https://github.com/mrblindbandit/mr-blindbandit-mobile/pull/14)
+
 </div>
+
+---
+
+## Flagship direction (1.5)
+
+**Main** currently tracks the **1.4** creator-suite baseline. The store-ready **1.5** flagship (Clerk + LiveKit + DMs/voice notes + store compliance) is developed on [`flagship/1.5-clerk-livekit`](https://github.com/mrblindbandit/mr-blindbandit-mobile/tree/flagship/1.5-clerk-livekit) via [PR #14](https://github.com/mrblindbandit/mr-blindbandit-mobile/pull/14).
+
+| Item | Detail |
+|---|---|
+| Auth | Clerk — **Google + email** (Sign in with Apple **off** until Apple Developer is available) |
+| Realtime | LiveKit voice/video, chat, voice notes (tokens from website Worker) |
+| API / web host | **ChatGPT Sites** → https://mrblindbandit.net (not Cloudflare-as-product-host) |
+| Privacy | https://mrblindbandit.net/privacy |
+| iOS bundle | `net.mrblindbandit.privateapp` family |
+| Android applicationId | `net.mrblindbandit.app` |
+| Static web mirror | https://mrblindbandit.github.io/ (HTML only) |
+
+Agents: see **[AGENTS.md](AGENTS.md)** and **[AI_CHANGELOG.md](AI_CHANGELOG.md)**.
 
 ---
 
@@ -348,6 +370,14 @@ Do not commit private signing keys, reusable backend secrets, APNs keys, Firebas
 
 Mr. Blindbandit is an artist, creator, and platform project spanning music, creator tools, accessibility-focused technology, community features, and Blindbandit Records.
 
-**Website:** https://mrblindbandit.net
+**Production website (ChatGPT Sites):** https://mrblindbandit.net
+
+**Privacy:** https://mrblindbandit.net/privacy
+
+**Static Pages mirror:** https://mrblindbandit.github.io/
+
+**Website source:** https://github.com/mrblindbandit/mr-blindbandit-website
 
 **GitHub:** https://github.com/mrblindbandit
+
+**Governance:** [LICENSE](LICENSE) · [SECURITY](SECURITY.md) · [CONTRIBUTING](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [AGENTS](AGENTS.md)

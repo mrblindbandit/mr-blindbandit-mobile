@@ -1,0 +1,34 @@
+Blindbandit Records Mobile License (Proprietary)
+
+Copyright (c) 2024–2026 Blindbandit Records / Mr. Blindbandit.
+All rights reserved.
+
+This repository and its contents — including but not limited to source code,
+iOS and Android application code, design assets, branding, documentation,
+and configuration — are the exclusive property of Blindbandit Records /
+Mr. Blindbandit unless a file explicitly states otherwise.
+
+PERMISSIONS
+You may view this public repository for personal, non-commercial reference.
+You may fork it on GitHub solely for the purpose of proposing improvements
+back to the upstream project via pull request, if contributions are accepted.
+
+RESTRICTIONS
+Without prior written permission from Blindbandit Records, you may not:
+  • use the Blindbandit name, logos, artist likeness, or brand assets commercially
+  • publish a competing or public copy of these apps as your own product
+  • redistribute substantial portions of this codebase outside GitHub forks
+  • remove or obscure copyright, attribution, or license notices
+  • use production secrets, API keys, signing credentials, or certificates
+    belonging to Blindbandit
+
+THIRD-PARTY COMPONENTS
+Open-source dependencies retain their own licenses (CocoaPods/SPM/Gradle notices).
+Those licenses are not overridden by this file.
+
+TRADEMARKS
+“Blindbandit,” “Blindbandit Records,” “Mr. Blindbandit,” and related marks
+are trademarks of their respective owners.
+
+CONTACT
+Licensing and brand inquiries: business@mrblindbandit.net

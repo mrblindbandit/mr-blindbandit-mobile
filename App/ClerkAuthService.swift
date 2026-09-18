@@ -187,11 +187,26 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
         }
     }
 
-    /// Apple sign-in intentionally remains disabled until the owner explicitly enables it
-    /// and the corresponding Apple Developer configuration exists.
     func beginAppleSignIn(credential: ASAuthorizationAppleIDCredential) async -> Bool {
-        _ = credential
-        return fail("Sign in with Apple is not enabled for this build.")
+        busy = true
+        defer { busy = false }
+        guard let tokenData = credential.identityToken,
+              let token = String(data: tokenData, encoding: .utf8),
+              !token.isEmpty else {
+            return fail("Apple did not return an identity token. Please try again.")
+        }
+        do {
+            _ = try await Clerk.shared.auth.signInWithIdToken(token, provider: .apple, transferable: true)
+            await refresh()
+            if case .signedIn = state {
+                statusMessage = "Signed in with Apple."
+                AppHaptics.success()
+                return true
+            }
+            return fail("Apple authentication completed, but Clerk did not create an active session.")
+        } catch {
+            return fail(clerkMessage(error, fallback: "Sign in with Apple was cancelled or failed."))
+        }
     }
 
     func sessionToken() async throws -> String {

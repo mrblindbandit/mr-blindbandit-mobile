@@ -64,11 +64,28 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
     }
 
     private func refreshWhenReady() async {
-        for _ in 0..<40 {
-            if Clerk.shared.isLoaded { break }
-            try? await Task.sleep(for: .milliseconds(150))
-        }
+        _ = await waitUntilClerkIsReady()
         await refresh()
+    }
+
+    /// Clerk.configure() starts SDK loading asynchronously. Authentication can be tapped
+    /// before that work finishes, especially on a cold launch or slower connection.
+    /// Gate every interactive auth action on SDK readiness instead of sending requests
+    /// against a client that has not finished loading.
+    private func waitUntilClerkIsReady(timeoutAttempts: Int = 80) async -> Bool {
+        if !configured { configure() }
+        guard configured else { return false }
+        if Clerk.shared.isLoaded { return true }
+
+        statusMessage = "Connecting securely…"
+        for _ in 0..<timeoutAttempts {
+            if Clerk.shared.isLoaded {
+                statusMessage = ""
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(125))
+        }
+        return fail("Authentication is taking too long to start. Check your connection and try again.")
     }
 
     func refresh() async {
@@ -99,6 +116,7 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
     func signInWithEmail(email: String, password: String) async -> Bool {
         busy = true
         defer { busy = false }
+        guard await waitUntilClerkIsReady() else { return false }
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard trimmed.contains("@"), password.count >= 8 else {
             return fail("Enter a valid email and a password of at least 8 characters.")
@@ -120,6 +138,7 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
     func signUpWithEmail(email: String, password: String, name: String) async -> Bool {
         busy = true
         defer { busy = false }
+        guard await waitUntilClerkIsReady() else { return false }
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard trimmed.contains("@"), password.count >= 8 else {
             return fail("Enter a valid email and a password of at least 8 characters.")
@@ -150,6 +169,7 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
     func verifyPendingEmail(code: String) async -> Bool {
         busy = true
         defer { busy = false }
+        guard await waitUntilClerkIsReady() else { return false }
         let cleanCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanCode.isEmpty, let signUp = Clerk.shared.auth.currentSignUp else {
             return fail("Start account creation first, then enter the email verification code.")
@@ -173,6 +193,7 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
     func beginGoogleSignIn() async -> Bool {
         busy = true
         defer { busy = false }
+        guard await waitUntilClerkIsReady() else { return false }
         do {
             _ = try await Clerk.shared.auth.signInWithOAuth(provider: .google, transferable: true)
             await refresh()
@@ -190,6 +211,7 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
     func beginAppleSignIn(credential: ASAuthorizationAppleIDCredential) async -> Bool {
         busy = true
         defer { busy = false }
+        guard await waitUntilClerkIsReady() else { return false }
         guard let tokenData = credential.identityToken,
               let token = String(data: tokenData, encoding: .utf8),
               !token.isEmpty else {
@@ -210,6 +232,7 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
     }
 
     func sessionToken() async throws -> String {
+        guard await waitUntilClerkIsReady() else { throw AuthServiceError.sdkNotReady }
         guard let token = try await Clerk.shared.auth.getToken(), !token.isEmpty else {
             throw AuthServiceError.noActiveSession
         }
@@ -219,6 +242,7 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
     func requestAccountDeletion() async -> Bool {
         busy = true
         defer { busy = false }
+        guard await waitUntilClerkIsReady() else { return false }
         do {
             guard let user = Clerk.shared.user else { return fail("No signed-in Clerk account was found.") }
             try await AccountDeletionService.deleteBlindbanditData()
@@ -236,6 +260,7 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
     func signOut() async {
         busy = true
         defer { busy = false }
+        guard await waitUntilClerkIsReady() else { return }
         do {
             try await Clerk.shared.auth.signOut()
             state = .signedOut
@@ -264,5 +289,12 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
 
 enum AuthServiceError: LocalizedError {
     case noActiveSession
-    var errorDescription: String? { "Sign in with Clerk before using calls or messages." }
+    case sdkNotReady
+
+    var errorDescription: String? {
+        switch self {
+        case .noActiveSession: "Sign in with Clerk before using calls or messages."
+        case .sdkNotReady: "Authentication is still starting. Please try again."
+        }
+    }
 }

@@ -24,7 +24,8 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
     private var progressObservation: NSKeyValueObservation?
 
     convenience init(path: String) {
-        self.init(url: URL(string: "https://mrblindbandit.net" + path)!)
+        let normalizedPath = path.hasPrefix("/") ? path : "/" + path
+        self.init(url: AppConfig.webBaseURL.appending(path: String(normalizedPath.dropFirst())))
     }
 
     init(url: URL) {
@@ -117,7 +118,19 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let url = action.request.url else { decisionHandler(.cancel); return }
-        if action.targetFrame?.isMainFrame == false || Self.isFirstPartyURL(url) {
+        if action.targetFrame?.isMainFrame == false {
+            if Self.isFirstPartyURL(url) {
+                decisionHandler(.allow)
+            } else {
+                decisionHandler(.cancel)
+                if ["https", "mailto", "tel"].contains(url.scheme?.lowercased() ?? "") {
+                    AppHaptics.light()
+                    UIApplication.shared.open(url)
+                }
+            }
+            return
+        }
+        if Self.isFirstPartyURL(url) {
             decisionHandler(.allow)
             return
         }

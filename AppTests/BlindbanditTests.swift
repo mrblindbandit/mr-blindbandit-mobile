@@ -21,6 +21,22 @@ final class BlindbanditTests: XCTestCase {
         XCTAssertFalse(Browser.isFirstPartyURL(try XCTUnwrap(URL(string: "https://example.com/"))))
         XCTAssertFalse(Browser.isFirstPartyURL(try XCTUnwrap(URL(string: "http://mrblindbandit.net/"))))
         XCTAssertFalse(Browser.isFirstPartyURL(try XCTUnwrap(URL(string: "https://mrblindbandit.net.example.com/"))))
+        XCTAssertFalse(Browser.isFirstPartyURL(try XCTUnwrap(URL(string: "javascript:alert(1)"))))
+    }
+
+    func testAPIURLBuilderPreservesPathAndQuery() throws {
+        let url = try BlindbanditAPI.url("/v1/social/messages?limit=100")
+        XCTAssertEqual(url.scheme, "https")
+        XCTAssertEqual(url.host, "api.mrblindbandit.net")
+        XCTAssertEqual(url.path, "/v1/social/messages")
+        XCTAssertEqual(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first?.value, "100")
+    }
+
+    func testAPIURLBuilderNormalizesLeadingSlash() throws {
+        XCTAssertEqual(
+            try BlindbanditAPI.url("v1/social/me").absoluteString,
+            "https://api.mrblindbandit.net/v1/social/me"
+        )
     }
 
     func testAppVersionIsConfigured() {

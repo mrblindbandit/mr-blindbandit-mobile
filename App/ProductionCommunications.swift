@@ -70,13 +70,18 @@ private struct APIErrorEnvelope: Decodable {
 
 @MainActor
 enum BlindbanditAPI {
-    private static func url(_ path: String) -> URL {
+    static func url(_ path: String) throws -> URL {
         let trimmed = path.hasPrefix("/") ? String(path.dropFirst()) : path
         let pieces = trimmed.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
-        var components = URLComponents(url: AppConfig.apiBaseURL, resolvingAgainstBaseURL: false)!
+        guard var components = URLComponents(url: AppConfig.apiBaseURL, resolvingAgainstBaseURL: false) else {
+            throw CommunicationsError.invalidURL
+        }
         components.path = "/" + String(pieces[0])
         if pieces.count > 1 { components.percentEncodedQuery = String(pieces[1]) }
-        return components.url!
+        guard let url = components.url, url.scheme?.lowercased() == "https" else {
+            throw CommunicationsError.invalidURL
+        }
+        return url
     }
 
     private static func request(
@@ -87,7 +92,7 @@ enum BlindbanditAPI {
         guard let token = try await Clerk.shared.auth.getToken(), !token.isEmpty else {
             throw AuthServiceError.noActiveSession
         }
-        var request = URLRequest(url: url(path))
+        var request = URLRequest(url: try url(path))
         request.httpMethod = method
         request.timeoutInterval = 20
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -176,12 +181,14 @@ enum BlindbanditAPI {
 
 enum CommunicationsError: LocalizedError {
     case invalidResponse
+    case invalidURL
     case server(String)
     case liveKitURLMissing
 
     var errorDescription: String? {
         switch self {
         case .invalidResponse: return "The Blindbandit API returned an invalid response."
+        case .invalidURL: return "The Blindbandit API address is invalid or insecure."
         case .server(let message): return message
         case .liveKitURLMissing: return "The server did not return a LiveKit URL."
         }

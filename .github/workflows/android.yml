@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Placeholder content check
         run: bash scripts/check-placeholders.sh
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -102,7 +102,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'

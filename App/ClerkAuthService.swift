@@ -47,7 +47,7 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
         guard !configured else { return }
         guard AppConfig.isClerkConfigured else {
             state = .signedOut
-            statusMessage = "Clerk authentication is not configured."
+            statusMessage = "Sign-in is temporarily unavailable. Please update the app or try again later."
             return
         }
 
@@ -129,9 +129,9 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
                 AppHaptics.success()
                 return true
             }
-            return fail("Clerk requires another verification step for this account. Complete it in your account settings, then sign in again.")
+            return fail("This account needs one more verification step. Finish it at mrblindbandit.net/account, then sign in again.")
         } catch {
-            return fail(clerkMessage(error, fallback: "Clerk could not sign you in."))
+            return fail(clerkMessage(error, fallback: "We could not sign you in. Check your email and password and try again."))
         }
     }
 
@@ -162,7 +162,7 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
             AppHaptics.success()
             return false
         } catch {
-            return fail(clerkMessage(error, fallback: "Clerk could not create the account."))
+            return fail(clerkMessage(error, fallback: "We could not create the account. Please try again."))
         }
     }
 
@@ -177,7 +177,7 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
         do {
             let verified = try await signUp.verifyEmailCode(cleanCode)
             guard verified.createdSessionId != nil else {
-                return fail("That code was accepted, but Clerk still needs another required account field.")
+                return fail("That code was accepted, but your account needs one more detail. Finish it at mrblindbandit.net/account.")
             }
             verificationCodeDraft = ""
             needsEmailVerification = false
@@ -202,7 +202,7 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
                 AppHaptics.success()
                 return true
             }
-            return fail("Google authentication completed, but Clerk did not create an active session.")
+            return fail("Google sign-in was cancelled or did not finish. Please try again.")
         } catch {
             return fail(clerkMessage(error, fallback: "Google sign-in was cancelled or failed."))
         }
@@ -225,7 +225,7 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
                 AppHaptics.success()
                 return true
             }
-            return fail("Apple authentication completed, but Clerk did not create an active session.")
+            return fail("Sign in with Apple was cancelled or did not finish. Please try again.")
         } catch {
             return fail(clerkMessage(error, fallback: "Sign in with Apple was cancelled or failed."))
         }
@@ -244,16 +244,18 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
         defer { busy = false }
         guard await waitUntilClerkIsReady() else { return false }
         do {
-            guard let user = Clerk.shared.user else { return fail("No signed-in Clerk account was found.") }
+            guard let user = Clerk.shared.user else { return fail("You are not signed in. Sign in and try again.") }
             try await AccountDeletionService.deleteBlindbanditData()
             _ = try await user.delete()
             deletionRequested = true
             state = .signedOut
+            LocalDataEraser.eraseAll()
             statusMessage = "Your Blindbandit account and associated app data were deleted."
             AppHaptics.warning()
             return true
         } catch {
-            return fail(clerkMessage(error, fallback: "The account could not be deleted. No partial deletion was reported as complete."))
+            let reason = clerkMessage(error, fallback: "The account could not be deleted.")
+            return fail("\(reason) For your security, deleting an account may require a recent sign-in: sign out, sign back in, and try again. You can also request deletion at mrblindbandit.net/account/delete.")
         }
     }
 
@@ -271,7 +273,7 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
             statusMessage = "Signed out."
             AppHaptics.soft()
         } catch {
-            _ = fail(clerkMessage(error, fallback: "Clerk could not sign you out."))
+            _ = fail(clerkMessage(error, fallback: "We could not sign you out. Please try again."))
         }
     }
 
@@ -293,7 +295,7 @@ enum AuthServiceError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .noActiveSession: "Sign in with Clerk before using calls or messages."
+        case .noActiveSession: "Sign in to use calls and messages."
         case .sdkNotReady: "Authentication is still starting. Please try again."
         }
     }

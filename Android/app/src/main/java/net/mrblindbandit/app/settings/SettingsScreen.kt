@@ -121,8 +121,7 @@ private fun SettingsRoot(
     var confirmDelete by remember { mutableStateOf(false) }
     var confirmSignOut by remember { mutableStateOf(false) }
     var deleteConfirmText by remember { mutableStateOf("") }
-    val notificationsAllowed = NotificationManagerCompat.from(context).areNotificationsEnabled() &&
-        (Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
+    val notificationsAllowed = net.mrblindbandit.app.rememberNotificationsEnabled()
 
     LazyColumn(
         modifier.fillMaxSize().padding(horizontal = Spacing.md),

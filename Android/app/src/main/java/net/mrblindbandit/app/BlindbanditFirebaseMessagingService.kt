@@ -24,8 +24,8 @@ class BlindbanditFirebaseMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
         val prefs = getSharedPreferences(AndroidAppPreferences.FILE, MODE_PRIVATE)
-        val kind = message.data["type"].orEmpty()
-        val isCall = kind.contains("call")
+        val kind = (message.data["type"] ?: message.data["category"]).orEmpty()
+        val isCall = kind.contains("call") || message.data["deep_link"].orEmpty().startsWith("/mobile/calls")
         if (isCall && !prefs.getBoolean("notifyCalls", true)) return
         if (!isCall && !prefs.getBoolean("notifyMessages", true)) return
 

@@ -11,24 +11,38 @@ final class DeviceLock: ObservableObject {
     private var context: LAContext?
 
     func lock() {
-        AppHaptics.soft()
+        guard isRequired else { return }
         unlocked = false
+    }
+
+    /// The lock is a user setting (on by default). When the device has no passcode at all there is
+    /// nothing to verify against, so the app opens rather than trapping the person on this screen.
+    var isRequired: Bool {
+        UserDefaults.standard.object(forKey: SettingsKey.requireDeviceUnlock) as? Bool ?? true
     }
 
     func unlock() {
         guard !busy else { return }
+        guard isRequired else {
+            unlocked = true
+            return
+        }
         AppHaptics.medium()
         let ctx = LAContext()
         var error: NSError?
         guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
-            message = "Set up Face ID, Touch ID, or a device passcode in iPhone Settings, then try again."
+            if let code = error.map({ LAError.Code(rawValue: $0.code) }), code == .passcodeNotSet {
+                unlocked = true
+                return
+            }
+            message = "Face ID, Touch ID, or your passcode is not available right now. Check iPhone Settings, then try again."
             AppHaptics.error()
             return
         }
         busy = true
         context = ctx
         message = ""
-        ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock Mr. Blind Bandit") { success, _ in
+        ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock Mr. Blindbandit") { success, _ in
             Task { @MainActor in
                 self.busy = false
                 self.context = nil
@@ -62,6 +76,12 @@ final class AppPreferences: ObservableObject {
     }
 }
 
+@MainActor
+final class TabRouter: ObservableObject {
+    enum Tab: Hashable { case home, create, connect, listen, more }
+    @Published var selection: Tab = .home
+}
+
 @main
 struct BlindbanditApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -70,7 +90,12 @@ struct BlindbanditApp: App {
     @StateObject private var privacy = PrivacyPermissions()
     @StateObject private var preferences = AppPreferences()
     @StateObject private var auth = ClerkAuthService()
+    @StateObject private var communications = ProductionCommunicationsService()
+    @StateObject private var router = TabRouter()
     @Environment(\.scenePhase) private var phase
+    @AppStorage(SettingsKey.appearance) private var appearance = AppAppearance.system.rawValue
+    @AppStorage(SettingsKey.highContrast) private var highContrast = false
+    @AppStorage(SettingsKey.keepScreenAwake) private var keepScreenAwake = false
     @State private var showingLaunchCover = true
 
     var body: some Scene {
@@ -82,35 +107,31 @@ struct BlindbanditApp: App {
                         Color.black.ignoresSafeArea()
                         SpinningBrandLogo(size: 112, reduceMotion: preferences.reduceAppMotion)
                     }
-                    .accessibilityLabel("Starting Mr. Blind Bandit")
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Starting Mr. Blindbandit")
                 case .signedOut:
                     AuthGatewayView(auth: auth)
                         .environmentObject(preferences)
                 case .signedIn:
-                    if lock.unlocked {
+                    if lock.unlocked || !lock.isRequired {
                         MainTabs()
-                            .environmentObject(lock)
-                            .environmentObject(push)
-                            .environmentObject(privacy)
-                            .environmentObject(preferences)
-                            .environmentObject(auth)
-                            .accessibilityHidden(phase != .active)
+                            .accessibilityHidden(phase != .active && lock.isRequired)
                     } else {
                         LockedView(lock: lock)
                     }
                 }
 
-                if phase != .active, case .signedIn = auth.state {
+                if phase != .active, lock.isRequired, case .signedIn = auth.state {
                     Color(uiColor: .systemBackground).ignoresSafeArea()
                     VStack(spacing: 12) {
                         BlindbanditLogoImage(size: 56)
-                        Text("Mr. Blind Bandit")
+                        Text("Mr. Blindbandit")
                             .font(.headline)
                         Label("App locked", systemImage: "lock.fill")
                             .foregroundStyle(.secondary)
                     }
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Mr. Blind Bandit. App locked.")
+                    .accessibilityLabel("Mr. Blindbandit. App locked.")
                 }
 
                 if showingLaunchCover && phase == .active {
@@ -119,11 +140,19 @@ struct BlindbanditApp: App {
                         .accessibilityHidden(true)
                 }
             }
+            .environmentObject(lock)
+            .environmentObject(push)
+            .environmentObject(privacy)
+            .environmentObject(preferences)
+            .environmentObject(auth)
+            .environmentObject(communications)
+            .environmentObject(router)
+            .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
+            .tint(highContrast ? Color.primary : Brand.gold)
             .task {
                 auth.configure()
-                try? await Task.sleep(for: .milliseconds(450))
-                await privacy.requestInitialPermissionsIfNeeded(push: push)
-                try? await Task.sleep(for: .milliseconds(450))
+                UIApplication.shared.isIdleTimerDisabled = keepScreenAwake
+                try? await Task.sleep(for: .milliseconds(700))
                 withAnimation(preferences.reduceAppMotion ? nil : .easeOut(duration: 0.3)) {
                     showingLaunchCover = false
                 }
@@ -134,6 +163,9 @@ struct BlindbanditApp: App {
                     privacy.refresh()
                     Task { await push.refresh() }
                 }
+            }
+            .onChange(of: auth.state) { _, state in
+                if case .signedOut = state { communications.reset() }
             }
         }
     }
@@ -148,7 +180,7 @@ struct LaunchCover: View {
                 .ignoresSafeArea()
             VStack(spacing: 20) {
                 PulsingBrandMark(size: 124, reduceMotion: reduceMotion)
-                Text("MR. BLIND BANDIT")
+                Text("MR. BLINDBANDIT")
                     .font(.system(.largeTitle, design: .rounded, weight: .heavy))
                     .foregroundStyle(.white)
                 WaveformLoader(reduceMotion: reduceMotion)
@@ -171,16 +203,16 @@ struct LockedView: View {
                 .ignoresSafeArea()
             VStack(spacing: 24) {
                 BrandMark(size: 96)
-                Text("Mr. Blind Bandit")
+                Text("Mr. Blindbandit")
                     .font(.largeTitle.bold())
                     .accessibilityAddTraits(.isHeader)
-                Text(lock.configured ? "Protected with your iPhone security" : "Secure your private creator workspace")
+                Text("Your account is protected")
                     .font(.headline)
                     .multilineTextAlignment(.center)
-                Text("Use Face ID, Touch ID, or your device passcode to open the app.")
+                Text("Use Face ID, Touch ID, or your passcode to open the app. You can turn this off in Settings.")
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                Button(lock.configured ? "Unlock Mr. Blind Bandit" : "Set Up Secure Unlock") { lock.unlock() }
+                Button("Unlock") { lock.unlock() }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .disabled(lock.busy)
@@ -198,47 +230,49 @@ struct RoutedURL: Identifiable {
 }
 
 struct MainTabs: View {
-    enum Tab: Hashable { case home, create, connect, listen, more }
-
+    @EnvironmentObject private var router: TabRouter
+    @EnvironmentObject private var push: PushNotifications
+    @EnvironmentObject private var communications: ProductionCommunicationsService
     @State private var routedURL: RoutedURL?
-    @State private var selection: Tab = .home
 
     var body: some View {
-        TabView(selection: $selection) {
+        TabView(selection: $router.selection) {
             NavigationStack { ProfessionalHome() }
                 .tabItem { Label("Home", systemImage: "house.fill") }
-                .tag(Tab.home)
-                .accessibilityLabel("Home tab")
+                .tag(TabRouter.Tab.home)
 
             NavigationStack { CreatorHubView() }
                 .tabItem { Label("Create", systemImage: "wand.and.stars") }
-                .tag(Tab.create)
-                .accessibilityLabel("Create tab")
+                .tag(TabRouter.Tab.create)
 
             NavigationStack { ConnectHubView() }
                 .tabItem { Label("Connect", systemImage: "phone.and.waveform.fill") }
-                .tag(Tab.connect)
-                .accessibilityLabel("Connect tab for calls and chat")
+                .tag(TabRouter.Tab.connect)
 
             NavigationStack { ListenHubView() }
                 .tabItem { Label("Listen", systemImage: "headphones") }
-                .tag(Tab.listen)
-                .accessibilityLabel("Listen tab for music services")
+                .tag(TabRouter.Tab.listen)
 
             NavigationStack { MoreHubView() }
                 .tabItem { Label("More", systemImage: "ellipsis.circle.fill") }
-                .tag(Tab.more)
-                .accessibilityLabel("More tab for profile, web, and settings")
+                .tag(TabRouter.Tab.more)
         }
-        .tint(.yellow)
-        .onChange(of: selection) { _, _ in AppHaptics.selection() }
+        .onChange(of: router.selection) { _, _ in AppHaptics.selection() }
+        .task {
+            await communications.bootstrap()
+            await registerPushTokenIfPossible(push.deviceToken)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .apnsDeviceTokenUpdated)) { note in
+            guard let token = note.object as? String else { return }
+            Task { await registerPushTokenIfPossible(token) }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .blindbanditCallDeepLinkReceived)) { _ in
             AppHaptics.doublePulse()
-            selection = .connect
+            router.selection = .connect
         }
         .onReceive(NotificationCenter.default.publisher(for: .blindbanditMessageDeepLinkReceived)) { _ in
             AppHaptics.doublePulse()
-            selection = .connect
+            router.selection = .connect
         }
         .onReceive(NotificationCenter.default.publisher(for: .pushDeepLinkReceived)) { note in
             guard let url = note.object as? URL else { return }
@@ -258,6 +292,19 @@ struct MainTabs: View {
                         }
                     }
             }
+        }
+    }
+
+    /// Sends the APNs token to the Blindbandit API so calls and messages can reach this iPhone.
+    private func registerPushTokenIfPossible(_ token: String) async {
+        guard !token.isEmpty else { return }
+        let key = "registeredPushToken"
+        guard UserDefaults.standard.string(forKey: key) != token else { return }
+        do {
+            try await BlindbanditAPI.registerPushToken(token)
+            UserDefaults.standard.set(token, forKey: key)
+        } catch {
+            // Registration is retried on the next launch or token change.
         }
     }
 }

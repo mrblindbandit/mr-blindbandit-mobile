@@ -1,9 +1,11 @@
 import SwiftUI
+import LiveKit
 
-/// Production Connect hub. Calls and messages use Clerk-authenticated API requests;
-/// LiveKit room tokens are minted by the server and never embedded in the app.
+/// Calls and messages between Blindbandit members. Clerk authenticates every request; LiveKit
+/// room tokens are minted per call by the server. One shared service lives at the app root so a
+/// call keeps running while you move between tabs.
 struct ConnectHubView: View {
-    @StateObject private var communications = ProductionCommunicationsService()
+    @EnvironmentObject private var communications: ProductionCommunicationsService
     @EnvironmentObject private var privacy: PrivacyPermissions
     @EnvironmentObject private var preferences: AppPreferences
 
@@ -13,415 +15,204 @@ struct ConnectHubView: View {
     @State private var newMessageBody = ""
     @State private var selectedConversation: BlindbanditConversation?
     @State private var replyDraft = ""
-    @State private var keypadDigits = ""
+    @State private var reportTarget: ReportTarget?
+    @State private var blockHandle: String?
 
-    enum Segment: String, CaseIterable { case calls = "Calls", messages = "Messages", keypad = "Keypad" }
+    enum Segment: String, CaseIterable { case calls = "Calls", messages = "Messages" }
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("Connect", selection: $segment) {
+            Picker("Section", selection: $segment) {
                 ForEach(Segment.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
             .padding()
-            .accessibilityLabel("Calls, Messages, or Keypad")
 
             if !communications.statusMessage.isEmpty {
                 Text(communications.statusMessage)
-                    .font(.footnote)
+                    .font(.callout)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal)
                     .padding(.bottom, 8)
-                    .accessibilityAddTraits(.updatesFrequently)
             }
 
             switch segment {
             case .calls: callsPane
             case .messages: messagesPane
-            case .keypad: keypadPane
             }
         }
-        .background(Color(uiColor: .systemBackground))
         .navigationTitle("Connect")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                BlindbanditLogoImage(size: 28)
-                    .accessibilityLabel("Blindbandit Records")
-            }
-        }
         .task { await communications.bootstrap() }
         .onReceive(NotificationCenter.default.publisher(for: .blindbanditCallDeepLinkReceived)) { note in
             guard let callID = note.object as? String else { return }
             segment = .calls
-            Task { await communications.joinIncomingCall(id: callID) }
+            Task {
+                guard await ensureMicrophone() else { return }
+                await communications.joinIncomingCall(id: callID)
+            }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .blindbanditMessageDeepLinkReceived)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .blindbanditMessageDeepLinkReceived)) { note in
             segment = .messages
-            Task { await communications.refreshConversations() }
+            let conversationID = note.object as? String ?? ""
+            Task {
+                await communications.refreshConversations()
+                if let conversation = communications.conversation(id: conversationID) {
+                    selectedConversation = conversation
+                    await communications.openConversation(conversation)
+                }
+            }
         }
-        .onAppear { AppHaptics.soft() }
+        .sheet(item: $reportTarget) { target in
+            ReportSheet(target: target) { reason, details in
+                await communications.report(targetType: target.type, targetID: target.id, reason: reason, details: details)
+            }
+        }
+        .confirmationDialog(
+            "Block @\(blockHandle ?? "")?",
+            isPresented: Binding(get: { blockHandle != nil }, set: { if !$0 { blockHandle = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Block", role: .destructive) {
+                let handle = blockHandle ?? ""
+                Task {
+                    if await communications.block(handle: handle) { selectedConversation = nil }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("They will no longer be able to message or call you. You can also report them so our team can review.")
+        }
     }
+
+    // MARK: Calls
 
     private var callsPane: some View {
         ScrollView {
             VStack(spacing: 18) {
-                callStatusCard
-
-                if !communications.isInCall {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Call someone").font(.headline).accessibilityAddTraits(.isHeader)
-                        TextField("Email address or Blindbandit username", text: $callRecipient)
+                if communications.isInCall {
+                    activeCallView
+                } else {
+                    BrandCard {
+                        Text("Start a call")
+                            .font(.title3.bold())
+                            .accessibilityAddTraits(.isHeader)
+                        Text("Call another Blindbandit member by their username. Your username is @\(communications.myHandle.isEmpty ? "…" : communications.myHandle).")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        TextField("Blindbandit username", text: $callRecipient)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
-                            .keyboardType(.emailAddress)
-                            .textContentType(.emailAddress)
-                            .accessibilityHint("Enter the exact email address on their Blindbandit account, or their username.")
+                            .textContentType(.username)
+                            .padding(12)
+                            .frame(minHeight: Brand.minTouch)
+                            .background(Color(uiColor: .tertiarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                            .accessibilityHint("For example, mrblindbandit")
 
-                        HStack(spacing: 12) {
-                            Button {
-                                ensureMicrophone {
-                                    Task { await communications.startCall(recipient: callRecipient, video: false) }
-                                }
-                            } label: {
-                                Label("Voice call", systemImage: "phone.fill")
-                                    .frame(maxWidth: .infinity)
+                        Button {
+                            Task {
+                                guard await ensureMicrophone() else { return }
+                                await communications.startCall(recipient: callRecipient, video: false)
                             }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.yellow)
-                            .foregroundStyle(.black)
-
-                            Button {
-                                ensureCameraAndMicrophone {
-                                    Task { await communications.startCall(recipient: callRecipient, video: true) }
-                                }
-                            } label: {
-                                Label("Video call", systemImage: "video.fill")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.bordered)
+                        } label: {
+                            Label("Voice call", systemImage: "phone.fill")
                         }
-                        .controlSize(.large)
-                    }
-                    .padding()
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
-                } else {
-                    inCallControls
-                }
+                        .buttonStyle(BrandPrimaryButtonStyle())
+                        .disabled(callRecipient.trimmingCharacters(in: .whitespaces).isEmpty)
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Production communications", systemImage: "checkmark.shield.fill")
-                        .font(.headline)
-                    Text("Clerk authenticates the user. The Blindbandit API resolves the recipient and creates the call. LiveKit credentials are short-lived and minted server-side for that call room.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        Button {
+                            Task {
+                                guard await ensureMicrophone(), await ensureCamera() else { return }
+                                await communications.startCall(recipient: callRecipient, video: true)
+                            }
+                        } label: {
+                            Label("Video call", systemImage: "video.fill")
+                                .frame(maxWidth: .infinity, minHeight: Brand.minTouch)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(callRecipient.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+
+                    BrandCard {
+                        Label("Safety", systemImage: "hand.raised.fill")
+                            .font(.headline)
+                            .accessibilityAddTraits(.isHeader)
+                        Text("Only people with a Blindbandit account can call you. In any conversation, open the Safety menu to report or block someone.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
             }
             .padding()
         }
     }
 
-    private var callStatusCard: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 28)
-                .fill(Color.black)
-                .frame(height: 220)
-            VStack(spacing: 12) {
-                if communications.isInCall {
-                    CallPulseRings(active: true, reduceMotion: preferences.reduceAppMotion)
-                        .frame(width: 92, height: 92)
-                    Text(communications.callPeerName.isEmpty ? "Blindbandit call" : communications.callPeerName)
+    private var activeCallView: some View {
+        VStack(spacing: 16) {
+            if communications.isVideoCall {
+                ZStack(alignment: .bottomTrailing) {
+                    Group {
+                        if let remote = communications.remoteVideoTrack {
+                            SwiftUIVideoView(remote, layoutMode: .fit)
+                        } else {
+                            ZStack {
+                                Color.black
+                                Text("Waiting for video from \(communications.callPeerName)")
+                                    .font(.headline)
+                                    .foregroundStyle(.white)
+                                    .multilineTextAlignment(.center)
+                                    .padding()
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 320)
+                    .clipShape(RoundedRectangle(cornerRadius: Brand.corner))
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(communications.remoteVideoTrack == nil ? "Waiting for the other person's video" : "Video from \(communications.callPeerName)")
+
+                    if let local = communications.localVideoTrack, communications.cameraEnabled {
+                        SwiftUIVideoView(local, layoutMode: .fill, mirrorMode: .mirror)
+                            .frame(width: 96, height: 128)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .padding(10)
+                            .accessibilityLabel("Your camera preview")
+                    }
+                }
+            }
+
+            BrandCard {
+                VStack(spacing: 6) {
+                    Text(communications.callPeerName.isEmpty ? "Call" : communications.callPeerName)
                         .font(.title2.bold())
-                        .foregroundStyle(.white)
                     Text(communications.callTimeLabel)
                         .font(.title.monospacedDigit())
-                        .foregroundStyle(.yellow)
                     Text(communications.isVideoCall ? "Video call" : "Voice call")
-                        .foregroundStyle(.white.opacity(0.7))
-                } else {
-                    BlindbanditLogoImage(size: 96)
-                    Text("Blindbandit Calling")
-                        .font(.title2.bold())
-                        .foregroundStyle(.white)
-                    Text("Call registered users by email or username")
-                        .foregroundStyle(.white.opacity(0.72))
+                        .foregroundStyle(.secondary)
                 }
-            }
-            .multilineTextAlignment(.center)
-            .padding()
-        }
-        .accessibilityElement(children: .combine)
-    }
+                .frame(maxWidth: .infinity)
+                .accessibilityElement(children: .combine)
 
-    private var inCallControls: some View {
-        VStack(spacing: 14) {
-            HStack(spacing: 18) {
-                callControl(
-                    icon: communications.micEnabled ? "mic.fill" : "mic.slash.fill",
-                    label: communications.micEnabled ? "Mute" : "Unmute"
-                ) { communications.toggleMic() }
-
-                if communications.isVideoCall {
+                HStack(spacing: 18) {
                     callControl(
-                        icon: communications.cameraEnabled ? "video.fill" : "video.slash.fill",
-                        label: communications.cameraEnabled ? "Camera off" : "Camera on"
-                    ) { communications.toggleCamera() }
-                }
+                        icon: communications.micEnabled ? "mic.fill" : "mic.slash.fill",
+                        label: communications.micEnabled ? "Mute" : "Unmute"
+                    ) { communications.toggleMic() }
 
-                callControl(icon: "phone.down.fill", label: "End", destructive: true) {
-                    communications.endCall()
+                    if communications.isVideoCall {
+                        callControl(
+                            icon: communications.cameraEnabled ? "video.fill" : "video.slash.fill",
+                            label: communications.cameraEnabled ? "Turn camera off" : "Turn camera on"
+                        ) { communications.toggleCamera() }
+                    }
+
+                    callControl(icon: "phone.down.fill", label: "End call", destructive: true) {
+                        communications.endCall()
+                    }
                 }
+                .frame(maxWidth: .infinity)
             }
-            Button("Open keypad") {
-                segment = .keypad
-                AppHaptics.selection()
-            }
-            .buttonStyle(.bordered)
-        }
-        .padding()
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
-    }
-
-    private var messagesPane: some View {
-        VStack(spacing: 0) {
-            if let conversation = selectedConversation {
-                conversationView(conversation)
-            } else {
-                newMessageComposer
-                Divider()
-                HStack {
-                    Text("Conversations").font(.headline)
-                    Spacer()
-                    Button {
-                        Task { await communications.refreshConversations() }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .accessibilityLabel("Refresh conversations")
-                }
-                .padding()
-
-                if communications.isLoading {
-                    ProgressView("Loading messages")
-                    Spacer()
-                } else if communications.conversations.isEmpty {
-                    ContentUnavailableView(
-                        "No conversations yet",
-                        systemImage: "message",
-                        description: Text("Send a message to a registered user's email address or username.")
-                    )
-                } else {
-                    List(communications.conversations) { conversation in
-                        Button {
-                            selectedConversation = conversation
-                            Task { await communications.openConversation(conversation) }
-                        } label: {
-                            VStack(alignment: .leading, spacing: 5) {
-                                HStack {
-                                    Text(conversation.other?.display_name ?? conversation.other?.handle ?? "Blindbandit user")
-                                        .font(.headline)
-                                    if conversation.other?.verified == true {
-                                        Image(systemName: "checkmark.seal.fill").foregroundStyle(.blue)
-                                    }
-                                }
-                                Text(conversation.last_message?.body ?? "No messages yet")
-                                    .lineLimit(1)
-                                    .foregroundStyle(.secondary)
-                                if let time = conversation.last_message?.created_at {
-                                    Text(Date(timeIntervalSince1970: time / 1000), style: .relative)
-                                        .font(.caption2)
-                                        .foregroundStyle(.tertiary)
-                                }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-                    .listStyle(.plain)
-                }
-            }
-        }
-    }
-
-    private var newMessageComposer: some View {
-        VStack(spacing: 10) {
-            TextField("Recipient email or username", text: $newMessageRecipient)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .keyboardType(.emailAddress)
-            TextField("Message", text: $newMessageBody, axis: .vertical)
-                .lineLimit(1...4)
-            Button {
-                let body = newMessageBody
-                Task {
-                    if let id = await communications.sendMessage(recipient: newMessageRecipient, body: body) {
-                        newMessageBody = ""
-                        if let conversation = communications.conversations.first(where: { $0.id == id }) {
-                            selectedConversation = conversation
-                        }
-                    }
-                }
-            } label: {
-                Label("Send message", systemImage: "paperplane.fill")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.yellow)
-            .foregroundStyle(.black)
-            .disabled(newMessageRecipient.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || newMessageBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        }
-        .padding()
-    }
-
-    private func conversationView(_ conversation: BlindbanditConversation) -> some View {
-        VStack(spacing: 0) {
-            HStack {
-                Button {
-                    selectedConversation = nil
-                    communications.statusMessage = ""
-                } label: { Label("Back", systemImage: "chevron.left") }
-                Spacer()
-                VStack {
-                    Text(conversation.other?.display_name ?? "Conversation").font(.headline)
-                    Text("@\(conversation.other?.handle ?? "user")").font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button {
-                    callRecipient = conversation.other?.handle ?? ""
-                    segment = .calls
-                } label: { Image(systemName: "phone.fill") }
-                .accessibilityLabel("Call this person")
-            }
-            .padding()
-
-            ScrollView {
-                LazyVStack(spacing: 10) {
-                    ForEach(communications.messages) { message in
-                        let mine = message.sender_id == communications.myProfileID
-                        HStack {
-                            if mine { Spacer(minLength: 50) }
-                            VStack(alignment: mine ? .trailing : .leading, spacing: 4) {
-                                Text(message.body)
-                                    .padding(10)
-                                    .background(mine ? Color.yellow.opacity(0.28) : Color.secondary.opacity(0.16), in: RoundedRectangle(cornerRadius: 14))
-                                Text(Date(timeIntervalSince1970: message.created_at / 1000), style: .time)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                            if !mine { Spacer(minLength: 50) }
-                        }
-                        .accessibilityElement(children: .combine)
-                    }
-                }
-                .padding()
-            }
-            .refreshable { await communications.openConversation(conversation) }
-
-            HStack(spacing: 8) {
-                TextField("Message", text: $replyDraft, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(1...4)
-                Button {
-                    let body = replyDraft
-                    replyDraft = ""
-                    Task {
-                        _ = await communications.sendMessage(recipient: conversation.other?.handle ?? "", body: body)
-                        await communications.openConversation(conversation)
-                    }
-                } label: { Image(systemName: "paperplane.fill") }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.yellow)
-                    .foregroundStyle(.black)
-                    .accessibilityLabel("Send reply")
-                    .disabled(replyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-            .padding()
-            .background(.bar)
-        }
-    }
-
-    private var keypadPane: some View {
-        ScrollView {
-            VStack(spacing: 18) {
-                Text("Keypad")
-                    .font(.largeTitle.bold())
-                    .accessibilityAddTraits(.isHeader)
-
-                TextField("Email, username, or keypad entry", text: $callRecipient)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.emailAddress)
-                    .multilineTextAlignment(.center)
-                    .font(.title3.monospaced())
-                    .padding()
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
-
-                Text(keypadDigits.isEmpty ? "Enter digits" : keypadDigits)
-                    .font(.title.monospacedDigit())
-                    .frame(maxWidth: .infinity)
-                    .accessibilityLabel(keypadDigits.isEmpty ? "No keypad digits entered" : "Keypad entry \(keypadDigits)")
-
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 18), count: 3), spacing: 18) {
-                    ForEach(["1","2","3","4","5","6","7","8","9","*","0","#"], id: \.self) { key in
-                        Button {
-                            keypadDigits.append(key)
-                            callRecipient = keypadDigits
-                            AppHaptics.light()
-                        } label: {
-                            Text(key)
-                                .font(.title.bold())
-                                .frame(width: 72, height: 72)
-                                .background(Color.primary.opacity(0.08), in: Circle())
-                        }
-                        .accessibilityLabel("Key \(key)")
-                    }
-                }
-                .padding(.horizontal, 24)
-
-                HStack(spacing: 28) {
-                    Button {
-                        if !keypadDigits.isEmpty {
-                            keypadDigits.removeLast()
-                            callRecipient = keypadDigits
-                        }
-                    } label: {
-                        Image(systemName: "delete.left.fill").font(.title2)
-                    }
-                    .accessibilityLabel("Delete last digit")
-
-                    Button {
-                        ensureMicrophone {
-                            Task { await communications.startCall(recipient: callRecipient, video: false) }
-                        }
-                    } label: {
-                        Image(systemName: "phone.fill")
-                            .font(.title)
-                            .foregroundStyle(.white)
-                            .frame(width: 76, height: 76)
-                            .background(Color.green, in: Circle())
-                    }
-                    .accessibilityLabel("Call")
-                    .disabled(callRecipient.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || communications.isInCall)
-
-                    Button {
-                        keypadDigits = ""
-                        callRecipient = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill").font(.title2)
-                    }
-                    .accessibilityLabel("Clear keypad")
-                }
-
-                Text("For registered Blindbandit users, calling by exact email address or username is supported. The keypad is also available during calls for familiar phone-style controls.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-            }
-            .padding()
         }
     }
 
@@ -430,33 +221,297 @@ struct ConnectHubView: View {
             VStack(spacing: 6) {
                 Image(systemName: icon)
                     .font(.title2)
-                    .frame(width: 58, height: 58)
-                    .background(destructive ? Color.red : Color.primary.opacity(0.08), in: Circle())
+                    .frame(width: 60, height: 60)
+                    .background(destructive ? Color.red : Color.primary.opacity(0.1), in: Circle())
                     .foregroundStyle(destructive ? .white : .primary)
                 Text(label).font(.caption)
             }
         }
-        .frame(minWidth: 72, minHeight: 72)
+        .frame(minWidth: 76, minHeight: 76)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
+        .accessibilityAddTraits(.isButton)
     }
 
-    private func ensureMicrophone(_ action: @escaping () -> Void) {
-        if privacy.microphone == .denied || privacy.microphone == .restricted {
-            communications.statusMessage = "Microphone permission is required for voice calls. Enable it in iOS Settings."
-            AppHaptics.warning()
-            return
+    // MARK: Messages
+
+    private var messagesPane: some View {
+        VStack(spacing: 0) {
+            if let conversation = selectedConversation {
+                conversationView(conversation)
+            } else {
+                List {
+                    Section("New message") {
+                        TextField("Blindbandit username", text: $newMessageRecipient)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        TextField("Message", text: $newMessageBody, axis: .vertical)
+                            .lineLimit(1...6)
+                        Button {
+                            let body = newMessageBody
+                            Task {
+                                if let id = await communications.sendMessage(recipient: newMessageRecipient, body: body) {
+                                    newMessageBody = ""
+                                    if let conversation = communications.conversation(id: id) {
+                                        selectedConversation = conversation
+                                        await communications.openConversation(conversation)
+                                    }
+                                }
+                            }
+                        } label: {
+                            Label("Send", systemImage: "paperplane.fill")
+                        }
+                        .disabled(newMessageRecipient.trimmingCharacters(in: .whitespaces).isEmpty || newMessageBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+
+                    Section("Conversations") {
+                        if communications.isLoading && communications.conversations.isEmpty {
+                            ProgressView("Loading conversations")
+                        } else if communications.conversations.isEmpty {
+                            Text("No conversations yet. Send a message to start one.")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(communications.conversations) { conversation in
+                                Button {
+                                    selectedConversation = conversation
+                                    Task { await communications.openConversation(conversation) }
+                                } label: {
+                                    conversationRow(conversation)
+                                }
+                                .foregroundStyle(.primary)
+                            }
+                        }
+                    }
+                }
+                .refreshable { await communications.refreshConversations() }
+            }
         }
-        if privacy.microphone == .notDetermined { privacy.requestMicrophone() }
-        action()
     }
 
-    private func ensureCameraAndMicrophone(_ action: @escaping () -> Void) {
-        if privacy.camera == .denied || privacy.microphone == .denied {
-            communications.statusMessage = "Camera and microphone permissions are required for video calls."
-            AppHaptics.warning()
-            return
+    private func conversationRow(_ conversation: BlindbanditConversation) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(conversation.other?.display_name ?? conversation.other?.handle ?? "Blindbandit member")
+                    .font(.headline)
+                if conversation.other?.verified == true {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundStyle(Brand.goldDeep)
+                        .accessibilityLabel("Verified")
+                }
+                Spacer()
+                Text(Date(timeIntervalSince1970: conversation.updated_at / 1000), style: .relative)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if let last = conversation.last_message {
+                Text(last.body)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
         }
-        if privacy.camera == .notDetermined { privacy.requestCamera() }
-        ensureMicrophone(action)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens the conversation")
+    }
+
+    private func conversationView(_ conversation: BlindbanditConversation) -> some View {
+        let handle = conversation.other?.handle ?? ""
+        return VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Button {
+                    selectedConversation = nil
+                    communications.statusMessage = ""
+                } label: {
+                    Label("Conversations", systemImage: "chevron.left")
+                }
+                .frame(minHeight: Brand.minTouch)
+                Spacer()
+                VStack {
+                    Text(conversation.other?.display_name ?? "Conversation").font(.headline)
+                    if !handle.isEmpty {
+                        Text("@\(handle)").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                Spacer()
+                Button {
+                    callRecipient = handle
+                    segment = .calls
+                } label: {
+                    Image(systemName: "phone.fill").frame(width: Brand.minTouch, height: Brand.minTouch)
+                }
+                .accessibilityLabel("Call @\(handle)")
+                .disabled(handle.isEmpty)
+
+                Menu {
+                    Button {
+                        reportTarget = ReportTarget(type: "profile", id: handle, title: "@\(handle)")
+                    } label: { Label("Report @\(handle)", systemImage: "exclamationmark.bubble") }
+                    Button(role: .destructive) {
+                        blockHandle = handle
+                    } label: { Label("Block @\(handle)", systemImage: "hand.raised") }
+                } label: {
+                    Image(systemName: "ellipsis.circle").frame(width: Brand.minTouch, height: Brand.minTouch)
+                }
+                .accessibilityLabel("Safety options")
+                .disabled(handle.isEmpty)
+            }
+            .padding(.horizontal)
+
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 10) {
+                        ForEach(communications.messages) { message in
+                            messageBubble(message, handle: handle)
+                                .id(message.id)
+                        }
+                    }
+                    .padding()
+                }
+                .onChange(of: communications.messages) { _, messages in
+                    if let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
+                }
+            }
+            .refreshable { await communications.openConversation(conversation) }
+
+            HStack(spacing: 8) {
+                TextField("Message @\(handle)", text: $replyDraft, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(1...5)
+                Button {
+                    let body = replyDraft
+                    replyDraft = ""
+                    Task {
+                        _ = await communications.sendMessage(recipient: handle, body: body)
+                        await communications.openConversation(conversation)
+                    }
+                } label: {
+                    Image(systemName: "paperplane.fill").frame(width: Brand.minTouch, height: Brand.minTouch)
+                }
+                .accessibilityLabel("Send")
+                .disabled(replyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .padding()
+            .background(.bar)
+        }
+    }
+
+    private func messageBubble(_ message: BlindbanditServerMessage, handle: String) -> some View {
+        let mine = message.sender_id == communications.myProfileID
+        let sent = Date(timeIntervalSince1970: message.created_at / 1000)
+        return HStack {
+            if mine { Spacer(minLength: 48) }
+            VStack(alignment: mine ? .trailing : .leading, spacing: 4) {
+                Text(message.body)
+                    .padding(12)
+                    .background(mine ? Brand.gold.opacity(0.35) : Color.secondary.opacity(0.16), in: RoundedRectangle(cornerRadius: 16))
+                Text(sent, style: .time)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if !mine { Spacer(minLength: 48) }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(mine ? "You" : "@\(handle)"): \(message.body)")
+        .accessibilityValue(Text(sent, style: .time))
+        .accessibilityActions {
+            if !mine {
+                Button("Report this message") {
+                    reportTarget = ReportTarget(type: "message", id: message.id, title: "this message")
+                }
+            }
+        }
+        .contextMenu {
+            if !mine {
+                Button {
+                    reportTarget = ReportTarget(type: "message", id: message.id, title: "this message")
+                } label: { Label("Report message", systemImage: "exclamationmark.bubble") }
+            }
+        }
+    }
+
+    // MARK: Permissions (asked only when needed)
+
+    private func ensureMicrophone() async -> Bool {
+        switch privacy.microphone {
+        case .authorized: return true
+        case .notDetermined:
+            if await privacy.requestMicrophone() { return true }
+        default: break
+        }
+        communications.statusMessage = "Calls need microphone access. Turn it on in iPhone Settings > Mr. Blindbandit."
+        AppHaptics.warning()
+        return false
+    }
+
+    private func ensureCamera() async -> Bool {
+        switch privacy.camera {
+        case .authorized: return true
+        case .notDetermined:
+            if await privacy.requestCamera() { return true }
+        default: break
+        }
+        communications.statusMessage = "Video calls need camera access. Turn it on in iPhone Settings > Mr. Blindbandit."
+        AppHaptics.warning()
+        return false
+    }
+}
+
+struct ReportTarget: Identifiable {
+    let type: String
+    let id: String
+    let title: String
+}
+
+struct ReportSheet: View {
+    let target: ReportTarget
+    let submit: (ReportReason, String) async -> Bool
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var reason: ReportReason = .harassment
+    @State private var details = ""
+    @State private var sending = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Reason", selection: $reason) {
+                        ForEach(ReportReason.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                } header: {
+                    Text("Why are you reporting \(target.title)?")
+                }
+                Section("Details (optional)") {
+                    TextField("What happened?", text: $details, axis: .vertical)
+                        .lineLimit(3...8)
+                }
+                Section {
+                    Text("Reports go to the Blindbandit moderation team for review. If someone is in immediate danger, contact local emergency services.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Report")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Send") {
+                        sending = true
+                        Task {
+                            let ok = await submit(reason, details)
+                            sending = false
+                            if ok { dismiss() }
+                        }
+                    }
+                    .disabled(sending)
+                }
+            }
+        }
     }
 }

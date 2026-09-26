@@ -12,13 +12,13 @@ struct ListenService: Identifiable {
 /// Music services — deep links + first-party streaming pages. Graceful degrade if apps missing.
 struct ListenHubView: View {
     private let services: [ListenService] = [
-        ListenService(name: "Spotify", systemImage: "music.note.list", deepLink: URL(string: "https://open.spotify.com/search/Mr%20Blind%20Bandit"), webPath: "/music/", subtitle: "Open Spotify or browse on the site"),
-        ListenService(name: "Apple Music", systemImage: "applelogo", deepLink: URL(string: "https://music.apple.com/search?term=Mr%20Blind%20Bandit"), webPath: "/music/", subtitle: "Open Apple Music"),
-        ListenService(name: "Amazon Music", systemImage: "headphones", deepLink: URL(string: "https://music.amazon.com/search/Mr%20Blind%20Bandit"), webPath: "/music/", subtitle: "Amazon Music search"),
-        ListenService(name: "Audiomack", systemImage: "waveform", deepLink: URL(string: "https://audiomack.com/search?q=Mr%20Blind%20Bandit"), webPath: "/music/", subtitle: "Audiomack search"),
-        ListenService(name: "YouTube Music", systemImage: "play.rectangle.fill", deepLink: URL(string: "https://music.youtube.com/search?q=Mr%20Blind%20Bandit"), webPath: "/music/", subtitle: "YouTube Music search"),
-        ListenService(name: "SoundCloud", systemImage: "cloud.fill", deepLink: URL(string: "https://soundcloud.com/search?q=Mr%20Blind%20Bandit"), webPath: "/music/", subtitle: "SoundCloud search"),
-        ListenService(name: "Tidal", systemImage: "water.waves", deepLink: URL(string: "https://listen.tidal.com/search?q=Mr%20Blind%20Bandit"), webPath: "/music/", subtitle: "Tidal search"),
+        ListenService(name: "Spotify", systemImage: "music.note.list", deepLink: URL(string: "https://open.spotify.com/artist/04HZ4GubB66CqMpJrHysy3"), webPath: "/music/", subtitle: "Mr. Blindbandit artist page on Spotify"),
+        ListenService(name: "Apple Music", systemImage: "applelogo", deepLink: URL(string: "https://music.apple.com/search?term=Mr.%20Blindbandit"), webPath: "/music/", subtitle: "Open Apple Music"),
+        ListenService(name: "Amazon Music", systemImage: "headphones", deepLink: URL(string: "https://music.amazon.com/search/Mr.%20Blindbandit"), webPath: "/music/", subtitle: "Amazon Music search"),
+        ListenService(name: "Audiomack", systemImage: "waveform", deepLink: URL(string: "https://audiomack.com/search?q=Mr.%20Blindbandit"), webPath: "/music/", subtitle: "Audiomack search"),
+        ListenService(name: "YouTube Music", systemImage: "play.rectangle.fill", deepLink: URL(string: "https://music.youtube.com/search?q=Mr.%20Blindbandit"), webPath: "/music/", subtitle: "YouTube Music search"),
+        ListenService(name: "SoundCloud", systemImage: "cloud.fill", deepLink: URL(string: "https://soundcloud.com/search?q=Mr.%20Blindbandit"), webPath: "/music/", subtitle: "SoundCloud search"),
+        ListenService(name: "Tidal", systemImage: "water.waves", deepLink: URL(string: "https://listen.tidal.com/search?q=Mr.%20Blindbandit"), webPath: "/music/", subtitle: "Tidal search"),
         ListenService(name: "Blindbandit catalog", systemImage: "opticaldisc", deepLink: nil, webPath: "/music/", subtitle: "Official releases on mrblindbandit.net")
     ]
 

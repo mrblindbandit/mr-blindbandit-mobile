@@ -7,7 +7,7 @@ settings:
   base:
     SWIFT_VERSION: '5.0'
     CODE_SIGNING_ALLOWED: NO
-    TARGETED_DEVICE_FAMILY: '1,2'
+    TARGETED_DEVICE_FAMILY: '1'
 packages:
   LiveKitClient:
     url: https://github.com/livekit/client-sdk-swift
@@ -37,16 +37,15 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: Mr. Blindbandit
         INFOPLIST_KEY_CFBundleName: Mr. Blindbandit
         INFOPLIST_KEY_NSFaceIDUsageDescription: Unlock Mr. Blindbandit using Face ID.
-        INFOPLIST_KEY_NSCameraUsageDescription: Allow Mr. Blindbandit to use the camera for video calls, creator tools, profile media, and uploads you choose to make.
-        INFOPLIST_KEY_NSMicrophoneUsageDescription: Allow Mr. Blindbandit to use the microphone for voice calls, voice notes, recording, and creator tools you choose to use.
-        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: Allow Mr. Blindbandit to choose photos and videos for creator tools and uploads you start.
-        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: Allow Mr. Blindbandit to save media you explicitly export to Photos.
-        INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: Allow Mr. Blindbandit to connect to Bluetooth audio devices during LiveKit voice and video calls.
-        INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription: Allow Mr. Blindbandit to use Bluetooth headsets during calls.
+        INFOPLIST_KEY_NSCameraUsageDescription: Mr. Blindbandit uses the camera only when you start or join a video call.
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: Mr. Blindbandit uses the microphone for voice and video calls and for recordings you start in the creator tools.
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_UIRequiresFullScreen: YES
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         INFOPLIST_KEY_UIBackgroundModes: [audio]
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        MARKETING_VERSION: '1.6'
-        CURRENT_PROJECT_VERSION: '6'
+        MARKETING_VERSION: '1.7'
+        CURRENT_PROJECT_VERSION: '7'
     dependencies:
       - package: LiveKitClient
         product: LiveKit

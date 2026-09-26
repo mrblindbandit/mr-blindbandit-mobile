@@ -59,9 +59,10 @@ export them as environment variables. Never commit keys.
 - Data safety form from `Config/STORE_COMPLIANCE.md`. Account deletion URL: https://mrblindbandit.net/account/delete
 - Content rating questionnaire (the app has user-to-user communication).
 - Target audience 18+ or 13+ as appropriate, not designed for children.
-- Firebase: add `google-services.json` for `net.mrblindbandit.app` (gitignored) and apply the
-  `com.google.gms.google-services` plugin when push should go live. Without it the app runs normally and
-  simply does not register for push.
+- Firebase (project `mr-blindbandit`): `Android/app/google-services.json` is committed. It is a public client
+  config for `net.mrblindbandit.app`, and the `com.google.gms.google-services` plugin applies it. The Firebase
+  **service-account key is a secret**. It belongs only in the server's secret store, never in this repo
+  (`*firebase-adminsdk*.json` is gitignored).
 - Deploy `https://mrblindbandit.net/.well-known/assetlinks.json` only if verified App Links are wanted.
 
 ## Artifacts

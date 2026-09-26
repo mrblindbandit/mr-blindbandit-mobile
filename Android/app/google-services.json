@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1067250707473",
+    "project_id": "mr-blindbandit",
+    "storage_bucket": "mr-blindbandit.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1067250707473:android:d1868ba9774689d8ecd5b0",
+        "android_client_info": {
+          "package_name": "net.mrblindbandit.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAFq3ouUEM-I6_yXuI9Uy8k7cixEL_47HA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

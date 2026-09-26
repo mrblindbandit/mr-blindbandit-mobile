@@ -113,7 +113,10 @@ class MainActivity : ComponentActivity() {
         filePathCallback = null
     }
 
-    private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        getSharedPreferences(AndroidAppPreferences.FILE, MODE_PRIVATE).edit().putBoolean("notificationPermissionAsked", true).apply()
+        if (!granted) Toast.makeText(this, "Notifications are off. You can turn them on any time in Settings.", Toast.LENGTH_LONG).show()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
@@ -181,10 +184,29 @@ class MainActivity : ComponentActivity() {
         pendingMediaResources = emptyArray()
     }
 
+    /**
+     * Called only from an explicit user action (Home "Turn on notifications" card or Settings), never at launch.
+     * If the system will no longer show the dialog (denied twice, or blocked in Settings), opens the app's
+     * notification settings instead so the button always does something.
+     */
     fun requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+        if (NotificationPermission.isGranted(this)) return
+        val asked = getSharedPreferences(AndroidAppPreferences.FILE, MODE_PRIVATE).getBoolean("notificationPermissionAsked", false)
+        val needsRuntimePermission = Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        val dialogAvailable = needsRuntimePermission &&
+            (!asked || ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.POST_NOTIFICATIONS))
+        if (dialogAvailable) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            openNotificationSettings()
         }
+    }
+
+    private fun openNotificationSettings() {
+        val intent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
+        runCatching { startActivity(intent) }
     }
 
     companion object { private const val MEDIA_PERMISSION_REQUEST = 7301 }
@@ -312,8 +334,7 @@ private fun HomeScreen(
     onEnableNotifications: () -> Unit,
 ) {
     val context = LocalContext.current
-    val notificationsOn = NotificationManagerCompat.from(context).areNotificationsEnabled() &&
-        (Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
+    val notificationsOn = rememberNotificationsEnabled()
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = Spacing.md),
         verticalArrangement = Arrangement.spacedBy(Spacing.md),

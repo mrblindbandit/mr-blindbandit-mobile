@@ -47,6 +47,7 @@ the code that satisfies it, and lists what only the owner can do in the store co
 
 - Removed: the mass permission request at first launch, the unused Photos read/write permissions,
   and the unused Bluetooth usage strings (iOS).
+- Android `POST_NOTIFICATIONS` (API 33+) is requested only when you tap "Turn on notifications". If the dialog is no longer available, the app opens the system notification settings instead.
 - Android `BLUETOOTH_CONNECT` stays in the manifest for LiveKit headset routing. It is never
   requested at launch.
 
@@ -58,7 +59,7 @@ the code that satisfies it, and lists what only the owner can do in the store co
 | Username / profile | App functionality | Yes | No |
 | Messages | App functionality | Yes | No |
 | Call metadata (not audio/video content) | App functionality | Yes | No |
-| Push token, installation ID | Notifications | Yes | No |
+| Push token, installation ID (APNs; Firebase Cloud Messaging token + Firebase installation ID on Android) | Notifications | Yes | No |
 | Settings | Stored only on the device | No | No |
 
 There are no ads, no analytics SDKs and no tracking. Call media is peer-to-server over encrypted

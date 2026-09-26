@@ -14,7 +14,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 50
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Placeholder content check
         run: bash scripts/check-placeholders.sh
       - name: Show toolchain
@@ -89,7 +89,7 @@ jobs:
       - name: Skip notice
         if: env.HAS_SIGNING != 'true'
         run: echo "iOS signing secrets are not configured; skipping the signed archive."
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: env.HAS_SIGNING == 'true'
       - name: Install signing certificate and profile
         if: env.HAS_SIGNING == 'true'

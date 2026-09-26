@@ -122,14 +122,28 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         BlindbanditFirebaseMessagingService.ensureChannels(this)
-        deepLinkState.value = intent?.dataString?.takeIf { UrlPolicy.isFirstParty(it) }
+        deepLinkState.value = resolveDeepLink(intent)
         setContent { BlindbanditAndroidApp(this, deepLinkState) }
+    }
+
+    /**
+     * Deep link from a VIEW intent, or from FCM data extras (`url` / `deep_link`) when the
+     * system tray displayed the notification while the app was in the background.
+     */
+    private fun resolveDeepLink(intent: Intent?): String? {
+        if (intent == null) return null
+        val raw = intent.dataString
+            ?: intent.getStringExtra("url")
+            ?: intent.getStringExtra("deep_link")
+            ?: return null
+        val absolute = if (raw.startsWith("/")) "https://mrblindbandit.net$raw" else raw
+        return absolute.takeIf { UrlPolicy.isFirstParty(it) }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        deepLinkState.value = intent.dataString?.takeIf { UrlPolicy.isFirstParty(it) }
+        deepLinkState.value = resolveDeepLink(intent)
     }
 
     fun launchFileChooser(callback: ValueCallback<Array<Uri>>, params: WebChromeClient.FileChooserParams): Boolean {

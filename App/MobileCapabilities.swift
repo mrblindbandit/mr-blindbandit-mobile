@@ -2,7 +2,6 @@ import SwiftUI
 import UIKit
 import UserNotifications
 import AVFoundation
-import Photos
 
 extension Notification.Name {
     static let apnsDeviceTokenUpdated = Notification.Name("apnsDeviceTokenUpdated")
@@ -39,7 +38,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        completionHandler([.banner, .sound, .badge, .list])
+        let userInfo = notification.request.content.userInfo
+        let category = (userInfo["category"] as? String) ?? (userInfo["type"] as? String) ?? ""
+        let link = (userInfo["deep_link"] as? String) ?? ""
+        let isCall = category.contains("call") || link.hasPrefix("/mobile/calls")
+        let defaults = UserDefaults.standard
+        let allowed = isCall
+            ? (defaults.object(forKey: SettingsKey.notifyCalls) as? Bool ?? true)
+            : (defaults.object(forKey: SettingsKey.notifyMessages) as? Bool ?? true)
+        completionHandler(allowed ? [.banner, .sound, .badge, .list] : [])
     }
 
     func userNotificationCenter(
@@ -68,7 +75,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             return
         }
         if url.path.hasPrefix("/mobile/messages") {
-            NotificationCenter.default.post(name: .blindbanditMessageDeepLinkReceived, object: url)
+            let components = URLComponents(url: url, resolvingAgainstBaseURL: true)
+            let conversationID = components?.queryItems?.first(where: { $0.name == "c" })?.value ?? ""
+            NotificationCenter.default.post(name: .blindbanditMessageDeepLinkReceived, object: conversationID)
             return
         }
         NotificationCenter.default.post(name: .pushDeepLinkReceived, object: url)
@@ -117,9 +126,9 @@ final class PushNotifications: ObservableObject {
 
     var statusText: String {
         switch authorizationStatus {
-        case .notDetermined: return "Not requested"
-        case .denied: return "Disabled"
-        case .authorized: return deviceToken.isEmpty ? "Allowed — registering with Apple" : "Ready"
+        case .notDetermined: return "Not asked yet"
+        case .denied: return "Off in iOS Settings"
+        case .authorized: return "On"
         case .provisional: return "Provisional"
         case .ephemeral: return "Temporary"
         @unknown default: return "Unknown"
@@ -161,82 +170,36 @@ final class PushNotifications: ObservableObject {
     }
 }
 
+/// Camera and microphone status. Permissions are only requested in context, when the person
+/// starts a call or a recording, never at launch (App Store Review Guideline 5.1.1).
 @MainActor
 final class PrivacyPermissions: ObservableObject {
     @Published private(set) var camera = AVCaptureDevice.authorizationStatus(for: .video)
     @Published private(set) var microphone = AVCaptureDevice.authorizationStatus(for: .audio)
-    @Published private(set) var photoLibrary = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-
-    private let firstLaunchKey = "initialPermissionsRequested.v1"
 
     func refresh() {
         camera = AVCaptureDevice.authorizationStatus(for: .video)
         microphone = AVCaptureDevice.authorizationStatus(for: .audio)
-        photoLibrary = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     }
 
-    func requestCamera() {
-        AVCaptureDevice.requestAccess(for: .video) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
-        }
-    }
-
-    func requestMicrophone() {
-        AVCaptureDevice.requestAccess(for: .audio) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
-        }
-    }
-
-    func requestPhotoLibrary() {
-        PHPhotoLibrary.requestAuthorization(for: .readWrite) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
-        }
-    }
-
-    /// Runs once per installation. Apple permission sheets are requested sequentially so
-    /// VoiceOver users and sighted users never get overlapping system dialogs.
-    func requestInitialPermissionsIfNeeded(push: PushNotifications) async {
-        guard !UserDefaults.standard.bool(forKey: firstLaunchKey) else {
-            refresh()
-            await push.refresh()
-            return
-        }
-        UserDefaults.standard.set(true, forKey: firstLaunchKey)
-
-        if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
-            _ = await withCheckedContinuation { continuation in
-                AVCaptureDevice.requestAccess(for: .audio) { granted in continuation.resume(returning: granted) }
-            }
-        }
-        if AVCaptureDevice.authorizationStatus(for: .video) == .notDetermined {
-            _ = await withCheckedContinuation { continuation in
-                AVCaptureDevice.requestAccess(for: .video) { granted in continuation.resume(returning: granted) }
-            }
-        }
-        if PHPhotoLibrary.authorizationStatus(for: .readWrite) == .notDetermined {
-            _ = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
-        }
-        await push.requestAuthorizationAsync()
+    func requestCamera() async -> Bool {
+        let granted = await AVCaptureDevice.requestAccess(for: .video)
         refresh()
+        return granted
+    }
+
+    func requestMicrophone() async -> Bool {
+        let granted = await AVCaptureDevice.requestAccess(for: .audio)
+        refresh()
+        return granted
     }
 
     func text(for status: AVAuthorizationStatus) -> String {
         switch status {
-        case .notDetermined: return "Not requested"
+        case .notDetermined: return "Not asked yet"
         case .restricted: return "Restricted"
-        case .denied: return "Disabled"
-        case .authorized: return "Allowed"
-        @unknown default: return "Unknown"
-        }
-    }
-
-    func text(for status: PHAuthorizationStatus) -> String {
-        switch status {
-        case .notDetermined: return "Not requested"
-        case .restricted: return "Restricted"
-        case .denied: return "Disabled"
-        case .authorized: return "Allowed"
-        case .limited: return "Limited"
+        case .denied: return "Off"
+        case .authorized: return "On"
         @unknown default: return "Unknown"
         }
     }

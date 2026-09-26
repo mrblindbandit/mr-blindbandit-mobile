@@ -1,7 +1,7 @@
 import SwiftUI
 import AuthenticationServices
 
-/// Natural consumer onboarding — Google + email first; Apple stays off until explicitly enabled.
+/// Sign-in screen: Sign in with Apple, Google, and email through Clerk.
 struct AuthGatewayView: View {
     @ObservedObject var auth: ClerkAuthService
     @EnvironmentObject private var preferences: AppPreferences
@@ -20,7 +20,7 @@ struct AuthGatewayView: View {
                 VStack(spacing: 28) {
                     VStack(spacing: 16) {
                         SpinningBrandLogo(size: 120, reduceMotion: preferences.reduceAppMotion)
-                        Text("Mr. Blind Bandit")
+                        Text("Mr. Blindbandit")
                             .font(.system(.largeTitle, design: .rounded, weight: .heavy))
                             .foregroundStyle(.white)
                             .accessibilityAddTraits(.isHeader)
@@ -30,7 +30,7 @@ struct AuthGatewayView: View {
                             .multilineTextAlignment(.center)
                         Text("Sign in to unlock your studio, calls, and messages.")
                             .font(.subheadline)
-                            .foregroundStyle(.white.opacity(0.65))
+                            .foregroundStyle(.white.opacity(0.85))
                             .multilineTextAlignment(.center)
                             .padding(.horizontal)
                     }
@@ -53,13 +53,6 @@ struct AuthGatewayView: View {
 
                     legalFooter
 
-                    if !AppConfig.isClerkConfigured {
-                        Text("Clerk publishable key missing — configure the public client key for production auth.")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
-                    }
                 }
                 .padding(.horizontal, 22)
                 .padding(.bottom, 28)
@@ -86,7 +79,7 @@ struct AuthGatewayView: View {
             .tint(.white)
             .foregroundStyle(.black)
             .disabled(auth.busy)
-            .accessibilityHint("Signs in with Google through Clerk.")
+            .accessibilityHint("Signs in with your Google account.")
 
             Button {
                 AppHaptics.selection()
@@ -100,7 +93,7 @@ struct AuthGatewayView: View {
             .buttonStyle(.bordered)
             .tint(.yellow)
             .disabled(auth.busy)
-            .accessibilityHint("Opens Clerk email and password sign-in.")
+            .accessibilityHint("Sign in or create an account with your email address.")
 
             if AppConfig.enableSignInWithApple {
                 SignInWithAppleButton(.continue) { request in
@@ -122,12 +115,6 @@ struct AuthGatewayView: View {
                 .signInWithAppleButtonStyle(.white)
                 .frame(height: 52)
                 .accessibilityLabel("Continue with Apple")
-            }
-
-            if AppConfig.enablePhoneOTP {
-                Text("Phone OTP available when enabled in Clerk.")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.5))
             }
 
             Button {
@@ -259,15 +246,16 @@ struct AuthGatewayView: View {
     private var legalFooter: some View {
         VStack(spacing: 8) {
             Text("By continuing you agree to the Terms of Use and acknowledge the Privacy Policy.")
-                .font(.caption2)
-                .foregroundStyle(.white.opacity(0.45))
+                .font(.footnote)
+                .foregroundStyle(.white.opacity(0.85))
                 .multilineTextAlignment(.center)
             HStack(spacing: 16) {
-                Link("Privacy Policy", destination: URL(string: "https://mrblindbandit.net/privacy")!)
-                Link("Terms of Use", destination: URL(string: "https://mrblindbandit.net/terms/")!)
+                Link("Privacy Policy", destination: AppConfig.privacyURL)
+                Link("Terms of Use", destination: AppConfig.termsURL)
             }
-            .font(.caption.weight(.semibold))
+            .font(.subheadline.weight(.semibold))
             .tint(.yellow)
+            .frame(minHeight: 44)
         }
         .padding(.horizontal, 12)
     }

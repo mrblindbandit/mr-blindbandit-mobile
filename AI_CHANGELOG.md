@@ -10,6 +10,17 @@ Cross-links:
 
 ---
 
+## 2026-09-26 — Store-ready revamp, v1.7 (Grok Bot, branch `revamp/store-ready`)
+
+- Audited both apps against the App Store Review Guidelines and Google Play policy. Found that `/v1/mobile-native/*` returns 404 in production and that the API wraps responses in `{success,data}`, so calls, messages and deletion were broken.
+- Rewired both apps to `/v1/social/*` and `/v1/privacy/delete` (shapes verified against `worker/platform/social.ts`).
+- Added report/block, full Settings, a design system, in-context permissions, push registration and iOS video rendering.
+- Removed developer screens, the keypad, and unused permissions.
+- CI: placeholder gate, Android emulator tests, signed AAB when secrets exist, iOS simulator tests, and a secrets-gated archive.
+- Clerk was not changed. The dashboard steps are in RELEASING.md.
+
+---
+
 ## 2026-09-18 — Full Blindbandit GitHub / product day (Grok Bot)
 
 ### YouTube (@MrBlindbandit)

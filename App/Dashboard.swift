@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ProfessionalHome: View {
     @EnvironmentObject private var push: PushNotifications
-    @EnvironmentObject private var privacy: PrivacyPermissions
+    @EnvironmentObject private var router: TabRouter
 
     private let columns = [GridItem(.flexible()), GridItem(.flexible())]
 
@@ -15,10 +15,11 @@ struct ProfessionalHome: View {
                     Text("Create")
                         .font(.title2.bold())
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityAddTraits(.isHeader)
 
                     LazyVGrid(columns: columns, spacing: 14) {
                         NavigationLink { NativeCreatorToolkitView() } label: {
-                            DashboardCard(icon: "square.grid.3x3.fill", title: "Creator Toolkit", subtitle: "20 offline Swift utilities")
+                            DashboardCard(icon: "square.grid.3x3.fill", title: "Creator Toolkit", subtitle: "20 music tools that work offline")
                         }
                         .buttonStyle(.plain)
 
@@ -65,10 +66,17 @@ struct ProfessionalHome: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .accessibilityAddTraits(.isHeader)
 
-                    NavigationLink { ConnectHubView() } label: {
-                        WideDashboardCard(icon: "phone.and.waveform.fill", title: "Calls & Chat", subtitle: "LiveKit voice, video, messaging, and voice notes")
+                    Button { router.selection = .connect } label: {
+                        WideDashboardCard(icon: "phone.and.waveform.fill", title: "Calls & messages", subtitle: "Voice calls, video calls and messages with Blindbandit members")
                     }
                     .buttonStyle(.plain)
+
+                    if push.authorizationStatus == .notDetermined {
+                        Button { push.requestAuthorization() } label: {
+                            WideDashboardCard(icon: "bell.badge.fill", title: "Turn on call and message alerts", subtitle: "Get notified when someone calls or messages you")
+                        }
+                        .buttonStyle(.plain)
+                    }
 
                     NavigationLink { MusicianStudioView() } label: {
                         WideDashboardCard(icon: "metronome.fill", title: "Musician Studio", subtitle: "Metronome, setlists, lyrics, release checklist, and more")
@@ -80,44 +88,22 @@ struct ProfessionalHome: View {
                     Text("Blindbandit Records")
                         .font(.title2.bold())
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityAddTraits(.isHeader)
 
-                    NavigationLink { Website(path: "/portal/", title: "Label Dashboard") } label: {
-                        WideDashboardCard(icon: "building.2.crop.circle.fill", title: "Label Dashboard", subtitle: "Artists, earnings, contracts, messages, and internal tools")
+                    Button { router.selection = .listen } label: {
+                        WideDashboardCard(icon: "headphones", title: "Listen", subtitle: "Mr. Blindbandit on Spotify, Apple Music and more")
                     }
                     .buttonStyle(.plain)
 
-                    NavigationLink { Website(path: "/portal/payments/", title: "Payments") } label: {
-                        WideDashboardCard(icon: "dollarsign.circle.fill", title: "Payments", subtitle: "Review payment and earnings information")
+                    NavigationLink { Website(path: "/music/", title: "Music") } label: {
+                        WideDashboardCard(icon: "opticaldisc", title: "Releases", subtitle: "Albums and singles from Blindbandit Records")
                     }
                     .buttonStyle(.plain)
                 }
-
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("System Status").font(.headline)
-                    HStack {
-                        StatusPill(icon: "bell.badge.fill", text: push.statusText)
-                        Spacer()
-                        StatusPill(icon: "camera.fill", text: privacy.text(for: privacy.camera))
-                    }
-                    HStack {
-                        StatusPill(icon: "mic.fill", text: privacy.text(for: privacy.microphone))
-                        Spacer()
-                        StatusPill(icon: "lock.shield.fill", text: "Protected")
-                    }
-                }
-                .padding()
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 24))
-
-                HStack {
-                    NavigationLink("Account") { Website(path: "/account", title: "Account") }
-                    Spacer()
-                    ShareLink("Share Website", item: URL(string: "https://mrblindbandit.net/")!)
-                }
-                .buttonStyle(.bordered)
             }
             .padding()
         }
-        .navigationTitle("Mr. Blind Bandit")
+        .navigationTitle("Home")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -132,14 +118,14 @@ struct BrandHeroPanel: View {
             Image(systemName: "waveform.path.ecg.rectangle.fill").font(.system(size: 86, weight: .bold)).foregroundStyle(.yellow.opacity(0.20)).offset(x: 210, y: -95).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 8) {
                 BrandMark(size: 72)
-                Text("MR. BLIND BANDIT").font(.system(.title, design: .rounded, weight: .heavy)).foregroundStyle(.white).accessibilityAddTraits(.isHeader)
-                Text("Music · Creator Tools · Calls · Blindbandit Records").font(.headline).foregroundStyle(.white.opacity(0.86))
+                Text("MR. BLINDBANDIT").font(.system(.title, design: .rounded, weight: .heavy)).foregroundStyle(.white).accessibilityAddTraits(.isHeader)
+                Text("Music · Creator tools · Calls · Blindbandit Records").font(.headline).foregroundStyle(.white.opacity(0.9))
                 Text("mrblindbandit.net").font(.subheadline.monospaced()).foregroundStyle(.yellow)
             }
             .padding(24)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Mr. Blind Bandit. Music, creator tools, and Blindbandit Records.")
+        .accessibilityLabel("Mr. Blindbandit. Music, creator tools, calls and Blindbandit Records.")
     }
 }
 
@@ -211,26 +197,25 @@ struct StatusPill: View {
 struct CreatorHubView: View {
     var body: some View {
         List {
-            Section("Native creator toolkit") {
-                NavigationLink { NativeCreatorToolkitView() } label: { Label("20-Tool Creator Toolkit", systemImage: "square.grid.3x3.fill") }
+            Section("Toolkit") {
+                NavigationLink { NativeCreatorToolkitView() } label: { Label("Creator toolkit (20 tools)", systemImage: "square.grid.3x3.fill") }
             }
 
-            Section("Native audio tools") {
+            Section("Audio") {
                 NavigationLink { NativeAudioConverterView() } label: { Label("Audio Converter", systemImage: "waveform") }
                 NavigationLink { NativeAudioTrimmerView() } label: { Label("Audio Trimmer", systemImage: "scissors") }
                 NavigationLink { NativePeakNormalizerView() } label: { Label("Peak Normalizer", systemImage: "waveform.path") }
                 NavigationLink { NativeAudioInspectorView() } label: { Label("Audio Inspector", systemImage: "waveform.badge.magnifyingglass") }
             }
 
-            Section("Native artwork and video tools") {
+            Section("Artwork and video") {
                 NavigationLink { NativeArtTrackGeneratorView() } label: { Label("Art Track Generator", systemImage: "play.rectangle") }
                 NavigationLink { NativeArtworkResizerView() } label: { Label("Artwork Resizer", systemImage: "crop") }
                 NavigationLink { NativeImageConverterView() } label: { Label("Image Converter", systemImage: "photo.on.rectangle.angled") }
             }
 
-            Section("Website tools") {
-                NavigationLink { Website(path: "/media-tools/", title: "Media Suite") } label: { Label("Online Media Suite", systemImage: "globe") }
-                NavigationLink { Website(path: "/support/", title: "Support") } label: { Label("Support", systemImage: "questionmark.circle") }
+            Section("On mrblindbandit.net") {
+                NavigationLink { Website(path: "/media-tools/", title: "Media tools") } label: { Label("Online media tools", systemImage: "globe") }
             }
 
             Section("Musician Studio") {
@@ -241,15 +226,7 @@ struct CreatorHubView: View {
                 NavigationLink { ReleaseChecklistView() } label: { Label("Release Checklist", systemImage: "checklist") }
             }
 
-            Section("Connect") {
-                NavigationLink { ConnectHubView() } label: { Label("Calls, chat & voice notes", systemImage: "phone.and.waveform.fill") }
-            }
-
-            Section("Publishing") {
-                NavigationLink { Website(path: "/", title: "Website") } label: { Label("Open mrblindbandit.net", systemImage: "globe") }
-                NavigationLink { Website(path: "/community/", title: "Community") } label: { Label("Community", systemImage: "person.3") }
-            }
         }
-        .navigationTitle("Creator Studio")
+        .navigationTitle("Create")
     }
 }

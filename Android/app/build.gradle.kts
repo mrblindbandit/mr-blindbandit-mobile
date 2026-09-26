@@ -25,8 +25,8 @@ android {
         applicationId = "net.mrblindbandit.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.6.0"
+        versionCode = 7
+        versionName = "1.7.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("String", "WEB_BASE_URL", "\"https://mrblindbandit.net\"")
@@ -36,10 +36,28 @@ android {
         buildConfigField("String", "GOOGLE_OAUTH_CLIENT_ID", "\"${local("GOOGLE_OAUTH_CLIENT_ID", productionGoogleOAuthClientId)}\"")
     }
 
+    // Release signing is read from the environment (GitHub Actions secrets) or local.properties.
+    // Keystores and passwords are never committed. Without them, bundleRelease produces an
+    // unsigned AAB that Play App Signing can still accept after upload-key signing.
+    val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_PATH") ?: local("ANDROID_KEYSTORE_PATH")
+    val hasReleaseSigning = releaseStoreFile.isNotBlank() && rootProject.file(releaseStoreFile).exists()
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = rootProject.file(releaseStoreFile)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: local("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS") ?: local("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD") ?: local("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            isDebuggable = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
         }
     }
 

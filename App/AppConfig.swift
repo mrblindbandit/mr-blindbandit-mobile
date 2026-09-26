@@ -2,28 +2,28 @@ import Foundation
 
 /// Central client configuration. Reusable backend secrets never ship in the binary.
 enum AppConfig {
-    static let appDisplayName = "Mr. Blind Bandit"
-    static let marketingVersion = "1.6"
+    static let appDisplayName = "Mr. Blindbandit"
+    static let marketingVersion = "1.7"
     static let webBaseURL = URL(string: "https://mrblindbandit.net")!
     static let apiBaseURL = URL(string: "https://api.mrblindbandit.net")!
     static let defaultLiveKitRoom = "mrblindbandit"
 
+    static let privacyURL = URL(string: "https://mrblindbandit.net/privacy/")!
+    static let termsURL = URL(string: "https://mrblindbandit.net/terms/")!
+    static let supportURL = URL(string: "https://mrblindbandit.net/support/")!
+    static let accessibilityURL = URL(string: "https://mrblindbandit.net/accessibility/")!
+    static let accountURL = URL(string: "https://mrblindbandit.net/account")!
+    /// Public web page where anyone can request account deletion without the app (Google Play requirement).
+    static let accountDeletionURL = URL(string: "https://mrblindbandit.net/account/delete")!
+    static let supportEmail = "business@mrblindbandit.net"
+
     static var clerkPublishableKey: String { AppSecrets.clerkPublishableKey }
     static var liveKitURL: String { AppSecrets.liveKitURL }
-    static var googleOAuthClientID: String { AppSecrets.googleOAuthClientID }
 
     static var isClerkConfigured: Bool { clerkPublishableKey.hasPrefix("pk_") }
-    static var isLiveKitConfigured: Bool { liveKitURL.hasPrefix("wss://") }
 
-    /// Clerk Production app: "mr. blindbandit - Blindbandit Records" on mrblindbandit.net.
-    /// Email/password, Google OAuth, and Sign in with Apple are supported by the native app.
-    static let oauthCallbackURLScheme = "blindbandit"
-    static let oauthCallbackURL = URL(string: "blindbandit://oauth-callback")!
-    static let clerkOAuthHostedCallback = URL(string: "https://clerk.mrblindbandit.net/v1/oauth_callback")!
-
-    /// Required as an equivalent privacy-preserving login option when Google is offered on iOS.
+    /// Clerk production instance "mr. blindbandit - Blindbandit Records" (clerk.mrblindbandit.net).
+    /// Email + password, Google, and Sign in with Apple. Apple is required by App Store Review
+    /// Guideline 4.8 because Google sign-in is offered; the Apple provider must be enabled in Clerk.
     static var enableSignInWithApple: Bool { true }
-
-    /// Phone OTP remains off until the Clerk instance has SMS/OTP configured.
-    static var enablePhoneOTP: Bool { false }
 }

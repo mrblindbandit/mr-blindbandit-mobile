@@ -65,8 +65,8 @@ enum CallSounds {
     private static var loopPlayer: AVAudioPlayer?
 
     static var playUISounds: Bool {
-        get { UserDefaults.standard.object(forKey: "playUISounds") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "playUISounds") }
+        get { UserDefaults.standard.object(forKey: SettingsKey.uiSounds) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: SettingsKey.uiSounds) }
     }
 
     static var selectedRingtone: Ringtone {

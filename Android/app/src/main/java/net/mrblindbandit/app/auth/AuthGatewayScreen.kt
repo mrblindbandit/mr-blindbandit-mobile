@@ -62,10 +62,10 @@ fun AuthGatewayScreen(auth: ClerkAuthService, reduceMotion: Boolean) {
     ) {
         Spacer(Modifier.height(24.dp))
         SpinningBrandLogo(120.dp, reduceMotion)
-        Text("Mr. Blind Bandit", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color.White,
+        Text("Mr. Blindbandit", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color.White,
             modifier = Modifier.semantics { heading() })
-        Text("Music · Creator Tools · Calls · Blindbandit Records", color = Color.White.copy(alpha = 0.78f), textAlign = TextAlign.Center)
-        Text("Sign in to unlock your studio, calls, and messages.", color = Color.White.copy(alpha = 0.65f), textAlign = TextAlign.Center)
+        Text("Music · Creator tools · Calls · Blindbandit Records", color = Color.White.copy(alpha = 0.9f), textAlign = TextAlign.Center)
+        Text("Sign in to unlock your studio, calls, and messages.", color = Color.White.copy(alpha = 0.85f), textAlign = TextAlign.Center)
 
         when (mode) {
             "landing" -> {
@@ -139,7 +139,7 @@ fun AuthGatewayScreen(auth: ClerkAuthService, reduceMotion: Boolean) {
         }
 
         Text("By continuing you agree to the Terms of Use and acknowledge the Privacy Policy.",
-            color = Color.White.copy(0.45f), fontSize = 11.sp, textAlign = TextAlign.Center)
+            color = Color.White.copy(0.85f), fontSize = 14.sp, textAlign = TextAlign.Center)
         TextButton(onClick = {
             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://mrblindbandit.net/privacy/")))
         }) { Text("Privacy Policy", color = Color(0xFFFFD54F)) }

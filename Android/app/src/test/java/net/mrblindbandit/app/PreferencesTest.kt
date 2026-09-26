@@ -35,4 +35,24 @@ class PreferencesTest {
         prefs.setTextZoom(10)
         assertEquals(75, prefs.textZoom)
     }
+
+    @Test fun settingsPersistAcrossInstances() {
+        val prefs = AndroidAppPreferences(context)
+        prefs.setHighContrast(true)
+        prefs.setHapticsEnabled(false)
+        prefs.setAppearance(net.mrblindbandit.app.ui.Appearance.DARK)
+        prefs.setSpeechRate(1.5f)
+        val reloaded = AndroidAppPreferences(context)
+        assertTrue(reloaded.highContrast)
+        assertFalse(reloaded.hapticsEnabled)
+        assertEquals(net.mrblindbandit.app.ui.Appearance.DARK, reloaded.appearance)
+        assertEquals(1.5f, reloaded.speechRate, 0.001f)
+    }
+
+    @Test fun clearAllRestoresDefaults() {
+        val prefs = AndroidAppPreferences(context)
+        prefs.setReduceMotion(true)
+        prefs.clearAll()
+        assertFalse(AndroidAppPreferences(context).reduceMotion)
+    }
 }

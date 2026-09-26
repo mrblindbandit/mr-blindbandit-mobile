@@ -29,8 +29,8 @@ class UrlPolicyTest {
 
 class AppConfigVersionTest {
     @Test
-    fun versionNameIs16() {
+    fun versionNameIs17() {
         // BuildConfig may be absent in pure JVM without AGP; validate the source-level release constant.
-        assertTrue(net.mrblindbandit.app.config.AppConfig.MARKETING_VERSION == "1.6")
+        assertTrue(net.mrblindbandit.app.config.AppConfig.MARKETING_VERSION == "1.7")
     }
 }

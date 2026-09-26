@@ -6,36 +6,146 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
-env:
-  APP_VERSION: '1.6'
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  test-and-build:
-    runs-on: macos-15
-    timeout-minutes: 35
+  build-and-test:
+    runs-on: macos-latest
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
+      - name: Placeholder content check
+        run: bash scripts/check-placeholders.sh
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
       - name: Install XcodeGen
         run: brew install xcodegen
-      - name: Generate project and app icon
+      - name: Generate project
         run: |
           swift scripts/GenerateAppIcon.swift
           xcodegen generate
-      - name: Verify iOS release version
+      - name: Verify release configuration
         run: |
-          grep -q "MARKETING_VERSION: '1.6'" project.yml
-          grep -q "CURRENT_PROJECT_VERSION: '6'" project.yml
+          set -euo pipefail
+          grep -q "TARGETED_DEVICE_FAMILY: '1'" project.yml
           test -f App/PrivacyInfo.xcprivacy
           grep -q 'com.apple.developer.applesignin' App/Blindbandit.entitlements
-      - name: Run iOS unit tests
+          grep -q 'webcredentials:clerk.mrblindbandit.net' App/Blindbandit.entitlements
+          ! grep -q 'NSPhotoLibrary' project.yml
+          ! grep -q 'NSBluetooth' project.yml
+      - name: Pick an iPhone simulator
         run: |
-          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; ids=[x["udid"] for values in d.values() for x in values if x.get("isAvailable") and "iPhone" in x.get("name","")]; print(ids[0] if ids else "")')
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; ids=[x["udid"] for k,v in sorted(d.items(), reverse=True) if "iOS" in k for x in v if x.get("isAvailable") and x.get("name","").startswith("iPhone")]; print(ids[0] if ids else "")')
           test -n "$DEVICE_ID"
-          xcodebuild test -project Blindbandit.xcodeproj -scheme Blindbandit -sdk iphonesimulator -destination "platform=iOS Simulator,id=$DEVICE_ID" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
-      - name: Build unsigned IPA
+          echo "DEVICE_ID=$DEVICE_ID" >> "$GITHUB_ENV"
+      - name: Build for simulator
+        run: |
+          mkdir -p build
+          if ! xcodebuild build-for-testing -project Blindbandit.xcodeproj -scheme Blindbandit \
+            -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath build/Sim \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO > build/xcodebuild-build.log 2>&1; then
+            grep -E "error:|failed" build/xcodebuild-build.log | head -150
+            tail -60 build/xcodebuild-build.log
+            exit 1
+          fi
+          grep -cE "warning:" build/xcodebuild-build.log || true
+          tail -5 build/xcodebuild-build.log
+      - name: Run unit tests on simulator
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building -project Blindbandit.xcodeproj -scheme Blindbandit \
+            -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath build/Sim \
+            -resultBundlePath build/TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+      - name: Build unsigned device app (IPA)
         run: bash build-unsigned.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: Mr-Blindbandit-iOS-v1.6-unsigned-IPA
-          path: dist/Mr-Blindbandit-iOS-v1.6-unsigned.ipa
+          name: Mr-Blindbandit-iOS-unsigned-IPA
+          path: dist/*.ipa
           if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: Mr-Blindbandit-iOS-logs
+          path: |
+            build/xcodebuild-build.log
+            build/TestResults.xcresult
+          if-no-files-found: ignore
           retention-days: 7
+
+  archive:
+    # Signed archive + export for App Store Connect. Runs only when signing secrets exist.
+    needs: build-and-test
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      HAS_SIGNING: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 != '' && secrets.IOS_PROVISIONING_PROFILE_BASE64 != '' && secrets.APPLE_TEAM_ID != '' }}
+    steps:
+      - name: Skip notice
+        if: env.HAS_SIGNING != 'true'
+        run: echo "iOS signing secrets are not configured; skipping the signed archive."
+      - uses: actions/checkout@v4
+        if: env.HAS_SIGNING == 'true'
+      - name: Install signing certificate and profile
+        if: env.HAS_SIGNING == 'true'
+        env:
+          P12_BASE64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KC_PASS="${KEYCHAIN_PASSWORD:-$(uuidgen)}"
+          echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          echo "$PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/profile.mobileprovision"
+          security create-keychain -p "$KC_PASS" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KC_PASS" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KC_PASS" "$KEYCHAIN"
+          security list-keychain -d user -s "$KEYCHAIN"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/profile.mobileprovision")")
+          NAME=$(/usr/libexec/PlistBuddy -c "Print Name" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/profile.mobileprovision")")
+          cp "$RUNNER_TEMP/profile.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
+          echo "PROFILE_NAME=$NAME" >> "$GITHUB_ENV"
+          rm -f "$RUNNER_TEMP/cert.p12"
+      - name: Archive and export for App Store
+        if: env.HAS_SIGNING == 'true'
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          brew install xcodegen
+          xcodegen generate
+          xcodebuild archive -project Blindbandit.xcodeproj -scheme Blindbandit -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath build/Blindbandit.xcarchive \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_IDENTITY="Apple Distribution" PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME"
+          cat > build/ExportOptions.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>provisioningProfiles</key><dict><key>net.mrblindbandit.privateapp</key><string>${PROFILE_NAME}</string></dict>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath build/Blindbandit.xcarchive -exportOptionsPlist build/ExportOptions.plist -exportPath build/export
+      - uses: actions/upload-artifact@v4
+        if: env.HAS_SIGNING == 'true'
+        with:
+          name: Mr-Blindbandit-iOS-AppStore-IPA
+          path: build/export/*.ipa
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove signing keychain
+        if: always() && env.HAS_SIGNING == 'true'
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true

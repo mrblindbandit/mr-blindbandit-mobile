@@ -49,6 +49,7 @@ class ProductionCommunicationsService(
     val messages = mutableStateListOf<ServerMessage>()
 
     var myProfileId by mutableStateOf(""); private set
+    var myHandle by mutableStateOf(""); private set
     var statusMessage by mutableStateOf("")
     var isLoading by mutableStateOf(false); private set
     var isInCall by mutableStateOf(false); private set
@@ -61,6 +62,9 @@ class ProductionCommunicationsService(
 
     private var room: Room? = null
 
+    /** Mirrors the "Start video calls with camera off" setting. */
+    var startWithCameraOff: Boolean = false
+
     val callTimeLabel: String get() = "%02d:%02d".format(callSeconds / 60, callSeconds % 60)
 
     suspend fun bootstrap() {
@@ -68,6 +72,7 @@ class ProductionCommunicationsService(
         try {
             val me = request("/v1/social/me")
             myProfileId = me.optString("id")
+            myHandle = me.optString("handle")
             refreshConversations()
             statusMessage = "Calls and messages are online."
         } catch (e: Exception) {
@@ -134,14 +139,14 @@ class ProductionCommunicationsService(
         val target = recipient.trim()
         val text = body.trim()
         if (target.isBlank() || text.isBlank()) {
-            statusMessage = "Enter a recipient email or username and a message."
+            statusMessage = "Enter the person's Blindbandit username and a message."
             return null
         }
         return try {
             val response = request(
-                "/v1/mobile-native/messages",
+                "/v1/social/messages",
                 method = "POST",
-                body = JSONObject().put("recipient", target).put("body", text),
+                body = JSONObject().put("handle", normalizeHandle(target)).put("body", text),
             )
             val recipientInfo = response.optJSONObject("recipient")
             statusMessage = "Message sent to ${recipientInfo?.optString("display_name").orEmpty().ifBlank { target }}."
@@ -156,15 +161,15 @@ class ProductionCommunicationsService(
     suspend fun startCall(recipient: String, video: Boolean) {
         val target = recipient.trim()
         if (target.isBlank()) {
-            statusMessage = "Enter the person's email address or Blindbandit username first."
+            statusMessage = "Enter the person's Blindbandit username first."
             return
         }
         statusMessage = "Calling $target…"
         try {
             val response = request(
-                "/v1/mobile-native/calls",
+                "/v1/social/calls",
                 method = "POST",
-                body = JSONObject().put("recipient", target).put("kind", if (video) "video" else "voice"),
+                body = JSONObject().put("handle", normalizeHandle(target)).put("kind", if (video) "video" else "voice"),
             )
             val recipientInfo = response.optJSONObject("recipient")
             callPeerName = recipientInfo?.optString("display_name").orEmpty().ifBlank { target }
@@ -187,20 +192,23 @@ class ProductionCommunicationsService(
     }
 
     private suspend fun connectCall(response: JSONObject, video: Boolean) {
-        val livekit = response.optJSONObject("livekit") ?: error("The server did not return LiveKit credentials.")
+        val livekit = response.optJSONObject("livekit") ?: error("The call server is unavailable right now. Please try again shortly.")
         val token = livekit.optString("token")
-        val url = livekit.optString("url")
-        if (token.isBlank() || url.isBlank()) error("The server did not return a LiveKit URL and token.")
+        // The API returns an empty url when LIVEKIT_URL is not set on the Worker; fall back to the
+        // public LiveKit Cloud endpoint bundled with the app.
+        val url = livekit.optString("url").ifBlank { net.mrblindbandit.app.config.AppConfig.liveKitUrl }
+        if (token.isBlank() || url.isBlank()) error("The call server is unavailable right now. Please try again shortly.")
 
         val newRoom = LiveKit.create(appContext = context.applicationContext)
         newRoom.connect(url = url, token = token)
         newRoom.localParticipant.setMicrophoneEnabled(true)
-        if (video) newRoom.localParticipant.setCameraEnabled(true)
+        val cameraOn = video && !startWithCameraOff
+        if (cameraOn) newRoom.localParticipant.setCameraEnabled(true)
         room = newRoom
         activeCallId = response.optString("id").takeIf { it.isNotBlank() }
         isVideoCall = video
         micEnabled = true
-        cameraEnabled = video
+        cameraEnabled = cameraOn
         callSeconds = 0
         isInCall = true
         statusMessage = "Connected with ${callPeerName.ifBlank { "Blindbandit user" }}."
@@ -248,16 +256,48 @@ class ProductionCommunicationsService(
         }
     }
 
-    suspend fun deleteAppData() {
+    /** Registers this device's FCM token so the Blindbandit API can deliver call/message alerts. */
+    suspend fun registerDevice(token: String, installationId: String, appVersion: String, language: String): Boolean = try {
         request(
-            "/v1/mobile-native/account-data",
-            method = "DELETE",
-            body = JSONObject().put("confirmation", "DELETE MY BLINDBANDIT DATA"),
+            "/v1/social/devices/register",
+            method = "POST",
+            body = JSONObject().put("installation_id", installationId).put("platform", "android")
+                .put("token", token).put("app_version", appVersion).put("language", language),
         )
+        true
+    } catch (_: Exception) {
+        false
+    }
+
+    /** Blocks a profile so they can no longer message or call this account. */
+    suspend fun blockUser(handle: String): Boolean = try {
+        val encoded = URLEncoder.encode(normalizeHandle(handle), StandardCharsets.UTF_8.name())
+        request("/v1/social/profiles/$encoded/block", method = "POST", body = JSONObject())
+        statusMessage = "Blocked @${normalizeHandle(handle)}. They can no longer message or call you."
+        refreshConversations()
+        true
+    } catch (e: Exception) {
+        statusMessage = e.localizedMessage ?: "Could not block this person."
+        false
+    }
+
+    /** Sends an abuse report to the Blindbandit trust & safety queue. */
+    suspend fun report(targetType: String, targetId: String, reason: String, details: String = ""): Boolean = try {
+        request(
+            "/v1/social/reports",
+            method = "POST",
+            body = JSONObject().put("target_type", targetType).put("target_id", targetId.take(100))
+                .put("reason", reason.take(200)).put("details", details.take(2000)),
+        )
+        statusMessage = "Thanks. Your report was sent to the Blindbandit safety team."
+        true
+    } catch (e: Exception) {
+        statusMessage = e.localizedMessage ?: "Could not send the report."
+        false
     }
 
     private suspend fun request(path: String, method: String = "GET", body: JSONObject? = null): JSONObject = withContext(Dispatchers.IO) {
-        val token = auth.sessionToken() ?: error("Sign in with Clerk before using calls or messages.")
+        val token = auth.sessionToken() ?: error("Sign in to use calls and messages.")
         val connection = (URL(AppConfig.API_BASE_URL.trimEnd('/') + path).openConnection() as HttpURLConnection).apply {
             requestMethod = method
             setRequestProperty("Authorization", "Bearer $token")
@@ -273,15 +313,13 @@ class ProductionCommunicationsService(
         val status = connection.responseCode
         val stream = if (status in 200..299) connection.inputStream else connection.errorStream
         val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-        val json = if (text.isBlank()) JSONObject() else JSONObject(text)
         connection.disconnect()
-        if (status !in 200..299) {
-            val message = json.optJSONObject("error")?.optString("message").orEmpty().ifBlank { "Server returned HTTP $status." }
-            error(message)
-        }
-        json
+        BlindbanditApiEnvelope.unwrap(status, text)
     }
 }
+
+/** Blindbandit handles are stored without the leading @ and in lowercase. */
+fun normalizeHandle(raw: String): String = raw.trim().removePrefix("@").lowercase()
 
 private fun kotlinx.coroutines.CoroutineScope.launchSafely(block: suspend () -> Unit) =
     launch { try { block() } catch (_: Exception) {} }

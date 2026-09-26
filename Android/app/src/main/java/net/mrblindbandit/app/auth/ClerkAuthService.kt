@@ -25,7 +25,7 @@ sealed class AuthState {
     data class SignedIn(val displayName: String, val email: String) : AuthState()
 }
 
-/** Real Clerk authentication façade. No local fake sessions or reusable server secrets. */
+/** Clerk authentication façade. Sessions come only from Clerk; no reusable server secrets ship in the app. */
 class ClerkAuthService(context: Context) {
     private val appContext = context.applicationContext
     private var configured = false
@@ -51,7 +51,7 @@ class ClerkAuthService(context: Context) {
         }
         if (!AppConfig.isClerkConfigured) {
             state = AuthState.SignedOut
-            statusMessage = "Clerk authentication is not configured."
+            statusMessage = "Sign-in is temporarily unavailable. Please update the app or try again later."
             return
         }
         if (Clerk.isInitialized.value) {
@@ -64,7 +64,7 @@ class ClerkAuthService(context: Context) {
         val ready = withTimeoutOrNull(10_000) { Clerk.isInitialized.first { it } } ?: false
         if (!ready) {
             state = AuthState.SignedOut
-            statusMessage = Clerk.initializationError.value?.localizedMessage ?: "Clerk could not initialize. Check your connection and try again."
+            statusMessage = Clerk.initializationError.value?.localizedMessage ?: "Sign-in could not start. Check your connection and try again."
             return
         }
         refresh()
@@ -98,10 +98,7 @@ class ClerkAuthService(context: Context) {
         statusMessage = ""
         return try {
             ensureConfigured()
-            if (AppConfig.googleOAuthClientId.isBlank()) {
-                statusMessage = "Google sign-in is unavailable because its client ID is not configured."
-                false
-            } else {
+            run {
                 var ok = false
                 Clerk.auth.signInWithOAuth(OAuthProvider.GOOGLE)
                     .onSuccess { ok = true }
@@ -111,7 +108,7 @@ class ClerkAuthService(context: Context) {
                     statusMessage = "Signed in with Google."
                     true
                 } else {
-                    if (statusMessage.isBlank()) statusMessage = "Google authentication finished without an active Clerk session."
+                    if (statusMessage.isBlank()) statusMessage = "Google sign-in was cancelled or did not finish. Please try again."
                     false
                 }
             }
@@ -168,7 +165,7 @@ class ClerkAuthService(context: Context) {
                     statusMessage = "Signed in."
                     true
                 } else {
-                    if (statusMessage.isBlank()) statusMessage = "Clerk needs another verification step before sign-in can finish."
+                    if (statusMessage.isBlank()) statusMessage = "This account needs one more verification step. Finish it at mrblindbandit.net/account, then sign in again."
                     false
                 }
             }
@@ -202,7 +199,7 @@ class ClerkAuthService(context: Context) {
                     statusMessage = "Email verified. Your account is ready."
                     true
                 } else {
-                    if (statusMessage.isBlank()) statusMessage = "Clerk accepted the code but the account still needs another required step."
+                    if (statusMessage.isBlank()) statusMessage = "That code was accepted, but your account needs one more detail. Finish it at mrblindbandit.net/account."
                     false
                 }
             }
@@ -231,7 +228,7 @@ class ClerkAuthService(context: Context) {
             ensureConfigured()
             val user = Clerk.userFlow.value
             if (user == null) {
-                statusMessage = "No signed-in Clerk account was found."
+                statusMessage = "You are not signed in. Sign in and try again."
                 false
             } else {
                 AccountDeletionService.deleteBlindbanditData(this)
@@ -277,6 +274,6 @@ class ClerkAuthService(context: Context) {
 
     private suspend fun ensureConfigured() {
         if (!configured || !Clerk.isInitialized.value) configure()
-        if (!Clerk.isInitialized.value) error("Clerk is not initialized.")
+        if (!Clerk.isInitialized.value) error("Sign-in is still starting. Please try again.")
     }
 }

@@ -6,7 +6,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import android.view.View
 import android.view.WindowManager
 import android.webkit.CookieManager
@@ -15,19 +14,14 @@ import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
-import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,78 +29,77 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.UploadFile
-import androidx.compose.material.icons.filled.Web
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
-
-import androidx.compose.material.icons.filled.Headphones
-import androidx.compose.material.icons.filled.MoreHoriz
-import androidx.compose.material.icons.filled.Phone
+import java.util.Locale
 import kotlinx.coroutines.launch
+import java.util.UUID
 import net.mrblindbandit.app.auth.AuthGatewayScreen
 import net.mrblindbandit.app.auth.AuthState
 import net.mrblindbandit.app.auth.ClerkAuthService
-import net.mrblindbandit.app.brand.BrandProgressOverlay
 import net.mrblindbandit.app.brand.BlindbanditLogo
-import net.mrblindbandit.app.brand.PulsingBrandLogo
+import net.mrblindbandit.app.brand.BrandProgressOverlay
 import net.mrblindbandit.app.brand.SpinningBrandLogo
-import net.mrblindbandit.app.brand.WaveformLoader
-import net.mrblindbandit.app.connect.ConnectHubScreen
+import net.mrblindbandit.app.connect.ConnectTab
+import net.mrblindbandit.app.connect.rememberCommunications
 import net.mrblindbandit.app.creator.NativeCreatorToolkitScreen
+import net.mrblindbandit.app.settings.SettingsScreen
+import net.mrblindbandit.app.ui.BlindbanditTheme
+import net.mrblindbandit.app.ui.Spacing
 
 class MainActivity : ComponentActivity() {
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
@@ -125,8 +118,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
+        BlindbanditFirebaseMessagingService.ensureChannels(this)
         deepLinkState.value = intent?.dataString?.takeIf { UrlPolicy.isFirstParty(it) }
-        setContent { MaterialTheme { BlindbanditAndroidApp(this, deepLinkState) } }
+        setContent { BlindbanditAndroidApp(this, deepLinkState) }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -196,14 +190,28 @@ class MainActivity : ComponentActivity() {
     companion object { private const val MEDIA_PERMISSION_REQUEST = 7301 }
 }
 
-enum class AppTab(val label: String) {
-    HOME("Home"), CREATOR("Create"), CONNECT("Connect"), LISTEN("Listen"), MORE("More")
+enum class AppTab(val label: String, val icon: ImageVector, val description: String) {
+    HOME("Home", Icons.Default.Home, "Home"),
+    CREATOR("Create", Icons.Default.Build, "Creator tools"),
+    CONNECT("Connect", Icons.Default.Phone, "Calls and messages"),
+    LISTEN("Listen", Icons.Default.Headphones, "Listen to music"),
+    MORE("More", Icons.Default.MoreHoriz, "More options"),
 }
 
 @Composable
 fun BlindbanditAndroidApp(activity: MainActivity, deepLinkState: MutableState<String?>) {
     val context = LocalContext.current
     val prefs = remember { AndroidAppPreferences(context) }
+    BlindbanditTheme(appearance = prefs.appearance, highContrast = prefs.highContrast) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            AppRoot(activity, deepLinkState, prefs)
+        }
+    }
+}
+
+@Composable
+private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>, prefs: AndroidAppPreferences) {
+    val context = LocalContext.current
     val auth = remember { ClerkAuthService(context) }
     var tab by rememberSaveable { mutableStateOf(AppTab.HOME) }
     var currentUrl by rememberSaveable { mutableStateOf(BuildConfig.WEB_BASE_URL + "/") }
@@ -223,339 +231,243 @@ fun BlindbanditAndroidApp(activity: MainActivity, deepLinkState: MutableState<St
         else activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
-    when (auth.state) {
+    when (val state = auth.state) {
         AuthState.Unknown -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             SpinningBrandLogo(112.dp, prefs.reduceMotion)
         }
         AuthState.SignedOut -> AuthGatewayScreen(auth, prefs.reduceMotion)
         is AuthState.SignedIn -> {
-            if (showSettings) {
-                Scaffold { inner ->
-                    Box(Modifier.fillMaxSize().padding(inner)) {
-                        SettingsScreen(activity, prefs, auth, onBack = { showSettings = false })
-                    }
-                }
-            } else if (showWeb) {
-                Scaffold(topBar = {
-                    NavigationBar {
-                        NavigationBarItem(selected = false, onClick = { showWeb = false }, icon = { Text("Close") }, label = { Text("Back") })
-                    }
-                }) { inner ->
-                    Box(Modifier.fillMaxSize().padding(inner)) {
-                        BlindbanditWebView(activity, currentUrl, prefs)
-                    }
-                }
-            } else {
-                Scaffold(bottomBar = {
-                    NavigationBar {
-                        AppTab.entries.forEach { item ->
-                            val icon = when (item) {
-                                AppTab.HOME -> Icons.Default.Home
-                                AppTab.CREATOR -> Icons.Default.Build
-                                AppTab.CONNECT -> Icons.Default.Phone
-                                AppTab.LISTEN -> Icons.Default.Headphones
-                                AppTab.MORE -> Icons.Default.MoreHoriz
+            val communications = rememberCommunications(auth)
+            communications.startWithCameraOff = prefs.startCallsWithCameraOff
+            LaunchedEffect(state.email) { registerPushToken(context, communications) }
+            val openWeb: (String) -> Unit = { currentUrl = it; showWeb = true }
+            when {
+                showSettings -> SettingsScreen(
+                    prefs = prefs,
+                    auth = auth,
+                    onBack = { showSettings = false },
+                    onOpenWeb = { showSettings = false; openWeb(it) },
+                    onRequestNotifications = { activity.requestNotificationPermission() },
+                )
+                showWeb -> WebScreen(activity, currentUrl, prefs, onClose = { showWeb = false })
+                else -> {
+                    BackHandler(enabled = tab != AppTab.HOME) { tab = AppTab.HOME }
+                    Scaffold(bottomBar = {
+                        NavigationBar {
+                            AppTab.entries.forEach { item ->
+                                NavigationBarItem(
+                                    selected = tab == item,
+                                    onClick = { tab = item },
+                                    icon = { Icon(item.icon, contentDescription = null) },
+                                    label = { Text(item.label) },
+                                )
                             }
-                            NavigationBarItem(
-                                selected = tab == item,
-                                onClick = { tab = item },
-                                icon = { Icon(icon, contentDescription = item.label) },
-                                label = { Text(item.label) }
-                            )
                         }
-                    }
-                }) { inner ->
-                    Box(Modifier.fillMaxSize().padding(inner)) {
-                        when (tab) {
-                            AppTab.HOME -> HomeScreen(
-                                onOpen = { currentUrl = it; showWeb = true },
-                                onCreator = { tab = AppTab.CREATOR },
-                                onMedia = { currentUrl = BuildConfig.WEB_BASE_URL + "/media-tools/"; showWeb = true },
-                                onSettings = { showSettings = true },
-                                onConnect = { tab = AppTab.CONNECT },
-                                onListen = { tab = AppTab.LISTEN }
-                            )
-                            AppTab.CREATOR -> NativeCreatorToolkitScreen()
-                            AppTab.CONNECT -> ConnectHubScreen(prefs.reduceMotion)
-                            AppTab.LISTEN -> ListenHubScreen(onOpenSite = { currentUrl = it; showWeb = true }, prefs = prefs)
-                            AppTab.MORE -> MoreHubScreen(
-                                auth = auth,
-                                onOpenSite = { currentUrl = it; showWeb = true },
-                                onOpenSettings = { showSettings = true }
-                            )
+                    }) { inner ->
+                        Box(Modifier.fillMaxSize().padding(inner)) {
+                            when (tab) {
+                                AppTab.HOME -> HomeScreen(
+                                    displayName = state.displayName,
+                                    onCreator = { tab = AppTab.CREATOR },
+                                    onConnect = { tab = AppTab.CONNECT },
+                                    onListen = { tab = AppTab.LISTEN },
+                                    onWeb = openWeb,
+                                    onSettings = { showSettings = true },
+                                    onEnableNotifications = { activity.requestNotificationPermission() },
+                                )
+                                AppTab.CREATOR -> NativeCreatorToolkitScreen()
+                                AppTab.CONNECT -> ConnectTab(auth, communications, prefs.reduceMotion)
+                                AppTab.LISTEN -> ListenHubScreen(onOpenSite = openWeb, prefs = prefs)
+                                AppTab.MORE -> MoreHubScreen(auth = auth, onOpenSite = openWeb, onOpenSettings = { showSettings = true })
+                            }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+private fun registerPushToken(context: android.content.Context, communications: net.mrblindbandit.app.connect.ProductionCommunicationsService) {
+    if (FirebaseApp.getApps(context).isEmpty()) return
+    FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+        val store = context.getSharedPreferences(AndroidAppPreferences.FILE, android.content.Context.MODE_PRIVATE)
+        val installationId = store.getString("installationId", null) ?: UUID.randomUUID().toString().also {
+            store.edit().putString("installationId", it).apply()
+        }
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+            communications.registerDevice(token, installationId, BuildConfig.VERSION_NAME, Locale.getDefault().language.ifBlank { "en" })
         }
     }
 }
 
 @Composable
 private fun HomeScreen(
-    onOpen: (String) -> Unit,
+    displayName: String,
     onCreator: () -> Unit,
-    onMedia: () -> Unit,
+    onConnect: () -> Unit,
+    onListen: () -> Unit,
+    onWeb: (String) -> Unit,
     onSettings: () -> Unit,
-    onConnect: () -> Unit = {},
-    onListen: () -> Unit = {}
+    onEnableNotifications: () -> Unit,
 ) {
-    val links = listOf(
-        "Public website" to BuildConfig.WEB_BASE_URL + "/",
-        "Profile and account" to BuildConfig.WEB_BASE_URL + "/account",
-        "Community" to BuildConfig.WEB_BASE_URL + "/community/",
-        "Label dashboard" to BuildConfig.WEB_BASE_URL + "/portal/",
-        "Payments" to BuildConfig.WEB_BASE_URL + "/portal/payments/"
-    )
-    LazyColumn(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    val context = LocalContext.current
+    val notificationsOn = NotificationManagerCompat.from(context).areNotificationsEnabled() &&
+        (Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
+    LazyColumn(
+        Modifier.fillMaxSize().padding(horizontal = Spacing.md),
+        verticalArrangement = Arrangement.spacedBy(Spacing.md),
+    ) {
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                BrandLogo(72.dp)
-                Spacer(Modifier.width(16.dp))
-                Column {
-                    Text("Mr. Blind Bandit", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
-                    Text("Blindbandit Records · Creator workspace", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth().padding(top = Spacing.md), verticalAlignment = Alignment.CenterVertically) {
+                BlindbanditLogo(64.dp)
+                Spacer(Modifier.width(Spacing.md))
+                Column(Modifier.weight(1f)) {
+                    Text("Welcome, ${displayName.substringBefore(' ')}", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
+                    Text("Blindbandit Records", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                IconButton(onClick = onSettings, modifier = Modifier.size(Spacing.minTouch)) {
+                    Icon(Icons.Default.Settings, contentDescription = "Settings")
                 }
             }
         }
-        item { Button(onClick = onCreator, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Build, null); Spacer(Modifier.width(8.dp)); Text("Open Creator Toolkit") } }
-        item { Button(onClick = onConnect, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Phone, null); Spacer(Modifier.width(8.dp)); Text("Calls, chat & voice notes") } }
-        item { Button(onClick = onListen, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Headphones, null); Spacer(Modifier.width(8.dp)); Text("Listen — music services") } }
-        item { Button(onClick = onMedia, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.UploadFile, null); Spacer(Modifier.width(8.dp)); Text("Open Online Media Suite") } }
-        items(links) { (label, url) -> Button(onClick = { onOpen(url) }, modifier = Modifier.fillMaxWidth()) { Text(label) } }
-        item {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Native Android creator tools", fontWeight = FontWeight.SemiBold, modifier = Modifier.semantics { heading() })
-                    Text("Twenty offline utilities now run directly in Jetpack Compose, including BPM, royalty splits, storage and bitrate calculators, ISRC/UPC validation, filename and slug tools, captions, hashtags, SHA-256 checksums, contrast checking, metadata, timecode, and sample calculations.")
-                    Button(onClick = onSettings) { Text("Advanced settings") }
-                }
+        if (!notificationsOn) {
+            item {
+                HomeCard(
+                    icon = Icons.Default.Notifications,
+                    title = "Turn on notifications",
+                    body = "Get alerted about new messages and incoming calls.",
+                    onClick = onEnableNotifications,
+                    highlighted = true,
+                )
+            }
+        }
+        item { HomeCard(Icons.Default.Phone, "Calls & messages", "Voice calls, video calls, and chat with people on Blindbandit.", onConnect) }
+        item { HomeCard(Icons.Default.Build, "Creator tools", "BPM, royalty splits, ISRC checks, timecode, and more. Works offline.", onCreator) }
+        item { HomeCard(Icons.Default.Headphones, "Listen", "Mr. Blindbandit on your favourite music services.", onListen) }
+        item { HomeCard(Icons.Default.Language, "Music & store", "Releases, merch, and news from mrblindbandit.net.", { onWeb(BuildConfig.WEB_BASE_URL + "/music/") }) }
+        item { HomeCard(Icons.Default.OpenInBrowser, "Label portal", "Blindbandit Records artist and client portal.", { onWeb(BuildConfig.WEB_BASE_URL + "/portal/") }) }
+        item { Spacer(Modifier.heightIn(min = Spacing.lg)) }
+    }
+}
+
+@Composable
+private fun HomeCard(icon: ImageVector, title: String, body: String, onClick: () -> Unit, highlighted: Boolean = false) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp),
+        colors = if (highlighted) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
+        else CardDefaults.cardColors(),
+    ) {
+        Row(Modifier.padding(Spacing.md), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(32.dp))
+            Spacer(Modifier.width(Spacing.md))
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(body, style = MaterialTheme.typography.bodyMedium)
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun BlindbanditWebView(activity: MainActivity, url: String, prefs: AndroidAppPreferences) {
+private fun WebScreen(activity: MainActivity, url: String, prefs: AndroidAppPreferences, onClose: () -> Unit) {
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var loading by remember(url) { mutableStateOf(true) }
     var progress by remember(url) { mutableIntStateOf(0) }
-    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    var title by remember(url) { mutableStateOf("mrblindbandit.net") }
 
-    Box(Modifier.fillMaxSize()) {
-        AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { context ->
-                WebView(context).apply {
-                    webViewRef = this
-                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
-                    isFocusable = true
-                    isFocusableInTouchMode = true
-                    settings.javaScriptEnabled = true
-                    settings.domStorageEnabled = true
-                    settings.databaseEnabled = true
-                    settings.allowFileAccess = false
-                    settings.allowContentAccess = true
-                    settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                    settings.mediaPlaybackRequiresUserGesture = !prefs.mediaAutoplay
-                    settings.builtInZoomControls = true
-                    settings.displayZoomControls = false
-                    settings.textZoom = prefs.textZoom
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) settings.safeBrowsingEnabled = true
-                    CookieManager.getInstance().setAcceptCookie(true)
-                    CookieManager.getInstance().setAcceptThirdPartyCookies(this, prefs.allowThirdPartyCookies)
-                    webViewClient = object : WebViewClient() {
-                        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                            val target = request?.url?.toString() ?: return false
-                            if (UrlPolicy.isFirstParty(target)) return false
-                            if (target.startsWith("https://") || target.startsWith("mailto:") || target.startsWith("tel:")) {
-                                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target))) }
-                            }
-                            return true
-                        }
-                        override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) { loading = true; progress = 0 }
-                        override fun onPageFinished(view: WebView?, url: String?) {
-                            loading = false; progress = 100
-                            if (prefs.announcePageLoads) view?.announceForAccessibility("Page loaded")
-                        }
-                    }
-                    webChromeClient = object : WebChromeClient() {
-                        override fun onProgressChanged(view: WebView?, newProgress: Int) { progress = newProgress; loading = newProgress < 100 }
-                        override fun onShowFileChooser(webView: WebView?, callback: ValueCallback<Array<Uri>>?, params: FileChooserParams?): Boolean {
-                            if (callback == null || params == null) return false
-                            return activity.launchFileChooser(callback, params)
-                        }
-                        override fun onPermissionRequest(request: PermissionRequest?) { if (request != null) activity.handleMediaPermission(request) }
-                    }
-                    setDownloadListener { downloadUrl, _, _, _, _ ->
-                        if (downloadUrl.startsWith("https://")) runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl))) }
-                    }
-                    loadUrl(url)
-                }
+    BackHandler {
+        val web = webViewRef
+        if (web != null && web.canGoBack()) web.goBack() else onClose()
+    }
+
+    Scaffold(topBar = {
+        TopAppBar(
+            title = { Text(title, maxLines = 1) },
+            navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close website") } },
+            actions = {
+                IconButton(onClick = { webViewRef?.reload() }) { Icon(Icons.Default.Refresh, contentDescription = "Reload page") }
+                IconButton(onClick = {
+                    runCatching { activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(webViewRef?.url ?: url))) }
+                }) { Icon(Icons.Default.OpenInBrowser, contentDescription = "Open in browser") }
             },
-            update = { web ->
-                web.settings.textZoom = prefs.textZoom
-                web.settings.mediaPlaybackRequiresUserGesture = !prefs.mediaAutoplay
-                CookieManager.getInstance().setAcceptThirdPartyCookies(web, prefs.allowThirdPartyCookies)
-                if (web.url != url) web.loadUrl(url)
-            }
         )
-
-        Row(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)).padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Button(onClick = { webViewRef?.goBack() }, enabled = webViewRef?.canGoBack() == true) { Text("Back") }
-            Button(onClick = { webViewRef?.reload() }) { Icon(Icons.Default.Refresh, contentDescription = "Reload page") }
-            Button(onClick = { runCatching { activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(webViewRef?.url ?: url))) } }) { Text("Browser") }
-        }
-        if (loading) BrandProgressOverlay("Loading page", progress, prefs.reduceMotion)
-    }
-}
-
-@Composable
-private fun BrandedLoadingOverlay(progress: Int, reduceMotion: Boolean) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Card(Modifier.padding(24.dp).semantics { liveRegion = LiveRegionMode.Polite }, shape = RoundedCornerShape(24.dp)) {
-            Column(Modifier.padding(26.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                PulsingBrandLogo(88.dp, reduceMotion)
-                WaveformLoader(reduceMotion)
-                Text("Loading page", fontWeight = FontWeight.SemiBold)
-                Text("$progress percent", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
-}
-
-@Composable
-private fun BrandLogo(size: androidx.compose.ui.unit.Dp) {
-    Box(Modifier.size(size).background(Color.Black, CircleShape), contentAlignment = Alignment.Center) {
-        Text("〽", color = Color(0xFFFFD54F), fontSize = (size.value * 0.46f).sp, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
-private fun PulsingBrandLogo(size: androidx.compose.ui.unit.Dp, reduceMotion: Boolean) {
-    if (reduceMotion) { BrandLogo(size); return }
-    val transition = rememberInfiniteTransition(label = "logoPulse")
-    val scale by transition.animateFloat(0.94f, 1.08f, infiniteRepeatable(tween(850), RepeatMode.Reverse), label = "logoScale")
-    val alpha by transition.animateFloat(0.76f, 1f, infiniteRepeatable(tween(850), RepeatMode.Reverse), label = "logoAlpha")
-    Box(Modifier.scale(scale).alpha(alpha)) { BrandLogo(size) }
-}
-
-@Composable
-private fun WaveformLoader(reduceMotion: Boolean) {
-    val bars = listOf(14, 28, 40, 22, 46, 30, 18)
-    val transition = rememberInfiniteTransition(label = "waveform")
-    Row(Modifier.height(52.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-        bars.forEachIndexed { index, maxHeight ->
-            val animated by transition.animateFloat(
-                initialValue = if (reduceMotion) maxHeight.toFloat() else 8f,
-                targetValue = maxHeight.toFloat(),
-                animationSpec = infiniteRepeatable(tween(480 + index * 45), RepeatMode.Reverse),
-                label = "bar$index"
+    }) { inner ->
+        Box(Modifier.fillMaxSize().padding(inner)) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { context ->
+                    WebView(context).apply {
+                        webViewRef = this
+                        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+                        isFocusable = true
+                        isFocusableInTouchMode = true
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        settings.allowFileAccess = false
+                        settings.allowContentAccess = false
+                        settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                        settings.mediaPlaybackRequiresUserGesture = !prefs.mediaAutoplay
+                        settings.builtInZoomControls = true
+                        settings.displayZoomControls = false
+                        settings.textZoom = prefs.textZoom
+                        settings.safeBrowsingEnabled = true
+                        CookieManager.getInstance().setAcceptCookie(true)
+                        CookieManager.getInstance().setAcceptThirdPartyCookies(this, prefs.allowThirdPartyCookies)
+                        webViewClient = object : WebViewClient() {
+                            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                val target = request?.url?.toString() ?: return false
+                                if (UrlPolicy.isFirstParty(target)) return false
+                                if (target.startsWith("https://") || target.startsWith("mailto:") || target.startsWith("tel:")) {
+                                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target))) }
+                                }
+                                return true
+                            }
+                            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) { loading = true; progress = 0 }
+                            override fun onPageFinished(view: WebView?, url: String?) {
+                                loading = false; progress = 100
+                                title = view?.title?.takeIf { it.isNotBlank() } ?: title
+                                if (prefs.announcePageLoads) view?.let { it.contentDescription = null; it.announceForAccessibilityCompat("Page loaded: $title") }
+                            }
+                        }
+                        webChromeClient = object : WebChromeClient() {
+                            override fun onProgressChanged(view: WebView?, newProgress: Int) { progress = newProgress; loading = newProgress < 100 }
+                            override fun onShowFileChooser(webView: WebView?, callback: ValueCallback<Array<Uri>>?, params: FileChooserParams?): Boolean {
+                                if (callback == null || params == null) return false
+                                return activity.launchFileChooser(callback, params)
+                            }
+                            override fun onPermissionRequest(request: PermissionRequest?) { if (request != null) activity.handleMediaPermission(request) }
+                        }
+                        setDownloadListener { downloadUrl, _, _, _, _ ->
+                            if (downloadUrl.startsWith("https://")) runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl))) }
+                        }
+                        loadUrl(url)
+                    }
+                },
+                update = { web ->
+                    web.settings.textZoom = prefs.textZoom
+                    web.settings.mediaPlaybackRequiresUserGesture = !prefs.mediaAutoplay
+                    CookieManager.getInstance().setAcceptThirdPartyCookies(web, prefs.allowThirdPartyCookies)
+                    if (web.url != url && web.originalUrl != url && web.url == null) web.loadUrl(url)
+                },
             )
-            Box(Modifier.width(4.dp).height((if (reduceMotion) maxHeight.toFloat() else animated).dp).background(MaterialTheme.colorScheme.onSurface, RoundedCornerShape(4.dp)))
+            if (loading) {
+                if (prefs.reduceMotion) LinearProgressIndicator(progress = { progress / 100f }, modifier = Modifier.fillMaxWidth())
+                else BrandProgressOverlay("Loading page", progress, prefs.reduceMotion)
+            }
         }
     }
+    DisposableEffect(Unit) { onDispose { webViewRef?.destroy() } }
 }
 
-@Composable
-private fun SettingsScreen(activity: MainActivity, prefs: AndroidAppPreferences, auth: ClerkAuthService? = null, onBack: (() -> Unit)? = null) {
-    val context = LocalContext.current
-    var firebaseStatus by remember { mutableStateOf("Checking Google push services") }
-    LaunchedEffect(Unit) {
-        firebaseStatus = if (FirebaseApp.getApps(context).isNotEmpty()) {
-            FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
-                firebaseStatus = if (task.isSuccessful) "Firebase Cloud Messaging ready" else "Firebase token unavailable"
-            }
-            "Firebase configured — requesting token"
-        } else "FCM framework installed — add google-services.json to activate remote delivery"
-    }
-
-    LazyColumn(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item { Text("Settings", fontSize = 30.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() }) }
-        if (onBack != null) item { Button(onClick = onBack) { Text("Back") } }
-        item { SettingsCard("Account") {
-            val scope = rememberCoroutineScope()
-            when (val s = auth?.state) {
-                is AuthState.SignedIn -> {
-                    Text("Signed in as ${s.displayName}")
-                    Text(s.email, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Button(onClick = { scope.launch { auth.signOut() } }) { Text("Sign out") }
-                }
-                else -> Text("Not signed in")
-            }
-            Button(onClick = { scope.launch { auth?.requestAccountDeletion() } }, colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) {
-                Text("Delete account")
-            }
-            Text("Account deletion meets store requirements. Confirm on mrblindbandit.net/account if prompted.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (auth?.deletionRequested == true) Text("Deletion requested on this device.")
-        } }
-        item { SettingsCard("Legal") {
-            val ctx = LocalContext.current
-            Button(onClick = { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://mrblindbandit.net/privacy/"))) }) { Text("Privacy Policy") }
-            Button(onClick = { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://mrblindbandit.net/terms/"))) }) { Text("Terms of Use") }
-            Text("Data: Clerk auth identifiers, LiveKit call media while connected, FCM push tokens, and first-party website cookies you create while signed in.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } }
-        item { SettingsCard("Creator Tools") {
-            Text("Twenty native offline creator utilities are available from the Create tab. They do not use WebView.")
-        } }
-        item { SettingsCard("Notifications") {
-            Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Notifications, null); Spacer(Modifier.width(8.dp)); Text(firebaseStatus) }
-            Button(onClick = { activity.requestNotificationPermission() }) { Text("Enable notification permission") }
-        } }
-        item { SettingsCard("Accessibility") {
-            SettingSwitch("Announce completed page loads", prefs.announcePageLoads) { prefs.setAnnouncePageLoads(it) }
-            SettingSwitch("Reduce app motion", prefs.reduceMotion) { prefs.setReduceMotion(it) }
-            SettingSwitch("Keep screen awake", prefs.keepScreenAwake) { prefs.setKeepScreenAwake(it) }
-            Text("TalkBack uses the native Android accessibility tree for app controls and the Android System WebView accessibility tree for website content.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Button(onClick = { runCatching { activity.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } }) { Text("Open Android accessibility settings") }
-        } }
-        item { SettingsCard("Browser") {
-            Text("Website text zoom: ${prefs.textZoom} percent")
-            Slider(value = prefs.textZoom.toFloat(), onValueChange = { prefs.setTextZoom(it.toInt()) }, valueRange = 75f..200f)
-            SettingSwitch("Allow third-party cookies for sign-in compatibility", prefs.allowThirdPartyCookies) { prefs.setAllowThirdPartyCookies(it) }
-            SettingSwitch("Allow media autoplay", prefs.mediaAutoplay) { prefs.setMediaAutoplay(it) }
-            SettingSwitch("Pull-to-refresh preference", prefs.pullToRefresh) { prefs.setPullToRefresh(it) }
-        } }
-        item { SettingsCard("Camera, microphone, and uploads") {
-            Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Mic, null); Spacer(Modifier.width(8.dp)); Text("First-party web media requests use Android runtime permissions.") }
-            Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.UploadFile, null); Spacer(Modifier.width(8.dp)); Text("HTML file inputs use the native Android document/photo picker.") }
-            Button(onClick = { runCatching { activity.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) } }) { Text("Open app permissions") }
-        } }
-        item { SettingsCard("Privacy and storage") {
-            Button(onClick = {
-                CookieManager.getInstance().removeAllCookies(null)
-                CookieManager.getInstance().flush()
-                WebStorage.getInstance().deleteAllData()
-                Toast.makeText(context, "Website cookies and storage cleared.", Toast.LENGTH_SHORT).show()
-            }) { Text("Clear website sessions and storage") }
-        } }
-        item { SettingsCard("About") {
-            Text("Mr. Blind Bandit Android version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
-            Text("Clerk auth · LiveKit calls · Jetpack Compose · WebView · Material 3 · FCM")
-            Text("Accessibility target: TalkBack, large text, display scaling, high contrast, switch access, keyboard navigation, and system reduced-animation preferences.")
-        } }
-        item { Spacer(Modifier.height(24.dp)) }
-    }
-}
-
-@Composable
-private fun SettingsCard(title: String, content: @Composable () -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(title, fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.semantics { heading() })
-            HorizontalDivider()
-            content()
-        }
-    }
-}
-
-@Composable
-private fun SettingSwitch(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, modifier = Modifier.fillMaxWidth(0.78f).padding(end = 12.dp))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
-    }
+/** Posts a polite accessibility announcement without the deprecated View API. */
+private fun View.announceForAccessibilityCompat(text: String) {
+    val manager = context.getSystemService(android.content.Context.ACCESSIBILITY_SERVICE) as? android.view.accessibility.AccessibilityManager ?: return
+    if (!manager.isEnabled) return
+    val event = if (Build.VERSION.SDK_INT >= 30) android.view.accessibility.AccessibilityEvent(android.view.accessibility.AccessibilityEvent.TYPE_ANNOUNCEMENT)
+    else @Suppress("DEPRECATION") android.view.accessibility.AccessibilityEvent.obtain(android.view.accessibility.AccessibilityEvent.TYPE_ANNOUNCEMENT)
+    event.text.add(text)
+    manager.sendAccessibilityEvent(event)
 }

@@ -44,13 +44,13 @@ data class MusicService(val name: String, val url: String, val sitePath: String,
 fun ListenHubScreen(onOpenSite: (String) -> Unit, prefs: AndroidAppPreferences) {
     val context = LocalContext.current
     val services = listOf(
-        MusicService("Spotify", "https://open.spotify.com/search/Mr%20Blind%20Bandit", "/music/", "Open Spotify or browse on the site"),
-        MusicService("Apple Music", "https://music.apple.com/search?term=Mr%20Blind%20Bandit", "/music/", "Open Apple Music"),
-        MusicService("Amazon Music", "https://music.amazon.com/search/Mr%20Blind%20Bandit", "/music/", "Amazon Music search"),
-        MusicService("Audiomack", "https://audiomack.com/search?q=Mr%20Blind%20Bandit", "/music/", "Audiomack search"),
-        MusicService("YouTube Music", "https://music.youtube.com/search?q=Mr%20Blind%20Bandit", "/music/", "YouTube Music search"),
-        MusicService("SoundCloud", "https://soundcloud.com/search?q=Mr%20Blind%20Bandit", "/music/", "SoundCloud search"),
-        MusicService("Tidal", "https://listen.tidal.com/search?q=Mr%20Blind%20Bandit", "/music/", "Tidal search"),
+        MusicService("Spotify", "https://open.spotify.com/artist/04HZ4GubB66CqMpJrHysy3", "/music/", "Mr. Blindbandit artist page on Spotify"),
+        MusicService("Apple Music", "https://music.apple.com/search?term=Mr.%20Blindbandit", "/music/", "Open Apple Music"),
+        MusicService("Amazon Music", "https://music.amazon.com/search/Mr.%20Blindbandit", "/music/", "Amazon Music search"),
+        MusicService("Audiomack", "https://audiomack.com/search?q=Mr.%20Blindbandit", "/music/", "Audiomack search"),
+        MusicService("YouTube Music", "https://music.youtube.com/search?q=Mr.%20Blindbandit", "/music/", "YouTube Music search"),
+        MusicService("SoundCloud", "https://soundcloud.com/search?q=Mr.%20Blindbandit", "/music/", "SoundCloud search"),
+        MusicService("Tidal", "https://listen.tidal.com/search?q=Mr.%20Blindbandit", "/music/", "Tidal search"),
         MusicService("Blindbandit catalog", "https://mrblindbandit.net/music/", "/music/", "Official releases")
     )
     var favorites by remember { mutableStateOf(prefs.listenFavorites) }

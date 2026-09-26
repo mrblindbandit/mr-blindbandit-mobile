@@ -58,6 +58,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.RadioButton
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -74,9 +79,12 @@ import net.mrblindbandit.app.brand.BlindbanditLogo
 import net.mrblindbandit.app.brand.SpinningBrandLogo
 
 @Composable
-fun ConnectHubScreen(auth: ClerkAuthService, reduceMotion: Boolean) {
+fun ConnectHubScreen(
+    auth: ClerkAuthService,
+    reduceMotion: Boolean,
+    communications: ProductionCommunicationsService = rememberCommunications(auth),
+) {
     val context = LocalContext.current
-    val communications = remember { ProductionCommunicationsService(context, auth) }
     val sounds = remember { CallSounds(context) }
     val scope = rememberCoroutineScope()
     var tab by remember { mutableIntStateOf(0) }
@@ -112,7 +120,7 @@ fun ConnectHubScreen(auth: ClerkAuthService, reduceMotion: Boolean) {
     fun startVoice(recipient: String) {
         val target = recipient.trim()
         if (target.isBlank()) {
-            communications.statusMessage = "Enter an email address or Blindbandit username first."
+            communications.statusMessage = "Enter the person's Blindbandit username first."
             return
         }
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
@@ -130,7 +138,7 @@ fun ConnectHubScreen(auth: ClerkAuthService, reduceMotion: Boolean) {
     fun startVideo(recipient: String) {
         val target = recipient.trim()
         if (target.isBlank()) {
-            communications.statusMessage = "Enter an email address or Blindbandit username first."
+            communications.statusMessage = "Enter the person's Blindbandit username first."
             return
         }
         val mic = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -157,7 +165,7 @@ fun ConnectHubScreen(auth: ClerkAuthService, reduceMotion: Boolean) {
 
     Column(Modifier.fillMaxSize()) {
         ScrollableTabRow(selectedTabIndex = tab) {
-            listOf("Calls", "Messages", "Keypad").forEachIndexed { index, label ->
+            listOf("Calls", "Messages").forEachIndexed { index, label ->
                 Tab(selected = tab == index, onClick = { tab = index }, text = { Text(label) })
             }
         }
@@ -180,9 +188,8 @@ fun ConnectHubScreen(auth: ClerkAuthService, reduceMotion: Boolean) {
                 onRecipientChange = { callRecipient = it },
                 onVoice = { startVoice(callRecipient) },
                 onVideo = { startVideo(callRecipient) },
-                onOpenKeypad = { tab = 2 },
             )
-            1 -> MessagesPane(
+            else -> MessagesPane(
                 communications = communications,
                 selectedConversation = selectedConversation,
                 onSelectConversation = { conversation ->
@@ -226,17 +233,6 @@ fun ConnectHubScreen(auth: ClerkAuthService, reduceMotion: Boolean) {
                 },
                 onRefresh = { scope.launch { communications.refreshConversations() } },
             )
-            else -> KeypadPane(
-                digits = keypadDigits,
-                onDigit = { digit -> keypadDigits += digit },
-                onBackspace = { if (keypadDigits.isNotEmpty()) keypadDigits = keypadDigits.dropLast(1) },
-                onClear = { keypadDigits = "" },
-                onUseAsRecipient = {
-                    callRecipient = keypadDigits
-                    tab = 0
-                },
-                isInCall = communications.isInCall,
-            )
         }
     }
 }
@@ -250,7 +246,6 @@ private fun CallsPane(
     onRecipientChange: (String) -> Unit,
     onVoice: () -> Unit,
     onVideo: () -> Unit,
-    onOpenKeypad: () -> Unit,
 ) {
     LazyColumn(
         Modifier.fillMaxSize().padding(16.dp),
@@ -272,7 +267,7 @@ private fun CallsPane(
                 } else {
                     BlindbanditLogo(96.dp)
                     Text("Blindbandit Calling", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 22.sp)
-                    Text("Call registered users by exact email address or username", color = Color.White.copy(alpha = 0.72f), textAlign = TextAlign.Center)
+                    Text("Call anyone on Blindbandit by their username", color = Color.White.copy(alpha = 0.72f), textAlign = TextAlign.Center)
                 }
             }
         }
@@ -322,7 +317,6 @@ private fun CallsPane(
                                 Icon(Icons.Default.CallEnd, "End call", tint = Color.Red)
                             }
                         }
-                        OutlinedButton(onClick = onOpenKeypad) { Text("Open keypad") }
                     }
                 }
             }
@@ -331,9 +325,9 @@ private fun CallsPane(
         item {
             Card {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Secure communications", fontWeight = FontWeight.Bold)
+                    Text("Safety", fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
                     Text(
-                        "Clerk authenticates your account. Blindbandit resolves the recipient, stores messages, and creates each call. LiveKit room credentials are short-lived and generated by the server.",
+                        "Open any conversation to block or report someone. Reports go to the Blindbandit safety team, and blocked people can no longer message or call you.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -371,7 +365,10 @@ private fun MessagesPane(
                     Text(selectedConversation.peerName, fontWeight = FontWeight.Bold)
                     Text("@${selectedConversation.peerHandle}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                 }
-                IconButton(onClick = { onCall(selectedConversation) }) { Icon(Icons.Default.Call, "Call this person") }
+                Row {
+                    IconButton(onClick = { onCall(selectedConversation) }, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.Call, "Call ${selectedConversation.peerName}") }
+                    SafetyMenu(communications, selectedConversation, onBack)
+                }
             }
             HorizontalDivider()
             LazyColumn(
@@ -407,7 +404,7 @@ private fun MessagesPane(
                 OutlinedTextField(
                     recipient,
                     onRecipientChange,
-                    label = { Text("Recipient email or username") },
+                    label = { Text("Blindbandit username") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
@@ -429,7 +426,7 @@ private fun MessagesPane(
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             } else if (communications.conversations.isEmpty()) {
                 Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                    Text("No conversations yet. Send a message to a registered Blindbandit user's email address or username.", textAlign = TextAlign.Center)
+                    Text("No conversations yet. Start one by entering a Blindbandit username above.", textAlign = TextAlign.Center)
                 }
             } else {
                 LazyColumn(Modifier.fillMaxSize()) {
@@ -451,43 +448,82 @@ private fun MessagesPane(
 }
 
 @Composable
-private fun KeypadPane(
-    digits: String,
-    onDigit: (String) -> Unit,
-    onBackspace: () -> Unit,
-    onClear: () -> Unit,
-    onUseAsRecipient: () -> Unit,
-    isInCall: Boolean,
+fun rememberCommunications(auth: ClerkAuthService): ProductionCommunicationsService {
+    val context = LocalContext.current
+    return remember(auth) { ProductionCommunicationsService(context, auth) }
+}
+
+@Composable
+private fun SafetyMenu(
+    communications: ProductionCommunicationsService,
+    conversation: ServerConversation,
+    onBlocked: () -> Unit,
 ) {
-    Column(
-        Modifier.fillMaxSize().padding(20.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
-        Text("Keypad", fontSize = 30.sp, fontWeight = FontWeight.Bold, modifier = Modifier.semantics { heading() })
-        Text(if (digits.isBlank()) "Enter digits" else digits, fontSize = 26.sp, textAlign = TextAlign.Center)
-        LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.height(330.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            gridItems(listOf("1","2","3","4","5","6","7","8","9","*","0","#")) { key ->
-                Button(
-                    onClick = { onDigit(key) },
-                    shape = CircleShape,
-                    modifier = Modifier.size(72.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
-                ) { Text(key, fontSize = 24.sp, fontWeight = FontWeight.Bold) }
-            }
+    val scope = rememberCoroutineScope()
+    var menuOpen by remember { mutableStateOf(false) }
+    var confirmBlock by remember { mutableStateOf(false) }
+    var reportOpen by remember { mutableStateOf(false) }
+    var reason by remember { mutableStateOf(REPORT_REASONS.first()) }
+    var details by remember { mutableStateOf("") }
+
+    Box {
+        IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(48.dp)) {
+            Icon(Icons.Default.MoreVert, "Safety options for ${conversation.peerName}")
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBackspace, enabled = digits.isNotEmpty()) { Icon(Icons.Default.Delete, "Delete last digit") }
-            OutlinedButton(onClick = onUseAsRecipient, enabled = digits.isNotEmpty() && !isInCall) { Text("Use as recipient") }
-            OutlinedButton(onClick = onClear, enabled = digits.isNotEmpty()) { Text("Clear") }
+        androidx.compose.material3.DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            androidx.compose.material3.DropdownMenuItem(text = { Text("Report ${conversation.peerName}") }, onClick = { menuOpen = false; reportOpen = true })
+            androidx.compose.material3.DropdownMenuItem(text = { Text("Block ${conversation.peerName}") }, onClick = { menuOpen = false; confirmBlock = true })
         }
-        Text(
-            if (isInCall) "The keypad stays available during calls for familiar phone-style controls." else "Blindbandit calling currently connects registered app users by email address or username; this keypad is available as a phone-style input surface.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
+    }
+    if (confirmBlock) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmBlock = false },
+            title = { Text("Block ${conversation.peerName}?") },
+            text = { Text("They will no longer be able to message or call you. You can unblock them later on mrblindbandit.net.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    confirmBlock = false
+                    scope.launch { if (communications.blockUser(conversation.peerHandle)) onBlocked() }
+                }) { Text("Block") }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { confirmBlock = false }) { Text("Cancel") } },
+        )
+    }
+    if (reportOpen) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { reportOpen = false },
+            title = { Text("Report ${conversation.peerName}") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Why are you reporting this conversation?")
+                    REPORT_REASONS.forEach { option ->
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                .selectable(selected = reason == option, onClick = { reason = option }, role = Role.RadioButton),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = reason == option, onClick = null)
+                            Text(option, Modifier.padding(start = 8.dp))
+                        }
+                    }
+                    OutlinedTextField(details, { details = it.take(2000) }, label = { Text("Details (optional)") }, modifier = Modifier.fillMaxWidth())
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    reportOpen = false
+                    scope.launch {
+                        communications.report("profile", conversation.peerHandle, reason, details)
+                        details = ""
+                    }
+                }) { Text("Send report") }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { reportOpen = false }) { Text("Cancel") } },
         )
     }
 }
+
+private val REPORT_REASONS = listOf("Harassment or bullying", "Spam or scam", "Hate speech", "Sexual or explicit content", "Threats or violence", "Something else")
 
 @Composable
 private fun TextButtonLike(text: String, onClick: () -> Unit) {

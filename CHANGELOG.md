@@ -6,6 +6,36 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 
 ---
 
+## [1.7] — 2026-09-26
+
+### Fixed
+
+- Calls and messages work again on both platforms. The apps now use the live `/v1/social/*` endpoints
+  with usernames and unwrap the API's `{ success, data }` envelope.
+- Account deletion now calls `POST /v1/privacy/delete`, then deletes the Clerk user and erases local data.
+- Push tokens are registered with the Blindbandit API (iOS APNs; Android FCM once Firebase is configured).
+- iOS video calls now show the remote and local video.
+- An active call survives tab changes because one communications service is shared app-wide.
+
+### Added
+
+- Report (person or message) and Block, with confirmation, in every conversation (Guideline 1.2).
+- A full Settings screen on both platforms: account, sign-out, delete account, notifications,
+  accessibility (haptics, speech feedback and rate, high contrast, reduce motion), audio and calls,
+  appearance, privacy and data, legal, support, about, and open-source licenses.
+- A shared design system (Dynamic Type / sp text, 44–48 pt targets, high-contrast themes).
+- Android release signing from environment variables or CI secrets, a Gradle wrapper, and instrumented tests.
+- A CI placeholder-content gate (`scripts/check-placeholders.sh`).
+
+### Removed
+
+- The first-launch mass permission request. Permissions are now asked in context.
+- Unused Photos and Bluetooth permission strings (iOS), and the iPad device family.
+- Developer-only screens and text (site keys, owner token, SDK status rows).
+- The non-functional phone keypad.
+
+---
+
 ## [1.6] — 2026-09-18
 
 ### Added

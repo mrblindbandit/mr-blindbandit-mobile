@@ -6,74 +6,134 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
-env:
-  APP_VERSION: '1.6'
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  test-lint-build:
+  build-test-lint:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Placeholder content check
+        run: bash scripts/check-placeholders.sh
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android SDK packages
+        run: |
+          set -euo pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-36" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Read app version
+        id: version
+        run: |
+          name=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' Android/app/build.gradle.kts)
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          grep -q 'targetSdk = 36' Android/app/build.gradle.kts
+      - name: Unit tests
+        working-directory: Android
+        run: ./gradlew testDebugUnitTest --stacktrace
+      - name: Android lint
+        working-directory: Android
+        run: ./gradlew lintDebug --stacktrace
+      - name: Build debug APK
+        working-directory: Android
+        run: ./gradlew assembleDebug --stacktrace
+      - name: Decode release keystore (only when signing secrets exist)
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "${ANDROID_KEYSTORE_BASE64}" ]; then
+            echo "${ANDROID_KEYSTORE_BASE64}" | base64 --decode > "$RUNNER_TEMP/upload.jks"
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+            echo "SIGNED=true" >> "$GITHUB_ENV"
+            echo "Release bundle will be signed with the upload key."
+          else
+            echo "SIGNED=false" >> "$GITHUB_ENV"
+            echo "No signing secrets configured: building an unsigned release bundle."
+          fi
+      - name: Build release bundle (AAB)
+        working-directory: Android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew bundleRelease --stacktrace
+      - name: Verify bundle signature
+        if: env.SIGNED == 'true'
+        run: jarsigner -verify Android/app/build/outputs/bundle/release/app-release.aab
+      - name: Remove decoded keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/upload.jks"
+      - name: Package artifacts
+        run: |
+          mkdir -p dist
+          v=${{ steps.version.outputs.name }}
+          cp Android/app/build/outputs/apk/debug/app-debug.apk "dist/Mr-Blindbandit-Android-v$v-debug.apk"
+          suffix=$([ "$SIGNED" = "true" ] && echo signed || echo unsigned)
+          cp Android/app/build/outputs/bundle/release/app-release.aab "dist/Mr-Blindbandit-Android-v$v-$suffix.aab"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mr-Blindbandit-Android-${{ steps.version.outputs.name }}-debug-APK
+          path: dist/*.apk
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mr-Blindbandit-Android-${{ steps.version.outputs.name }}-AAB
+          path: dist/*.aab
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Mr-Blindbandit-Android-reports
+          path: |
+            Android/app/build/reports/lint-results-debug.html
+            Android/app/build/reports/tests/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  instrumentation-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      - name: Verify Android SDK
+      - name: Enable KVM for the emulator
         run: |
-          set -euo pipefail
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          test -x "$SDKMANAGER"
-          "$SDKMANAGER" --version
-      - name: Accept required Android SDK licenses
-        run: |
-          set -o pipefail
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
-      - name: Install required Android SDK packages
-        run: |
-          set -euo pipefail
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-            "platform-tools" \
-            "platforms;android-36" \
-            "build-tools;35.0.0"
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
       - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.11.1'
-      - name: Verify Android release version
+      - name: Install Android SDK packages
         run: |
-          grep -q 'targetSdk = 36' Android/app/build.gradle.kts
-          grep -q 'versionCode = 6' Android/app/build.gradle.kts
-          grep -q 'versionName = "1.6.0"' Android/app/build.gradle.kts
-      - name: Unit tests
-        run: gradle -p Android testDebugUnitTest --stacktrace
-      - name: Android lint
-        run: gradle -p Android lintDebug --stacktrace
-      - name: Build debug APK
-        run: gradle -p Android assembleDebug --stacktrace
-      - name: Build release bundle (unsigned store validation)
-        run: gradle -p Android bundleRelease --stacktrace
-      - name: Package versioned APK
-        run: |
-          mkdir -p dist
-          cp Android/app/build/outputs/apk/debug/app-debug.apk "dist/Mr-Blindbandit-Android-v1.6-debug.apk"
-      - uses: actions/upload-artifact@v4
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-36" "build-tools;35.0.0"
+      - name: Build test APKs
+        working-directory: Android
+        run: ./gradlew assembleDebug assembleDebugAndroidTest --stacktrace
+      - name: Run instrumented tests on an API 34 emulator
+        uses: reactivecircus/android-emulator-runner@v2
         with:
-          name: Mr-Blindbandit-Android-v1.6-debug-APK
-          path: dist/Mr-Blindbandit-Android-v1.6-debug.apk
-          if-no-files-found: error
-          retention-days: 7
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Mr-Blindbandit-Android-v1.6-unsigned-AAB
-          path: Android/app/build/outputs/bundle/release/app-release.aab
-          if-no-files-found: error
-          retention-days: 7
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          working-directory: Android
+          script: ./gradlew connectedDebugAndroidTest --stacktrace
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: Mr-Blindbandit-Android-v1.6-lint-report
-          path: Android/app/build/reports/lint-results-debug.html
+          name: Mr-Blindbandit-Android-instrumentation-reports
+          path: Android/app/build/reports/androidTests/
           if-no-files-found: ignore
           retention-days: 7

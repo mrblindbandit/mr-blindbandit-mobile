@@ -1,81 +1,97 @@
-# Store compliance — Mr. Blindbandit Mobile 1.6
+# Store compliance: Mr. Blindbandit Mobile 1.7
 
-This file documents the source-side release configuration. Store-console declarations, signing, screenshots, review notes, and final physical-device verification must still match the actual production services and behavior at submission time.
+This file maps every App Store Review Guideline and Google Play policy that applies to the app to
+the code that satisfies it, and lists what only the owner can do in the store consoles.
 
 ## Release metadata
 
-| Platform | Version | Build/code | Minimum | Target |
-|---|---:|---:|---:|---:|
-| iOS | 1.6 | 6 | iOS 17 | Current Xcode SDK |
-| Android | 1.6.0 | 6 | API 26 | API 36 |
+| | iOS | Android |
+|---|---|---|
+| Identifier | `net.mrblindbandit.privateapp` | `net.mrblindbandit.app` |
+| Version | 1.7 (7) | 1.7.0 (7) |
+| Minimum OS | iOS 17, iPhone only | Android 8.0 (API 26) |
+| Target | iOS 17+ SDK from current Xcode | targetSdk 36 |
 
-## Data handled by the app
+## Sign-in (Apple 4.8, Play User Data)
 
-| Data | Purpose | Linked to identity | Notes |
+- Clerk production instance `clerk.mrblindbandit.net`: email and password, Google, and Sign in with Apple (iOS).
+- Sign in with Apple is shown on iOS because Google sign-in is offered (Guideline 4.8). **The Apple
+  social connection must be enabled in Clerk**, or the button returns an error.
+- iOS entitlements: `com.apple.developer.applesignin`, `aps-environment`, and associated domain
+  `webcredentials:clerk.mrblindbandit.net`.
+
+## User-generated content (Apple 1.2, Play UGC policy)
+
+- In every conversation, the Safety menu lets you **report** a person, and long-press or the
+  VoiceOver/TalkBack actions let you **report a message**. Both call `POST /v1/social/reports`.
+- **Block**, with confirmation: `POST /v1/social/profiles/{handle}/block`.
+- Only signed-in members can message or call. The terms of use are linked on the sign-in screen.
+- Owner obligation: review reports promptly (Apple expects action within 24 hours) and remove
+  abusive users.
+
+## Account deletion (Apple 5.1.1(v), Play account deletion policy)
+
+- Settings > Account & profile > Delete account. Two steps: an explanation, then typing DELETE.
+- The app calls `POST /v1/privacy/delete` (server data), then deletes the Clerk user, then erases
+  local settings and web data.
+- Web deletion link for the Play Console Data safety form: https://mrblindbandit.net/account/delete
+
+## Permissions (Apple 5.1.1, Play permissions policy)
+
+| Permission | When it is requested |
+|---|---|
+| Microphone | When you start or join a call, or start a recording in the creator tools |
+| Camera | When you start or join a video call |
+| Notifications | Only from the Home card or Settings, never at launch |
+| Face ID | When the optional app lock is on (Settings > Privacy & data) |
+
+- Removed: the mass permission request at first launch, the unused Photos read/write permissions,
+  and the unused Bluetooth usage strings (iOS).
+- Android `BLUETOOTH_CONNECT` stays in the manifest for LiveKit headset routing. It is never
+  requested at launch.
+
+## Data handled (App Privacy labels / Play Data safety)
+
+| Data | Purpose | Linked to user | Tracking |
 |---|---|---|---|
-| Clerk account data (email/name/user id) | Authentication and account | Yes | Client contains only the Clerk publishable key |
-| OAuth identity/token state | Authentication | Yes | Managed through Clerk and OS/web authentication flows |
-| Call signaling and LiveKit room grants | Voice/video calling | Yes during session | Room grants are short-lived and minted server-side |
-| Audio/video streams | User-started calls | Session | Transported through LiveKit when the user joins a call |
-| Message text and conversation metadata | Messaging | Yes | Sent through authenticated Blindbandit API endpoints |
-| User-selected media/files | Creator tools, attachments, profile/media actions | When user submits it | User-initiated only |
-| APNs / FCM device token | Notifications | Yes when registered | Used only when push is enabled/configured |
-| First-party WebView cookies/session data | Website session | Yes when signed in | Restricted to approved first-party web surfaces |
-| Crash/diagnostic provider data | None added by this app by default | — | Update declarations before adding a diagnostics SDK |
+| Name, email (Clerk) | Account | Yes | No |
+| Username / profile | App functionality | Yes | No |
+| Messages | App functionality | Yes | No |
+| Call metadata (not audio/video content) | App functionality | Yes | No |
+| Push token, installation ID | Notifications | Yes | No |
+| Settings | Stored only on the device | No | No |
 
-Final Apple privacy nutrition labels and Google Play Data safety answers must reflect the production backend, Clerk, LiveKit, push configuration, and any future SDKs actually enabled in the submitted build.
+There are no ads, no analytics SDKs and no tracking. Call media is peer-to-server over encrypted
+LiveKit WebRTC and is not recorded by the app.
 
-## Account deletion
+## Privacy manifest
 
-Settings exposes in-app account deletion. The v1.6 client authenticates the request, calls the Blindbandit production deletion flow for associated app data, then deletes/signs out the authentication account as implemented by the platform auth service. A failed deletion must surface an error instead of claiming success.
+`App/PrivacyInfo.xcprivacy` declares no tracking, the collected data types above, and the
+required-reason APIs UserDefaults (CA92.1) and file timestamps (C617.1).
 
-The production API endpoint must remain deployed and must delete data according to the published Privacy Policy and applicable retention requirements.
+## Backups (Android)
 
-## Sign in with Apple
-
-The iOS source includes the Sign in with Apple entitlement and `AppConfig.enableSignInWithApple` is enabled. Google and email sign-in are also supported. Keep Sign in with Apple available in the submitted iOS build whenever required by App Store Review Guideline 4.8.
-
-Phone OTP remains disabled until SMS/OTP is deliberately enabled in the production Clerk instance.
-
-## LiveKit and communications security
-
-- `LIVEKIT_URL` is a client-safe endpoint.
-- LiveKit API key/secret stay server-side.
-- Mobile obtains short-lived participant grants from the authenticated Blindbandit API.
-- No reusable LiveKit participant token or test-token fallback is shipped in v1.6.
-- Calls/messages require an authenticated Clerk session through the production communications layer.
-
-## iOS privacy manifest
-
-`App/PrivacyInfo.xcprivacy` is included in the iOS target. Keep the declared collected-data categories and required-reason APIs synchronized with the shipping code and third-party SDK manifests.
-
-## Permissions
-
-- Camera — video calls and user-started media/creator actions
-- Microphone — voice/video calls and user-started audio capture
-- Photo library/files — user-started import/export and media actions
-- Bluetooth — compatible call audio devices
-- Notifications — optional calls/messages/updates
-
-Permission prompts must describe the actual user-facing purpose and should be requested in context or through the first-launch onboarding flow already implemented by the app.
-
-## Network and browser policy
-
-- Production API: `https://api.mrblindbandit.net`
-- Public site: `https://mrblindbandit.net`
-- Trusted in-app web content is HTTPS-only and restricted to approved first-party hosts.
-- Cleartext HTTP and look-alike domains are rejected by the first-party URL policy.
+`allowBackup=false` plus `data_extraction_rules.xml` excludes all app data from cloud backup and
+device transfer, so sign-in sessions are never restored onto another device.
 
 ## Encryption
 
-The client relies on standard platform TLS/HTTPS and LiveKit transport security. It does not embed reusable cryptographic server secrets.
+HTTPS/TLS and WebRTC only (standard, exempt). `ITSAppUsesNonExemptEncryption = NO` is set.
 
-## Public policy/support links
+## Placeholder content gate
 
-- Privacy Policy: https://mrblindbandit.net/privacy
-- Terms: https://mrblindbandit.net/terms
-- Support: business@mrblindbandit.net
+`scripts/check-placeholders.sh` fails CI on placeholder, fake or unfinished text in `App/` and
+`Android/app/src/main` (Apple 2.1 app completeness, 2.3 accurate metadata).
 
-## Submission checks outside source control
+## Links
 
-Before pressing Submit in either store, verify the signed production build on physical devices, complete Apple privacy / Google Data safety forms from the actual deployed behavior, provide reviewer credentials or review instructions if required, confirm account deletion works end-to-end against production, configure production push credentials if push is advertised, and upload store screenshots/metadata that exactly match v1.6.
+- Privacy: https://mrblindbandit.net/privacy/
+- Terms: https://mrblindbandit.net/terms/
+- Support: https://mrblindbandit.net/support/ and business@mrblindbandit.net
+- Accessibility: https://mrblindbandit.net/accessibility/
+- Account deletion: https://mrblindbandit.net/account/delete
+
+## Owner-only steps
+
+See `RELEASING.md` for the full checklist: the Clerk dashboard, App Store Connect, Play Console,
+Firebase, APNs, and the GitHub signing secrets.

@@ -1,0 +1,94 @@
+name: Build installable artifacts — Mr. Blindbandit
+# Produces a sideloadable Android APK and an unsigned iOS IPA on demand.
+# No store signing secrets are used: the APK is a release build signed with a throwaway
+# debug keystore generated on the runner, and the IPA is unsigned (re-sign it before installing).
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: build-artifacts-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  android-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Placeholder content check
+        run: bash scripts/check-placeholders.sh
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android SDK packages
+        run: |
+          set -euo pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-36" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Read app version
+        id: version
+        run: |
+          name=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' Android/app/build.gradle.kts)
+          test -n "$name"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+      - name: Unit tests
+        working-directory: Android
+        run: ./gradlew testDebugUnitTest --stacktrace
+      - name: Build release APK (unsigned)
+        working-directory: Android
+        run: ./gradlew assembleRelease --stacktrace
+      - name: Sign release APK with a debug keystore
+        run: |
+          set -euo pipefail
+          BT="$ANDROID_HOME/build-tools/35.0.0"
+          KS="$RUNNER_TEMP/debug.keystore"
+          keytool -genkeypair -keystore "$KS" -storepass android -alias androiddebugkey -keypass android \
+            -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          IN=$(ls Android/app/build/outputs/apk/release/*.apk | head -1)
+          mkdir -p dist
+          "$BT/zipalign" -f -p 4 "$IN" "$RUNNER_TEMP/aligned.apk"
+          OUT="dist/MrBlindbandit-android-${{ steps.version.outputs.name }}.apk"
+          "$BT/apksigner" sign --ks "$KS" --ks-pass pass:android --key-pass pass:android \
+            --ks-key-alias androiddebugkey --out "$OUT" "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" verify --verbose "$OUT"
+          rm -f "$KS" "$RUNNER_TEMP/aligned.apk"
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MrBlindbandit-android-apk
+          path: dist/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+  ios-ipa:
+    runs-on: macos-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Placeholder content check
+        run: bash scripts/check-placeholders.sh
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Check app icon assets
+        run: swift scripts/GenerateAppIcon.swift
+      - name: Build unsigned device app and package IPA
+        run: bash build-unsigned.sh
+      - name: Rename IPA
+        run: |
+          set -euo pipefail
+          VERSION=$(sed -n "s/.*MARKETING_VERSION: '\(.*\)'/\1/p" project.yml | head -1)
+          mv dist/*.ipa "dist/MrBlindbandit-ios-unsigned-${VERSION}.ipa"
+          unzip -l dist/*.ipa | tail -3
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MrBlindbandit-ios-unsigned-ipa
+          path: dist/*.ipa
+          if-no-files-found: error
+          retention-days: 30

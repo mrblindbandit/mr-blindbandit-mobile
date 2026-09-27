@@ -10,6 +10,14 @@ Cross-links:
 
 ---
 
+## 2026-09-27 — Installable build artifacts (Grok Bot, branch `ci/build-artifacts`)
+
+- Added `.github/workflows/build-artifacts.yml` (workflow_dispatch): Android release APK signed with a throwaway debug keystore (sideloadable) and an unsigned iOS IPA built for `generic/platform=iOS`.
+- `build-unsigned.sh` now targets `generic/platform=iOS`, checks the `.app` actually exists, and cleans `dist/Payload` after zipping.
+- Local audit: Android unit tests, lint and debug/release assembles pass; placeholder gate passes. No app code changes were needed.
+
+---
+
 ## 2026-09-26 — Store-ready revamp, v1.7 (Grok Bot, branch `revamp/store-ready`)
 
 - Audited both apps against the App Store Review Guidelines and Google Play policy. Found that `/v1/mobile-native/*` returns 404 in production and that the API wraps responses in `{success,data}`, so calls, messages and deletion were broken.

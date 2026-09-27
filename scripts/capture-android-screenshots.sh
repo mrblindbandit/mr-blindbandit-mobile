@@ -48,5 +48,8 @@ for screen in home music listen community profile create connect more settings a
   n=$((n + 1))
 done
 
+# Keep any crash output for debugging (not a store asset).
+adb logcat -d -b crash > "$OUT/../android-crash-log.txt" 2>/dev/null || true
+
 demo exit || true
 ls -la "$OUT"

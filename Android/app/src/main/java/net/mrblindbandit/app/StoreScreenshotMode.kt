@@ -29,12 +29,13 @@ object StoreScreenshotMode {
     }
 
     /**
-     * Pre-answers the website cookie banner (essential + embedded media, no ads or analytics) so web
-     * screenshots show the page instead of the consent prompt. Null outside screenshot mode.
+     * Pre-answers the website cookie banner (essential only: no ads, analytics or third-party players)
+     * so web screenshots show the page instead of the consent prompt. Embedded players stay off because
+     * they overload the software-rendered CI emulator. Null outside screenshot mode.
      */
     fun consentScript(intent: Intent?): String? {
         if (from(intent) == null) return null
         return "try { if (!localStorage.getItem('bb-consent-v4')) { localStorage.setItem('bb-consent-v4', " +
-            "JSON.stringify({version: 4, savedAt: Date.now(), essential: true, analytics: false, ads: false, media: true})); } } catch (e) {}"
+            "JSON.stringify({version: 4, savedAt: Date.now(), essential: true, analytics: false, ads: false, media: false})); } } catch (e) {}"
     }
 }

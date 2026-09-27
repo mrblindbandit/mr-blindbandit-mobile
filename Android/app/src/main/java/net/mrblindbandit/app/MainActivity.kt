@@ -480,6 +480,15 @@ private fun WebScreen(activity: MainActivity, url: String, prefs: AndroidAppPref
                                 title = view?.title?.takeIf { it.isNotBlank() } ?: title
                                 if (prefs.announcePageLoads) view?.let { it.contentDescription = null; it.announceForAccessibilityCompat("Page loaded: $title") }
                             }
+                            override fun onRenderProcessGone(view: WebView?, detail: android.webkit.RenderProcessGoneDetail?): Boolean {
+                                // The page's renderer crashed or was stopped to free memory. Without this, Android
+                                // closes the whole app. Drop the dead WebView and return to the app instead.
+                                view?.let { (it.parent as? android.view.ViewGroup)?.removeView(it); it.destroy() }
+                                webViewRef = null
+                                Toast.makeText(context, "The page stopped responding. Please open it again.", Toast.LENGTH_LONG).show()
+                                onClose()
+                                return true
+                            }
                         }
                         webChromeClient = object : WebChromeClient() {
                             override fun onProgressChanged(view: WebView?, newProgress: Int) { progress = newProgress; loading = newProgress < 100 }

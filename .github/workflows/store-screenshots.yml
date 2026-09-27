@@ -56,6 +56,13 @@ jobs:
           path: store-screenshots/android/*.png
           if-no-files-found: error
           retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-crash-log
+          path: store-screenshots/android-crash-log.txt
+          if-no-files-found: ignore
+          retention-days: 7
 
   ios:
     runs-on: macos-latest

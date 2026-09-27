@@ -18,7 +18,8 @@ final class DeviceLock: ObservableObject {
     /// The lock is a user setting (on by default). When the device has no passcode at all there is
     /// nothing to verify against, so the app opens rather than trapping the person on this screen.
     var isRequired: Bool {
-        UserDefaults.standard.object(forKey: SettingsKey.requireDeviceUnlock) as? Bool ?? true
+        if StoreScreenshotMode.isActive { return false }
+        return UserDefaults.standard.object(forKey: SettingsKey.requireDeviceUnlock) as? Bool ?? true
     }
 
     func unlock() {
@@ -42,7 +43,7 @@ final class DeviceLock: ObservableObject {
         busy = true
         context = ctx
         message = ""
-        ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock Mr. Blindbandit") { success, _ in
+        ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock \(AppConfig.appDisplayName)") { success, _ in
             Task { @MainActor in
                 self.busy = false
                 self.context = nil
@@ -79,7 +80,18 @@ final class AppPreferences: ObservableObject {
 @MainActor
 final class TabRouter: ObservableObject {
     enum Tab: Hashable { case home, create, connect, listen, more }
-    @Published var selection: Tab = .home
+    @Published var selection: Tab = TabRouter.initialTab
+
+    private static var initialTab: Tab {
+        guard StoreScreenshotMode.isActive else { return .home }
+        switch StoreScreenshotMode.screen {
+        case "create": return .create
+        case "connect": return .connect
+        case "listen": return .listen
+        case "more", "settings": return .more
+        default: return .home
+        }
+    }
 }
 
 @main
@@ -108,7 +120,7 @@ struct BlindbanditApp: App {
                         SpinningBrandLogo(size: 112, reduceMotion: preferences.reduceAppMotion)
                     }
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Starting Mr. Blindbandit")
+                    .accessibilityLabel("Starting \(AppConfig.appDisplayName)")
                 case .signedOut:
                     AuthGatewayView(auth: auth)
                         .environmentObject(preferences)
@@ -125,13 +137,13 @@ struct BlindbanditApp: App {
                     Color(uiColor: .systemBackground).ignoresSafeArea()
                     VStack(spacing: 12) {
                         BlindbanditLogoImage(size: 56)
-                        Text("Mr. Blindbandit")
+                        Text(AppConfig.appDisplayName)
                             .font(.headline)
                         Label("App locked", systemImage: "lock.fill")
                             .foregroundStyle(.secondary)
                     }
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Mr. Blindbandit. App locked.")
+                    .accessibilityLabel("\(AppConfig.appDisplayName). App locked.")
                 }
 
                 if showingLaunchCover && phase == .active {
@@ -203,8 +215,9 @@ struct LockedView: View {
                 .ignoresSafeArea()
             VStack(spacing: 24) {
                 BrandMark(size: 96)
-                Text("Mr. Blindbandit")
+                Text(AppConfig.appDisplayName)
                     .font(.largeTitle.bold())
+                    .multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader)
                 Text("Your account is protected")
                     .font(.headline)
@@ -237,7 +250,13 @@ struct MainTabs: View {
 
     var body: some View {
         TabView(selection: $router.selection) {
-            NavigationStack { ProfessionalHome() }
+            NavigationStack {
+                if let page = StoreScreenshotMode.webPage {
+                    Website(path: page.path, title: page.title)
+                } else {
+                    ProfessionalHome()
+                }
+            }
                 .tabItem { Label("Home", systemImage: "house.fill") }
                 .tag(TabRouter.Tab.home)
 
@@ -253,12 +272,19 @@ struct MainTabs: View {
                 .tabItem { Label("Listen", systemImage: "headphones") }
                 .tag(TabRouter.Tab.listen)
 
-            NavigationStack { MoreHubView() }
+            NavigationStack {
+                if StoreScreenshotMode.isActive && StoreScreenshotMode.screen == "settings" {
+                    Settings()
+                } else {
+                    MoreHubView()
+                }
+            }
                 .tabItem { Label("More", systemImage: "ellipsis.circle.fill") }
                 .tag(TabRouter.Tab.more)
         }
         .onChange(of: router.selection) { _, _ in AppHaptics.selection() }
         .task {
+            guard !StoreScreenshotMode.isActive else { return }
             await communications.bootstrap()
             await registerPushTokenIfPossible(push.deviceToken)
         }

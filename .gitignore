@@ -38,3 +38,6 @@ local.properties
 # Firebase Android client config is public and committed on purpose. Service-account keys never are.
 !Android/app/google-services.json
 *firebase-adminsdk*.json
+
+# Store screenshot captures (CI artifacts)
+store-screenshots/

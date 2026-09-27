@@ -34,11 +34,13 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_ENTITLEMENTS: App/Blindbandit.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        INFOPLIST_KEY_CFBundleDisplayName: Mr. Blindbandit
-        INFOPLIST_KEY_CFBundleName: Mr. Blindbandit
-        INFOPLIST_KEY_NSFaceIDUsageDescription: Unlock Mr. Blindbandit using Face ID.
-        INFOPLIST_KEY_NSCameraUsageDescription: Mr. Blindbandit uses the camera only when you start or join a video call.
-        INFOPLIST_KEY_NSMicrophoneUsageDescription: Mr. Blindbandit uses the microphone for voice and video calls and for recordings you start in the creator tools.
+        # App Store name is "Mr. BlindBandit Mobile" (set in App Store Connect). The Home Screen label
+        # is shorter because iOS truncates labels longer than about 12 characters.
+        INFOPLIST_KEY_CFBundleDisplayName: BlindBandit
+        INFOPLIST_KEY_CFBundleName: BlindBandit
+        INFOPLIST_KEY_NSFaceIDUsageDescription: Mr. BlindBandit Mobile uses Face ID to unlock the app. You can turn the app lock off in Settings.
+        INFOPLIST_KEY_NSCameraUsageDescription: Mr. BlindBandit Mobile uses the camera only when you start or join a video call.
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: Mr. BlindBandit Mobile uses the microphone for voice and video calls and for recordings you start in the creator tools.
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_UIRequiresFullScreen: YES
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO

@@ -34,7 +34,7 @@ struct MoreHubView: View {
 
             Section("Blindbandit Records") {
                 NavigationLink { Website(path: "/music/", title: "Music") } label: { Label("Music", systemImage: "music.note") }
-                NavigationLink { Website(path: "/store/", title: "Store") } label: { Label("Store", systemImage: "bag") }
+                NavigationLink { Website(path: "/label/", title: "Blindbandit Records") } label: { Label("Blindbandit Records", systemImage: "opticaldisc") }
                 NavigationLink { Website(path: "/community/", title: "Community") } label: { Label("Community", systemImage: "person.3") }
                 NavigationLink { Website(path: "/portal/", title: "Label portal") } label: { Label("Label portal for signed artists", systemImage: "building.2") }
                 NavigationLink { Website(path: "/about/", title: "About") } label: { Label("About Mr. Blindbandit", systemImage: "info.circle") }

@@ -63,6 +63,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationManagerCompat
 import kotlinx.coroutines.launch
 import net.mrblindbandit.app.AndroidAppPreferences
+import net.mrblindbandit.app.safety.ContentFilter
 import net.mrblindbandit.app.BuildConfig
 import net.mrblindbandit.app.auth.AccountDeletionService
 import net.mrblindbandit.app.auth.AuthState
@@ -222,6 +223,29 @@ private fun SettingsRoot(
         }
 
         item {
+            var filterOn by remember { mutableStateOf(ContentFilter.isEnabled(context)) }
+            Section("Safety") {
+                ToggleRow("Filter offensive language", filterOn, "Mask profanity and slurs in messages from other people") { on ->
+                    filterOn = on
+                    context.getSharedPreferences(AndroidAppPreferences.FILE, Context.MODE_PRIVATE).edit().putBoolean(ContentFilter.SETTING_KEY, on).apply()
+                }
+                Text(
+                    "In a conversation, use the safety menu to report or block someone. Reports go to Blindbandit moderators, and blocking stops messages and calls between you.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                LinkRow("Community guidelines") { openExternal(context, AppConfig.COMMUNITY_GUIDELINES_URL) }
+                LinkRow("Trust & Safety Center") { openExternal(context, AppConfig.TRUST_AND_SAFETY_URL) }
+                LinkRow("Report content on the web") { openExternal(context, AppConfig.REPORT_CONTENT_URL) }
+                LinkRow("Email ${AppConfig.SAFETY_EMAIL}") {
+                    safeStart(context, Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:${AppConfig.SAFETY_EMAIL}")).apply {
+                        putExtra(Intent.EXTRA_SUBJECT, "Safety report")
+                    })
+                }
+            }
+        }
+
+        item {
             Section("Privacy & data") {
                 ToggleRow("Allow third-party cookies", prefs.allowThirdPartyCookies, "Needed by some sign-in and payment pages on the website", prefs::setAllowThirdPartyCookies)
                 ToggleRow("Autoplay website media", prefs.mediaAutoplay, "Let website audio and video start without a tap", prefs::setMediaAutoplay)
@@ -256,7 +280,7 @@ private fun SettingsRoot(
             Section("Support & contact") {
                 LinkRow("Email ${AppConfig.SUPPORT_EMAIL}") {
                     val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:${AppConfig.SUPPORT_EMAIL}")).apply {
-                        putExtra(Intent.EXTRA_SUBJECT, "Mr. Blindbandit Android ${BuildConfig.VERSION_NAME} support")
+                        putExtra(Intent.EXTRA_SUBJECT, "${AppConfig.APP_DISPLAY_NAME} Android ${BuildConfig.VERSION_NAME} support")
                     }
                     safeStart(context, intent)
                 }
@@ -266,7 +290,7 @@ private fun SettingsRoot(
 
         item {
             Section("About") {
-                Text("Mr. Blindbandit for Android", style = MaterialTheme.typography.titleMedium)
+                Text("${AppConfig.APP_DISPLAY_NAME} for Android", style = MaterialTheme.typography.titleMedium)
                 Text("Version ${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("Made by Blindbandit Records for artists, fans, and creators.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 LinkRow("mrblindbandit.net") { openExternal(context, BuildConfig.WEB_BASE_URL) }
@@ -351,7 +375,7 @@ private fun LinkRow(label: String, external: Boolean = true, onClick: () -> Unit
 @Composable
 private fun LicensesList(modifier: Modifier = Modifier) {
     LazyColumn(modifier.fillMaxSize().padding(horizontal = Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-        item { Text("Mr. Blindbandit is built with these open-source libraries. Thank you to their authors.", Modifier.padding(vertical = Spacing.md)) }
+        item { Text("${AppConfig.APP_DISPLAY_NAME} is built with these open-source libraries. Thank you to their authors.", Modifier.padding(vertical = Spacing.md)) }
         OpenSourceLicenses.all.forEach { lib ->
             item {
                 Card(Modifier.fillMaxWidth()) {
@@ -377,7 +401,7 @@ object OpenSourceLicenses {
         OpenSourceLibrary("LiveKit Android SDK", "Apache License 2.0", "https://github.com/livekit/client-sdk-android"),
         OpenSourceLibrary("WebRTC", "BSD 3-Clause License", "https://webrtc.org"),
         OpenSourceLibrary("Firebase Cloud Messaging", "Apache License 2.0", "https://firebase.google.com"),
-        OpenSourceLibrary("OkHttp", "Apache License 2.0", "https://square.github.io/okhttp/"),
+        OpenSourceLibrary("OkHttp", "Apache License 2.0", "https://github.com/square/okhttp"),
         OpenSourceLibrary("Timber", "Apache License 2.0", "https://github.com/JakeWharton/timber"),
     )
 }

@@ -62,7 +62,7 @@ fun AuthGatewayScreen(auth: ClerkAuthService, reduceMotion: Boolean) {
     ) {
         Spacer(Modifier.height(24.dp))
         SpinningBrandLogo(120.dp, reduceMotion)
-        Text("Mr. Blindbandit", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color.White,
+        Text(AppConfig.APP_DISPLAY_NAME, fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color.White, textAlign = TextAlign.Center,
             modifier = Modifier.semantics { heading() })
         Text("Music · Creator tools · Calls · Blindbandit Records", color = Color.White.copy(alpha = 0.9f), textAlign = TextAlign.Center)
         Text("Sign in to unlock your studio, calls, and messages.", color = Color.White.copy(alpha = 0.85f), textAlign = TextAlign.Center)

@@ -45,6 +45,12 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
 
     func configure() {
         guard !configured else { return }
+        if StoreScreenshotMode.isActive {
+            // Debug builds only (see StoreScreenshotMode): show the signed-in screens for store screenshots.
+            configured = true
+            state = .signedIn(displayName: "Mr. Blindbandit", email: AppConfig.supportEmail)
+            return
+        }
         guard AppConfig.isClerkConfigured else {
             state = .signedOut
             statusMessage = "Sign-in is temporarily unavailable. Please update the app or try again later."
@@ -73,6 +79,7 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
     /// Gate every interactive auth action on SDK readiness instead of sending requests
     /// against a client that has not finished loading.
     private func waitUntilClerkIsReady(timeoutAttempts: Int = 80) async -> Bool {
+        if StoreScreenshotMode.isActive { return false }
         if !configured { configure() }
         guard configured else { return false }
         if Clerk.shared.isLoaded { return true }
@@ -89,6 +96,7 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
     }
 
     func refresh() async {
+        if StoreScreenshotMode.isActive { return }
         guard configured else {
             state = .signedOut
             return

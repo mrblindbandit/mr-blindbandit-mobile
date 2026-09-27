@@ -75,6 +75,7 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import net.mrblindbandit.app.auth.ClerkAuthService
+import net.mrblindbandit.app.safety.ContentFilter
 import net.mrblindbandit.app.brand.BlindbanditLogo
 import net.mrblindbandit.app.brand.SpinningBrandLogo
 
@@ -353,6 +354,8 @@ private fun MessagesPane(
     onCall: (ServerConversation) -> Unit,
     onRefresh: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val filterOn = remember { ContentFilter.isEnabled(context) }
     if (selectedConversation != null) {
         Column(Modifier.fillMaxSize()) {
             Row(
@@ -377,16 +380,17 @@ private fun MessagesPane(
             ) {
                 items(communications.messages, key = { it.id }) { message ->
                     val mine = message.senderId == communications.myProfileId
+                    val shown = if (mine) message.body else ContentFilter.display(message.body, filterOn)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
                         Text(
-                            message.body,
+                            shown,
                             modifier = Modifier
                                 .background(
                                     if (mine) Color(0x44FFD54F) else MaterialTheme.colorScheme.surfaceVariant,
                                     RoundedCornerShape(14.dp),
                                 )
                                 .padding(10.dp)
-                                .semantics { contentDescription = if (mine) "You: ${message.body}" else message.body },
+                                .semantics { contentDescription = if (mine) "You: $shown" else shown },
                         )
                     }
                 }
@@ -437,7 +441,7 @@ private fun MessagesPane(
                         ) {
                             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
                                 Text(conversation.peerName, fontWeight = FontWeight.Bold)
-                                Text(conversation.lastBody.ifBlank { "No messages yet" }, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(ContentFilter.display(conversation.lastBody, filterOn).ifBlank { "No messages yet" }, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }

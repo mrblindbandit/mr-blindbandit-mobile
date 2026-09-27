@@ -8,6 +8,7 @@ struct ConnectHubView: View {
     @EnvironmentObject private var communications: ProductionCommunicationsService
     @EnvironmentObject private var privacy: PrivacyPermissions
     @EnvironmentObject private var preferences: AppPreferences
+    @AppStorage(ContentFilter.settingKey) private var filterOffensiveLanguage = true
 
     @State private var segment: Segment = .calls
     @State private var callRecipient = ""
@@ -304,7 +305,7 @@ struct ConnectHubView: View {
                     .foregroundStyle(.secondary)
             }
             if let last = conversation.last_message {
-                Text(last.body)
+                Text(last.sender_id == communications.myProfileID ? last.body : ContentFilter.display(last.body, enabled: filterOffensiveLanguage))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -399,10 +400,11 @@ struct ConnectHubView: View {
     private func messageBubble(_ message: BlindbanditServerMessage, handle: String) -> some View {
         let mine = message.sender_id == communications.myProfileID
         let sent = Date(timeIntervalSince1970: message.created_at / 1000)
+        let shown = mine ? message.body : ContentFilter.display(message.body, enabled: filterOffensiveLanguage)
         return HStack {
             if mine { Spacer(minLength: 48) }
             VStack(alignment: mine ? .trailing : .leading, spacing: 4) {
-                Text(message.body)
+                Text(shown)
                     .padding(12)
                     .background(mine ? Brand.gold.opacity(0.35) : Color.secondary.opacity(0.16), in: RoundedRectangle(cornerRadius: 16))
                 Text(sent, style: .time)
@@ -412,7 +414,7 @@ struct ConnectHubView: View {
             if !mine { Spacer(minLength: 48) }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(mine ? "You" : "@\(handle)"): \(message.body)")
+        .accessibilityLabel("\(mine ? "You" : "@\(handle)"): \(shown)")
         .accessibilityValue(Text(sent, style: .time))
         .accessibilityActions {
             if !mine {
@@ -439,7 +441,7 @@ struct ConnectHubView: View {
             if await privacy.requestMicrophone() { return true }
         default: break
         }
-        communications.statusMessage = "Calls need microphone access. Turn it on in iPhone Settings > Mr. Blindbandit."
+        communications.statusMessage = "Calls need microphone access. Turn it on in iPhone Settings > \(AppConfig.homeScreenName)."
         AppHaptics.warning()
         return false
     }
@@ -451,7 +453,7 @@ struct ConnectHubView: View {
             if await privacy.requestCamera() { return true }
         default: break
         }
-        communications.statusMessage = "Video calls need camera access. Turn it on in iPhone Settings > Mr. Blindbandit."
+        communications.statusMessage = "Video calls need camera access. Turn it on in iPhone Settings > \(AppConfig.homeScreenName)."
         AppHaptics.warning()
         return false
     }

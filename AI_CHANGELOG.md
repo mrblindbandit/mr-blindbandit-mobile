@@ -13,6 +13,7 @@ Cross-links:
 ## 2026-09-27 — Installable build artifacts (Grok Bot, branch `ci/build-artifacts`)
 
 - Added `.github/workflows/build-artifacts.yml` (workflow_dispatch): Android release APK signed with a throwaway debug keystore (sideloadable) and an unsigned iOS IPA built for `generic/platform=iOS`.
+- The APK job also emits an arm64-v8a-only APK (~35 MB vs ~67 MB universal) so it fits simple upload/sideload paths; both are signed with the same per-run debug key.
 - `build-unsigned.sh` now targets `generic/platform=iOS`, checks the `.app` actually exists, and cleans `dist/Payload` after zipping.
 - Local audit: Android unit tests, lint and debug/release assembles pass; placeholder gate passes. No app code changes were needed.
 

@@ -15,6 +15,8 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Placeholder content check
         run: bash scripts/check-placeholders.sh
       - uses: actions/setup-java@v4
@@ -47,13 +49,22 @@ jobs:
           keytool -genkeypair -keystore "$KS" -storepass android -alias androiddebugkey -keypass android \
             -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           IN=$(ls Android/app/build/outputs/apk/release/*.apk | head -1)
+          V="${{ steps.version.outputs.name }}"
           mkdir -p dist
-          "$BT/zipalign" -f -p 4 "$IN" "$RUNNER_TEMP/aligned.apk"
-          OUT="dist/MrBlindbandit-android-${{ steps.version.outputs.name }}.apk"
-          "$BT/apksigner" sign --ks "$KS" --ks-pass pass:android --key-pass pass:android \
-            --ks-key-alias androiddebugkey --out "$OUT" "$RUNNER_TEMP/aligned.apk"
-          "$BT/apksigner" verify --verbose "$OUT"
-          rm -f "$KS" "$RUNNER_TEMP/aligned.apk"
+          sign() {
+            "$BT/zipalign" -f -p 4 "$1" "$RUNNER_TEMP/aligned.apk"
+            "$BT/apksigner" sign --ks "$KS" --ks-pass pass:android --key-pass pass:android \
+              --ks-key-alias androiddebugkey --out "$2" "$RUNNER_TEMP/aligned.apk"
+            "$BT/apksigner" verify --verbose "$2"
+            rm -f "$RUNNER_TEMP/aligned.apk"
+          }
+          # Universal APK (all ABIs, including emulators).
+          sign "$IN" "dist/MrBlindbandit-android-$V-universal.apk"
+          # arm64-v8a APK: about half the size, installs on practically every phone from 2017 onward.
+          cp "$IN" "$RUNNER_TEMP/arm64.apk"
+          zip -q -d "$RUNNER_TEMP/arm64.apk" 'lib/x86/*' 'lib/x86_64/*' 'lib/armeabi-v7a/*'
+          sign "$RUNNER_TEMP/arm64.apk" "dist/MrBlindbandit-android-$V.apk"
+          rm -f "$KS" "$RUNNER_TEMP/arm64.apk"
           ls -la dist
       - uses: actions/upload-artifact@v4
         with:
@@ -67,6 +78,8 @@ jobs:
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Placeholder content check
         run: bash scripts/check-placeholders.sh
       - name: Show toolchain

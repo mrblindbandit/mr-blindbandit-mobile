@@ -383,7 +383,7 @@ private fun HomeScreen(
             }
         }
         item { HomeCard(Icons.Default.Phone, "Calls & messages", "Voice calls, video calls, and chat with people on Blindbandit.", onConnect) }
-        item { HomeCard(Icons.Default.Build, "Creator tools", "BPM, royalty splits, ISRC checks, timecode, and more. Works offline.", onCreator) }
+        item { HomeCard(Icons.Default.Build, "Creator tools", "Metronome, BPM tapper, royalty splits, release checklist, and more. Works offline.", onCreator) }
         item { HomeCard(Icons.Default.Headphones, "Listen", "Mr. Blindbandit on your favourite music services.", onListen) }
         item { HomeCard(Icons.Default.Language, "Music & news", "Releases, the Blindbandit Chronicle, and news from mrblindbandit.net.", { onWeb(BuildConfig.WEB_BASE_URL + "/music/") }) }
         item { HomeCard(Icons.Default.OpenInBrowser, "Label portal", "Blindbandit Records artist and client portal.", { onWeb(BuildConfig.WEB_BASE_URL + "/portal/") }) }

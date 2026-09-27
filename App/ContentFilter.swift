@@ -17,7 +17,7 @@ enum ContentFilter {
     /// Stems that are also the start of everyday words are deliberately left out.
     static let blockedStems: [String] = [
         "fuck", "motherfuck", "shit", "bullshit", "bitch", "cunt", "asshole", "bastard", "pussy",
-        "whore", "slut", "twat", "wanker", "porn", "nude", "rape", "rapist",
+        "whore", "slut", "twat", "wanker", "porn", "nude", "rape", "raped", "raping", "rapist",
         "nigger", "nigga", "faggot", "fag", "retard", "chink", "kike", "tranny", "dyke", "wetback",
         "raghead", "beaner", "kys"
     ]

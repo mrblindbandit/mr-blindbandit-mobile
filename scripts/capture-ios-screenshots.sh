@@ -26,6 +26,9 @@ for runtime, items in sorted(devices.items(), reverse=True):
 done
 test -n "$UDID" || { echo "No 6.9-inch or 6.7-inch iPhone simulator available"; xcrun simctl list devices available; exit 1; }
 
+# Start from a clean simulator so no saved session or keychain item can skip the sign-in screen.
+xcrun simctl shutdown "$UDID" 2>/dev/null || true
+xcrun simctl erase "$UDID"
 xcrun simctl boot "$UDID" || true
 xcrun simctl bootstatus "$UDID" -b
 

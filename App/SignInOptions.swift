@@ -35,14 +35,17 @@ enum SignInProviderPolicy {
         return host
     }
 
-    /// Reads `user_settings.social.<strategy>.enabled` from Clerk's public environment document.
+    /// Reads `user_settings.social.<strategy>` from Clerk's public environment document. A provider
+    /// counts only if it is enabled and usable for sign-in (`authenticatable` is not false); link-only
+    /// connections are skipped so the app never shows a button that cannot sign in.
     static func enabledStrategies(fromEnvironmentJSON data: Data) -> Set<String> {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let settings = root["user_settings"] as? [String: Any],
               let social = settings["social"] as? [String: Any] else { return [] }
         var result = Set<String>()
         for (strategy, value) in social {
-            if let entry = value as? [String: Any], entry["enabled"] as? Bool == true {
+            if let entry = value as? [String: Any], entry["enabled"] as? Bool == true,
+               entry["authenticatable"] as? Bool != false {
                 result.insert(strategy)
             }
         }
@@ -56,8 +59,12 @@ final class SignInOptions: ObservableObject {
     @Published private(set) var showApple = false
     @Published private(set) var loaded = false
 
+    private var fetched = false
+
+    /// Fetches the enabled providers, retrying a few times on network failure. Until one fetch succeeds,
+    /// later calls (for example when the sign-in screen appears again) try again.
     func load() async {
-        guard !loaded else { return }
+        guard !fetched else { return }
         guard let host = SignInProviderPolicy.frontendAPIHost(fromPublishableKey: AppConfig.clerkPublishableKey),
               let url = URL(string: "https://\(host)/v1/environment") else {
             loaded = true
@@ -65,16 +72,20 @@ final class SignInOptions: ObservableObject {
         }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let strategies: Set<String>
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            if let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
-                strategies = SignInProviderPolicy.enabledStrategies(fromEnvironmentJSON: data)
-            } else {
-                strategies = []
+        var strategies: Set<String> = []
+        for attempt in 0..<3 {
+            if attempt > 0 { try? await Task.sleep(nanoseconds: UInt64(attempt) * 2_000_000_000) }
+            if Task.isCancelled { break }
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                if let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
+                    strategies = SignInProviderPolicy.enabledStrategies(fromEnvironmentJSON: data)
+                    fetched = true
+                    break
+                }
+            } catch {
+                continue
             }
-        } catch {
-            strategies = []
         }
         let visible = SignInProviderPolicy.visible(enabledStrategies: strategies)
         showGoogle = visible.google

@@ -27,7 +27,8 @@ demo notifications -e visible false
 
 shot() { adb exec-out screencap -p > "$OUT/$1.png"; echo "Captured $1"; }
 
-# Public sign-in screen: a normal launch with no account.
+# Public sign-in screen: a normal launch with no account (clear any saved session first).
+adb shell pm clear "$PKG" > /dev/null
 adb shell am start -W -n "$PKG/.MainActivity"
 sleep 20
 shot "01-sign-in"

@@ -442,7 +442,9 @@ private fun MessagesPane(
                         ) {
                             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
                                 Text(conversation.peerName, fontWeight = FontWeight.Bold)
-                                Text(ContentFilter.display(conversation.lastBody, filterOn).ifBlank { "No messages yet" }, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                val lastIsMine = conversation.lastSenderId.isNotEmpty() && conversation.lastSenderId == communications.myProfileId
+                                val preview = if (lastIsMine) conversation.lastBody else ContentFilter.display(conversation.lastBody, filterOn)
+                                Text(preview.ifBlank { "No messages yet" }, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }

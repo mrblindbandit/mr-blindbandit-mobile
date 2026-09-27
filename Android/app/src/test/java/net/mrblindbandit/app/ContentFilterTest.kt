@@ -11,6 +11,7 @@ class ContentFilterTest {
         assertEquals("what the **** is this", ContentFilter.mask("what the Fuck is this"))
         assertEquals("****** day", ContentFilter.mask("shitty day"))
         assertTrue(ContentFilter.containsBlockedLanguage("you BITCHES"))
+        assertTrue(ContentFilter.containsBlockedLanguage("he raped"))
     }
 
     @Test

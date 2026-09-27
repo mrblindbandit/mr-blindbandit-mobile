@@ -100,6 +100,8 @@ final class BlindbanditTests: XCTestCase {
         let strategies = SignInProviderPolicy.enabledStrategies(fromEnvironmentJSON: Data(json.utf8))
         XCTAssertEqual(strategies, ["oauth_google", "oauth_github"])
         XCTAssertTrue(SignInProviderPolicy.enabledStrategies(fromEnvironmentJSON: Data("oops".utf8)).isEmpty)
+        let linkOnly = #"{"user_settings":{"social":{"oauth_apple":{"enabled":true,"authenticatable":false},"oauth_google":{"enabled":true,"authenticatable":true}}}}"#
+        XCTAssertEqual(SignInProviderPolicy.enabledStrategies(fromEnvironmentJSON: Data(linkOnly.utf8)), ["oauth_google"])
     }
 
     // MARK: Content filter (Guideline 1.2)
@@ -108,6 +110,7 @@ final class BlindbanditTests: XCTestCase {
         XCTAssertEqual(ContentFilter.mask("what the Fuck is this"), "what the **** is this")
         XCTAssertEqual(ContentFilter.mask("shitty day"), "****** day")
         XCTAssertTrue(ContentFilter.containsBlockedLanguage("you BITCHES"))
+        XCTAssertTrue(ContentFilter.containsBlockedLanguage("he raped"))
     }
 
     func testContentFilterLeavesEverydayWordsAlone() {

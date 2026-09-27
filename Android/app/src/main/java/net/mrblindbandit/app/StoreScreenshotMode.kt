@@ -19,12 +19,22 @@ object StoreScreenshotMode {
             "connect" -> Request(AppTab.CONNECT, false)
             "listen" -> Request(AppTab.LISTEN, false)
             "more" -> Request(AppTab.MORE, false)
-            "settings" -> Request(AppTab.HOME, true)
+            "settings", "accessibility" -> Request(AppTab.HOME, true)
             "music" -> Request(AppTab.HOME, false, "/music/")
             "community" -> Request(AppTab.HOME, false, "/mobile")
             "profile" -> Request(AppTab.HOME, false, "/mobile/u/mrblindbandit")
             "bites" -> Request(AppTab.HOME, false, "/mobile/bites")
             else -> Request(AppTab.HOME, false)
         }
+    }
+
+    /**
+     * Pre-answers the website cookie banner (essential + embedded media, no ads or analytics) so web
+     * screenshots show the page instead of the consent prompt. Null outside screenshot mode.
+     */
+    fun consentScript(intent: Intent?): String? {
+        if (from(intent) == null) return null
+        return "try { if (!localStorage.getItem('bb-consent-v4')) { localStorage.setItem('bb-consent-v4', " +
+            "JSON.stringify({version: 4, savedAt: Date.now(), essential: true, analytics: false, ads: false, media: true})); } } catch (e) {}"
     }
 }

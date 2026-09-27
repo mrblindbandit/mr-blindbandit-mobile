@@ -47,7 +47,7 @@ sleep 20
 shot "01-sign-in"
 
 n=2
-for screen in home music listen community profile bites create connect more settings; do
+for screen in home music listen community profile create connect more settings accessibility; do
   xcrun simctl terminate "$UDID" "$BUNDLE_ID" || true
   sleep 1
   xcrun simctl launch "$UDID" "$BUNDLE_ID" -StoreScreenshots YES -StoreScreenshotScreen "$screen"

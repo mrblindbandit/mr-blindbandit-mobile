@@ -36,10 +36,23 @@ struct Settings: View {
     }
 
     var body: some View {
+        ScrollViewReader { proxy in
+            settingsForm
+                .onAppear {
+                    guard StoreScreenshotMode.isActive, StoreScreenshotMode.screen == "accessibility" else { return }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        proxy.scrollTo("accessibility", anchor: .top)
+                    }
+                }
+        }
+    }
+
+    private var settingsForm: some View {
         Form {
             accountSection
             notificationsSection
             accessibilitySection
+                .id("accessibility")
             audioSection
             appearanceSection
             safetySection

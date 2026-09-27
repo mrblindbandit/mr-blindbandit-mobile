@@ -48,7 +48,7 @@ final class ClerkAuthService: ObservableObject, ClerkAuthServing {
         if StoreScreenshotMode.isActive {
             // Debug builds only (see StoreScreenshotMode): show the signed-in screens for store screenshots.
             configured = true
-            state = .signedIn(displayName: "Mr. Blindbandit", email: AppConfig.supportEmail)
+            state = .signedIn(displayName: "Kaeleb Heck", email: AppConfig.supportEmail)
             return
         }
         guard AppConfig.isClerkConfigured else {

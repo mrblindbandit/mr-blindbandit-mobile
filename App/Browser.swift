@@ -47,6 +47,13 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
             injectionTime: .atDocumentStart,
             forMainFrameOnly: false
         ))
+        if let consentScript = StoreScreenshotMode.consentScript {
+            config.userContentController.addUserScript(WKUserScript(
+                source: consentScript,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            ))
+        }
         web = WKWebView(frame: .zero, configuration: config)
         super.init()
         web.navigationDelegate = self

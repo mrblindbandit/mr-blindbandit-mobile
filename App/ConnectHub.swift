@@ -45,7 +45,11 @@ struct ConnectHubView: View {
         }
         .navigationTitle("Connect")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await communications.bootstrap() }
+        .task {
+            // Store screenshots run without a Clerk session, so skip the signed-in API calls.
+            guard !StoreScreenshotMode.isActive else { return }
+            await communications.bootstrap()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .blindbanditCallDeepLinkReceived)) { note in
             guard let callID = note.object as? String else { return }
             segment = .calls

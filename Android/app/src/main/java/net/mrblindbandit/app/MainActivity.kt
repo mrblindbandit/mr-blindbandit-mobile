@@ -258,7 +258,9 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
     var showSettings by rememberSaveable { mutableStateOf(screenshot?.settings == true) }
     var showWeb by rememberSaveable { mutableStateOf(screenshot?.webPath != null) }
 
-    LaunchedEffect(Unit) { auth.configure() }
+    LaunchedEffect(Unit) {
+        if (screenshot != null) auth.useStoreScreenshotAccount("Kaeleb Heck", AppConfig.SUPPORT_EMAIL) else auth.configure()
+    }
     LaunchedEffect(deepLinkState.value) {
         deepLinkState.value?.let {
             currentUrl = it
@@ -271,8 +273,7 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
         else activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
-    val effectiveState = if (screenshot != null) AuthState.SignedIn("Mr. Blindbandit", AppConfig.SUPPORT_EMAIL) else auth.state
-    when (val state = effectiveState) {
+    when (val state = auth.state) {
         AuthState.Unknown -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             SpinningBrandLogo(112.dp, prefs.reduceMotion)
         }
@@ -458,6 +459,9 @@ private fun WebScreen(activity: MainActivity, url: String, prefs: AndroidAppPref
                         // inside the app, so the "no tracking, no ads" Data safety answers stay true.
                         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
                             WebViewCompat.addDocumentStartJavaScript(this, GLOBAL_PRIVACY_CONTROL_SCRIPT, setOf("https://mrblindbandit.net", "https://www.mrblindbandit.net"))
+                            StoreScreenshotMode.consentScript(activity.intent)?.let { script ->
+                                WebViewCompat.addDocumentStartJavaScript(this, script, setOf("https://mrblindbandit.net", "https://www.mrblindbandit.net"))
+                            }
                         }
                         CookieManager.getInstance().setAcceptCookie(true)
                         CookieManager.getInstance().setAcceptThirdPartyCookies(this, prefs.allowThirdPartyCookies)

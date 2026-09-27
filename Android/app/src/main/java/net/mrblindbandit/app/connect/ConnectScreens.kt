@@ -156,7 +156,8 @@ fun ConnectHubScreen(
         }
     }
 
-    LaunchedEffect(Unit) { communications.bootstrap() }
+    // Store screenshot runs have no Clerk session, so skip the signed-in API calls there.
+    LaunchedEffect(Unit) { if (!auth.storeScreenshotMode) communications.bootstrap() }
     LaunchedEffect(communications.isInCall) {
         while (communications.isInCall) {
             delay(1000)

@@ -88,7 +88,7 @@ final class TabRouter: ObservableObject {
         case "create": return .create
         case "connect": return .connect
         case "listen": return .listen
-        case "more", "settings": return .more
+        case "more", "settings", "accessibility": return .more
         default: return .home
         }
     }
@@ -273,7 +273,7 @@ struct MainTabs: View {
                 .tag(TabRouter.Tab.listen)
 
             NavigationStack {
-                if StoreScreenshotMode.isActive && StoreScreenshotMode.screen == "settings" {
+                if StoreScreenshotMode.isActive && ["settings", "accessibility"].contains(StoreScreenshotMode.screen) {
                     Settings()
                 } else {
                     MoreHubView()

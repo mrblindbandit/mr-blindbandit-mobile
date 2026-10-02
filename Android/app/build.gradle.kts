@@ -100,9 +100,9 @@ kotlin {
 
 configurations.configureEach {
     resolutionStrategy {
-        force("com.squareup.okhttp3:okhttp:5.3.2")
-        force("com.squareup.okhttp3:okhttp-android:5.3.2")
-        force("com.squareup.okhttp3:logging-interceptor:5.3.2")
+        force("com.squareup.okhttp3:okhttp:5.5.0")
+        force("com.squareup.okhttp3:okhttp-android:5.5.0")
+        force("com.squareup.okhttp3:logging-interceptor:5.5.0")
         force("com.jakewharton.timber:timber:5.0.1")
     }
 }

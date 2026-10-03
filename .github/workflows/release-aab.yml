@@ -1,0 +1,101 @@
+name: Release AAB (Google Play) — Mr. Blindbandit
+# Builds the Play Store Android App Bundle signed with the upload key from repository secrets:
+#   ANDROID_UPLOAD_KEYSTORE_BASE64, ANDROID_UPLOAD_KEYSTORE_PASSWORD,
+#   ANDROID_UPLOAD_KEY_ALIAS, ANDROID_UPLOAD_KEY_PASSWORD.
+# Runs on demand only. The job fails if the bundle is not signed by the expected upload key.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release-aab-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release-aab:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Placeholder content check
+        run: bash scripts/check-placeholders.sh
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android SDK packages
+        run: |
+          set -euo pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-36" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Unit tests
+        working-directory: Android
+        run: ./gradlew testDebugUnitTest --stacktrace
+      - name: Decode upload keystore
+        env:
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_UPLOAD_KEYSTORE_BASE64}" ]; then
+            echo "::error::ANDROID_UPLOAD_KEYSTORE_BASE64 is not set; a Play upload bundle must be signed."
+            exit 1
+          fi
+          umask 077
+          printf '%s' "${ANDROID_UPLOAD_KEYSTORE_BASE64}" | base64 --decode > "$RUNNER_TEMP/upload.jks"
+          echo "ANDROID_UPLOAD_KEYSTORE_FILE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+      - name: Build signed release bundle
+        working-directory: Android
+        env:
+          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: ./gradlew bundleRelease --stacktrace
+      - name: Verify signature, version and target SDK
+        env:
+          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          AAB=Android/app/build/outputs/bundle/release/app-release.aab
+          test -f "$AAB"
+          jarsigner -verify -strict "$AAB" | tee "$RUNNER_TEMP/verify.txt"
+          grep -q "jar verified" "$RUNNER_TEMP/verify.txt"
+          # The bundle's signer must be the upload key.
+          expected=$(keytool -exportcert -rfc -keystore "$ANDROID_UPLOAD_KEYSTORE_FILE" \
+            -storepass "$ANDROID_UPLOAD_KEYSTORE_PASSWORD" -alias "$ANDROID_UPLOAD_KEY_ALIAS" \
+            | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2)
+          actual=$(keytool -printcert -jarfile "$AAB" | sed -n 's/^[[:space:]]*SHA256: //p' | head -1)
+          echo "Upload key SHA-256: $expected"
+          echo "Bundle signer SHA-256: $actual"
+          test "$expected" = "$actual"
+          curl -fsSL -o "$RUNNER_TEMP/bundletool.jar" \
+            https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar
+          BT="java -jar $RUNNER_TEMP/bundletool.jar"
+          $BT validate --bundle="$AAB" > /dev/null
+          vc=$($BT dump manifest --bundle="$AAB" --xpath=/manifest/@android:versionCode)
+          vn=$($BT dump manifest --bundle="$AAB" --xpath=/manifest/@android:versionName)
+          tsdk=$($BT dump manifest --bundle="$AAB" --xpath=/manifest/uses-sdk/@android:targetSdkVersion)
+          dbg=$($BT dump manifest --bundle="$AAB" --xpath=/manifest/application/@android:debuggable || true)
+          echo "versionCode=$vc versionName=$vn targetSdk=$tsdk debuggable=${dbg:-unset}"
+          test "$tsdk" -ge 36
+          test "$vc" -ge 1
+          test "${dbg:-false}" != "true"
+          mkdir -p dist
+          cp "$AAB" "dist/MrBlindbandit-$vn.aab"
+          {
+            echo "### Release AAB"
+            echo "- File: MrBlindbandit-$vn.aab ($(du -h "$AAB" | cut -f1))"
+            echo "- versionCode $vc, versionName $vn, targetSdk $tsdk"
+            echo "- Upload key SHA-256: $actual"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove decoded keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/upload.jks"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MrBlindbandit-release-aab
+          path: dist/*.aab
+          if-no-files-found: error
+          retention-days: 90

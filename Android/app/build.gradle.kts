@@ -1,4 +1,5 @@
 import java.util.Properties
+import java.util.Base64
 
 plugins {
     id("com.android.application")
@@ -26,8 +27,8 @@ android {
         applicationId = "net.mrblindbandit.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "1.7.0"
+        versionCode = 8
+        versionName = "1.7.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("String", "WEB_BASE_URL", "\"https://mrblindbandit.net\"")
@@ -37,18 +38,36 @@ android {
         buildConfigField("String", "GOOGLE_OAUTH_CLIENT_ID", "\"${local("GOOGLE_OAUTH_CLIENT_ID", productionGoogleOAuthClientId)}\"")
     }
 
-    // Release signing is read from the environment (GitHub Actions secrets) or local.properties.
-    // Keystores and passwords are never committed. Without them, bundleRelease produces an
-    // unsigned AAB that Play App Signing can still accept after upload-key signing.
-    val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_PATH") ?: local("ANDROID_KEYSTORE_PATH")
-    val hasReleaseSigning = releaseStoreFile.isNotBlank() && rootProject.file(releaseStoreFile).exists()
+    // Release (upload-key) signing comes from environment variables, normally GitHub Actions secrets:
+    //   ANDROID_UPLOAD_KEYSTORE_FILE (path) or ANDROID_UPLOAD_KEYSTORE_BASE64 (the keystore itself),
+    //   ANDROID_UPLOAD_KEYSTORE_PASSWORD, ANDROID_UPLOAD_KEY_ALIAS, ANDROID_UPLOAD_KEY_PASSWORD.
+    // local.properties may provide the same keys for a local build. Keystores and passwords are never
+    // committed. When they are absent, release builds are left unsigned (CI and debug builds keep working).
+    fun signingValue(vararg keys: String): String =
+        keys.firstNotNullOfOrNull { k -> System.getenv(k)?.takeIf { it.isNotBlank() } ?: localProps.getProperty(k)?.takeIf { it.isNotBlank() } } ?: ""
+    val releaseStoreFile: File? = run {
+        val path = signingValue("ANDROID_UPLOAD_KEYSTORE_FILE", "ANDROID_KEYSTORE_PATH")
+        val b64 = signingValue("ANDROID_UPLOAD_KEYSTORE_BASE64")
+        when {
+            path.isNotBlank() -> rootProject.file(path).takeIf { it.exists() }
+            b64.isNotBlank() -> layout.buildDirectory.file("signing/upload-keystore.jks").get().asFile.apply {
+                parentFile.mkdirs()
+                writeBytes(Base64.getMimeDecoder().decode(b64))
+            }
+            else -> null
+        }
+    }
+    val releaseStorePassword = signingValue("ANDROID_UPLOAD_KEYSTORE_PASSWORD", "ANDROID_KEYSTORE_PASSWORD")
+    val releaseKeyAlias = signingValue("ANDROID_UPLOAD_KEY_ALIAS", "ANDROID_KEY_ALIAS")
+    val releaseKeyPassword = signingValue("ANDROID_UPLOAD_KEY_PASSWORD", "ANDROID_KEY_PASSWORD")
+    val hasReleaseSigning = releaseStoreFile != null && releaseStorePassword.isNotBlank() && releaseKeyAlias.isNotBlank()
     signingConfigs {
         if (hasReleaseSigning) {
             create("release") {
-                storeFile = rootProject.file(releaseStoreFile)
-                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: local("ANDROID_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("ANDROID_KEY_ALIAS") ?: local("ANDROID_KEY_ALIAS")
-                keyPassword = System.getenv("ANDROID_KEY_PASSWORD") ?: local("ANDROID_KEY_PASSWORD")
+                storeFile = releaseStoreFile
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword.ifBlank { releaseStorePassword }
             }
         }
     }

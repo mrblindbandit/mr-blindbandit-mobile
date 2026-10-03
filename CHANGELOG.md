@@ -6,6 +6,21 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 
 ---
 
+## [1.7.1 Android] — 2026-10-03
+
+### Added
+
+- Google Play release bundle workflow (`release-aab.yml`): an AAB signed with the Play upload key from
+  GitHub secrets, with signer, versionCode and targetSdk checks.
+- Release signing reads `ANDROID_UPLOAD_*` environment variables (keystore file or base64) and stays
+  unsigned when they are absent.
+
+### Changed
+
+- Android versionCode 8, versionName 1.7.1 (first Google Play upload).
+
+---
+
 ## [1.7] — 2026-09-26
 
 ### Fixed

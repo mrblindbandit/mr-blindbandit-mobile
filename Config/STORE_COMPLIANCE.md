@@ -10,7 +10,7 @@ the code that satisfies it, and lists what only the owner can do in the store co
 | Store name | Mr. BlindBandit Mobile | Mr. BlindBandit Mobile |
 | Home screen label | BlindBandit (`CFBundleDisplayName`) | BlindBandit (`app_name`) |
 | Identifier | `net.mrblindbandit.privateapp` | `net.mrblindbandit.app` |
-| Version | 1.7 (7) | 1.7.0 (7) |
+| Version | 1.7 (7) | 1.7.1 (8) |
 | Minimum OS | iOS 17, iPhone only | Android 8.0 (API 26) |
 | Target | iOS 17+ SDK from current Xcode | targetSdk 36 |
 

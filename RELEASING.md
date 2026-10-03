@@ -11,7 +11,7 @@ Signed-in screens use a Debug-only screenshot mode that is compiled out of relea
 
 ## Version
 
-iOS 1.7 (build 7) and Android 1.7.0 (versionCode 7). Bump `project.yml` (`MARKETING_VERSION`,
+iOS 1.7 (build 7) and Android 1.7.1 (versionCode 8; 1.7.0 / 7 was used for sideload builds). Every Play upload needs a higher versionCode. Bump `project.yml` (`MARKETING_VERSION`,
 `CURRENT_PROJECT_VERSION`), `App/AppConfig.swift`, `Android/app/build.gradle.kts` and
 `Android/.../config/AppConfig.kt` together.
 
@@ -28,19 +28,25 @@ iOS 1.7 (build 7) and Android 1.7.0 (versionCode 7). Bump `project.yml` (`MARKET
 
 | Secret | Used for |
 |---|---|
-| `ANDROID_KEYSTORE_BASE64` | `base64 -w0 upload.jks`: the Play **upload** keystore |
-| `ANDROID_KEYSTORE_PASSWORD` | Keystore password |
-| `ANDROID_KEY_ALIAS` | Key alias |
-| `ANDROID_KEY_PASSWORD` | Key password |
+| `ANDROID_UPLOAD_KEYSTORE_BASE64` | `base64 -w0 upload-keystore.jks`: the Play **upload** keystore |
+| `ANDROID_UPLOAD_KEYSTORE_PASSWORD` | Keystore password |
+| `ANDROID_UPLOAD_KEY_ALIAS` | Key alias (`upload`) |
+| `ANDROID_UPLOAD_KEY_PASSWORD` | Key password |
 | `IOS_CERTIFICATE_P12_BASE64` | Apple Distribution certificate + private key (.p12), base64 |
 | `IOS_CERTIFICATE_PASSWORD` | .p12 password |
 | `IOS_PROVISIONING_PROFILE_BASE64` | App Store provisioning profile for `net.mrblindbandit.privateapp`, base64 |
 | `APPLE_TEAM_ID` | 10-character Team ID |
 | `KEYCHAIN_PASSWORD` | Optional; any random string |
 
-For local Android release builds, put `ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`,
-`ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD` in `Android/local.properties` (gitignored), or
-export them as environment variables. Never commit keys.
+The Play bundle is built by **Release AAB (Google Play)** (`.github/workflows/release-aab.yml`,
+manual run on `main`). It signs with the upload key, then checks the signer fingerprint, versionCode
+and targetSdk, and uploads `MrBlindbandit-<versionName>.aab` as an artifact.
+
+For local Android release builds, set `ANDROID_UPLOAD_KEYSTORE_FILE` (or `ANDROID_UPLOAD_KEYSTORE_BASE64`),
+`ANDROID_UPLOAD_KEYSTORE_PASSWORD`, `ANDROID_UPLOAD_KEY_ALIAS` and `ANDROID_UPLOAD_KEY_PASSWORD` as
+environment variables or in `Android/local.properties` (gitignored). The older `ANDROID_KEYSTORE_PATH`,
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD` names still work. Without
+them the release build is unsigned. Never commit keys.
 
 ## Clerk dashboard (production instance clerk.mrblindbandit.net)
 

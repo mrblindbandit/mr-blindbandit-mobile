@@ -60,8 +60,14 @@ jobs:
           set -euo pipefail
           AAB=Android/app/build/outputs/bundle/release/app-release.aab
           test -f "$AAB"
-          jarsigner -verify -strict "$AAB" | tee "$RUNNER_TEMP/verify.txt"
-          grep -q "jar verified" "$RUNNER_TEMP/verify.txt"
+          # No -strict: AGP-signed bundles always warn (self-signed upload certificate, no timestamp, and
+          # META-INF/MANIFEST.MF not being the first zip entry). Those warnings are normal for Play uploads.
+          jarsigner -verify "$AAB" > "$RUNNER_TEMP/verify.txt" 2>&1 || { cat "$RUNNER_TEMP/verify.txt"; exit 1; }
+          grep -v "is signed in JarFile but is not signed in JarInputStream" "$RUNNER_TEMP/verify.txt"
+          grep -q "^jar verified" "$RUNNER_TEMP/verify.txt"
+          if grep -qiE "unsigned entries|jar is unsigned|has been tampered|digest error" "$RUNNER_TEMP/verify.txt"; then
+            echo "::error::Bundle signature problem"; exit 1
+          fi
           # The bundle's signer must be the upload key.
           expected=$(keytool -exportcert -rfc -keystore "$ANDROID_UPLOAD_KEYSTORE_FILE" \
             -storepass "$ANDROID_UPLOAD_KEYSTORE_PASSWORD" -alias "$ANDROID_UPLOAD_KEY_ALIAS" \

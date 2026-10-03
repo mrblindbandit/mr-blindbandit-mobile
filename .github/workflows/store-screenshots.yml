@@ -1,0 +1,95 @@
+name: Store screenshots — Mr. Blindbandit
+# Captures raw store screenshots of both apps: Android on a 1080x1920 emulator, iOS on a 6.9-inch
+# iPhone simulator (1320x2868). Runs on demand, and on pull requests that change the capture setup.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/store-screenshots.yml
+      - scripts/capture-android-screenshots.sh
+      - scripts/capture-ios-screenshots.sh
+      - App/StoreScreenshotMode.swift
+      - Android/app/src/main/java/net/mrblindbandit/app/StoreScreenshotMode.kt
+permissions:
+  contents: read
+concurrency:
+  group: screenshots-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Enable KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install Android SDK packages
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-36" "build-tools;35.0.0"
+      - name: Build debug APK
+        working-directory: Android
+        run: ./gradlew assembleDebug --stacktrace
+      - name: Capture screenshots on a 1080x1920 emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash scripts/capture-android-screenshots.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: store-screenshots-android
+          path: store-screenshots/android/*.png
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-crash-log
+          path: store-screenshots/android-crash-log.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: |
+          swift scripts/GenerateAppIcon.swift
+          xcodegen generate
+          mkdir -p build
+      - name: Capture screenshots on a 6.9-inch iPhone simulator
+        run: bash scripts/capture-ios-screenshots.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: store-screenshots-ios
+          path: store-screenshots/ios/*.png
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: store-screenshots-ios-log
+          path: build/xcodebuild-shots.log
+          if-no-files-found: ignore
+          retention-days: 7

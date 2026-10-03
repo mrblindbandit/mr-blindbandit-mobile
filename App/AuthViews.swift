@@ -1,10 +1,12 @@
 import SwiftUI
 import AuthenticationServices
 
-/// Sign-in screen: Sign in with Apple, Google, and email through Clerk.
+/// Sign-in screen: email through Clerk, plus Sign in with Apple and Google when they are enabled
+/// in the Clerk instance (see `SignInProviderPolicy`).
 struct AuthGatewayView: View {
     @ObservedObject var auth: ClerkAuthService
     @EnvironmentObject private var preferences: AppPreferences
+    @StateObject private var signInOptions = SignInOptions()
     @State private var mode: Mode = .landing
     @FocusState private var focusedField: Field?
 
@@ -20,8 +22,9 @@ struct AuthGatewayView: View {
                 VStack(spacing: 28) {
                     VStack(spacing: 16) {
                         SpinningBrandLogo(size: 120, reduceMotion: preferences.reduceAppMotion)
-                        Text("Mr. Blindbandit")
+                        Text(AppConfig.appDisplayName)
                             .font(.system(.largeTitle, design: .rounded, weight: .heavy))
+                            .multilineTextAlignment(.center)
                             .foregroundStyle(.white)
                             .accessibilityAddTraits(.isHeader)
                         Text("Music · Creator Tools · Calls · Blindbandit Records")
@@ -62,24 +65,27 @@ struct AuthGatewayView: View {
             auth.configure()
             AppHaptics.soft()
         }
+        .task { await signInOptions.load() }
     }
 
     private var landingCards: some View {
         VStack(spacing: 14) {
-            Button {
-                AppHaptics.medium()
-                Task { _ = await auth.beginGoogleSignIn() }
-            } label: {
-                Label("Continue with Google", systemImage: "g.circle.fill")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+            if signInOptions.showGoogle {
+                Button {
+                    AppHaptics.medium()
+                    Task { _ = await auth.beginGoogleSignIn() }
+                } label: {
+                    Label("Continue with Google", systemImage: "g.circle.fill")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.white)
+                .foregroundStyle(.black)
+                .disabled(auth.busy)
+                .accessibilityHint("Signs in with your Google account.")
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.white)
-            .foregroundStyle(.black)
-            .disabled(auth.busy)
-            .accessibilityHint("Signs in with your Google account.")
 
             Button {
                 AppHaptics.selection()
@@ -95,7 +101,7 @@ struct AuthGatewayView: View {
             .disabled(auth.busy)
             .accessibilityHint("Sign in or create an account with your email address.")
 
-            if AppConfig.enableSignInWithApple {
+            if signInOptions.showApple {
                 SignInWithAppleButton(.continue) { request in
                     request.requestedScopes = [.fullName, .email]
                 } onCompletion: { result in

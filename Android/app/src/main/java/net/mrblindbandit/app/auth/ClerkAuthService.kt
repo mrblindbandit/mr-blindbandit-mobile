@@ -17,6 +17,7 @@ import com.clerk.api.sso.OAuthProvider
 import com.clerk.api.user.delete
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
+import net.mrblindbandit.app.BuildConfig
 import net.mrblindbandit.app.config.AppConfig
 
 sealed class AuthState {
@@ -44,7 +45,22 @@ class ClerkAuthService(context: Context) {
     var nameDraft by mutableStateOf("")
     var verificationCodeDraft by mutableStateOf("")
 
+    /** True only in debug store-screenshot runs (see StoreScreenshotMode); never in release builds. */
+    var storeScreenshotMode = false
+        private set
+
+    /**
+     * Debug builds only: shows the signed-in screens for store screenshots without a Clerk session.
+     * Does nothing in release builds.
+     */
+    fun useStoreScreenshotAccount(displayName: String, email: String) {
+        if (!BuildConfig.DEBUG) return
+        storeScreenshotMode = true
+        state = AuthState.SignedIn(displayName, email)
+    }
+
     suspend fun configure() {
+        if (storeScreenshotMode) return
         if (configured) {
             refresh()
             return
@@ -71,6 +87,7 @@ class ClerkAuthService(context: Context) {
     }
 
     fun refresh() {
+        if (storeScreenshotMode) return
         if (!configured || !Clerk.isInitialized.value) {
             state = if (configured) AuthState.Unknown else AuthState.SignedOut
             return

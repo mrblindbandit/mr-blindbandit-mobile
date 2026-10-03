@@ -1,4 +1,13 @@
-# Release process: Mr. Blindbandit Mobile
+# Release process: Mr. BlindBandit Mobile
+
+Store name on both stores: **Mr. BlindBandit Mobile**. The home-screen label is **BlindBandit**
+because iOS and Android launchers truncate labels longer than about 12 characters.
+
+## Store screenshots
+
+Run **Store screenshots** (`.github/workflows/store-screenshots.yml`) from the Actions tab. It
+captures Android phone screenshots at 1080x1920 and iPhone 6.9-inch screenshots at 1320x2868.
+Signed-in screens use a Debug-only screenshot mode that is compiled out of release builds.
 
 ## Version
 

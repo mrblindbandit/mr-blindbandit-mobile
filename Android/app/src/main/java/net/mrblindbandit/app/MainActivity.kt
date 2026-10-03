@@ -85,6 +85,8 @@ import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import java.util.Locale
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -94,6 +96,7 @@ import net.mrblindbandit.app.auth.ClerkAuthService
 import net.mrblindbandit.app.brand.BlindbanditLogo
 import net.mrblindbandit.app.brand.BrandProgressOverlay
 import net.mrblindbandit.app.brand.SpinningBrandLogo
+import net.mrblindbandit.app.config.AppConfig
 import net.mrblindbandit.app.connect.ConnectTab
 import net.mrblindbandit.app.connect.rememberCommunications
 import net.mrblindbandit.app.creator.NativeCreatorToolkitScreen
@@ -249,12 +252,15 @@ fun BlindbanditAndroidApp(activity: MainActivity, deepLinkState: MutableState<St
 private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>, prefs: AndroidAppPreferences) {
     val context = LocalContext.current
     val auth = remember { ClerkAuthService(context) }
-    var tab by rememberSaveable { mutableStateOf(AppTab.HOME) }
-    var currentUrl by rememberSaveable { mutableStateOf(BuildConfig.WEB_BASE_URL + "/") }
-    var showSettings by rememberSaveable { mutableStateOf(false) }
-    var showWeb by rememberSaveable { mutableStateOf(false) }
+    val screenshot = remember { StoreScreenshotMode.from(activity.intent) }
+    var tab by rememberSaveable { mutableStateOf(screenshot?.tab ?: AppTab.HOME) }
+    var currentUrl by rememberSaveable { mutableStateOf(BuildConfig.WEB_BASE_URL + (screenshot?.webPath ?: "/")) }
+    var showSettings by rememberSaveable { mutableStateOf(screenshot?.settings == true) }
+    var showWeb by rememberSaveable { mutableStateOf(screenshot?.webPath != null) }
 
-    LaunchedEffect(Unit) { auth.configure() }
+    LaunchedEffect(Unit) {
+        if (screenshot != null) auth.useStoreScreenshotAccount("Kaeleb Heck", AppConfig.SUPPORT_EMAIL) else auth.configure()
+    }
     LaunchedEffect(deepLinkState.value) {
         deepLinkState.value?.let {
             currentUrl = it
@@ -275,7 +281,7 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
         is AuthState.SignedIn -> {
             val communications = rememberCommunications(auth)
             communications.startWithCameraOff = prefs.startCallsWithCameraOff
-            LaunchedEffect(state.email) { registerPushToken(context, communications) }
+            LaunchedEffect(state.email) { if (screenshot == null) registerPushToken(context, communications) }
             val openWeb: (String) -> Unit = { currentUrl = it; showWeb = true }
             when {
                 showSettings -> SettingsScreen(
@@ -378,9 +384,9 @@ private fun HomeScreen(
             }
         }
         item { HomeCard(Icons.Default.Phone, "Calls & messages", "Voice calls, video calls, and chat with people on Blindbandit.", onConnect) }
-        item { HomeCard(Icons.Default.Build, "Creator tools", "BPM, royalty splits, ISRC checks, timecode, and more. Works offline.", onCreator) }
+        item { HomeCard(Icons.Default.Build, "Creator tools", "Metronome, BPM tapper, royalty splits, release checklist, and more. Works offline.", onCreator) }
         item { HomeCard(Icons.Default.Headphones, "Listen", "Mr. Blindbandit on your favourite music services.", onListen) }
-        item { HomeCard(Icons.Default.Language, "Music & store", "Releases, merch, and news from mrblindbandit.net.", { onWeb(BuildConfig.WEB_BASE_URL + "/music/") }) }
+        item { HomeCard(Icons.Default.Language, "Music & news", "Releases, the Blindbandit Chronicle, and news from mrblindbandit.net.", { onWeb(BuildConfig.WEB_BASE_URL + "/music/") }) }
         item { HomeCard(Icons.Default.OpenInBrowser, "Label portal", "Blindbandit Records artist and client portal.", { onWeb(BuildConfig.WEB_BASE_URL + "/portal/") }) }
         item { Spacer(Modifier.heightIn(min = Spacing.lg)) }
     }
@@ -449,6 +455,14 @@ private fun WebScreen(activity: MainActivity, url: String, prefs: AndroidAppPref
                         settings.displayZoomControls = false
                         settings.textZoom = prefs.textZoom
                         settings.safeBrowsingEnabled = true
+                        // Global Privacy Control: the site's consent manager then keeps ads and analytics off
+                        // inside the app, so the "no tracking, no ads" Data safety answers stay true.
+                        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                            WebViewCompat.addDocumentStartJavaScript(this, GLOBAL_PRIVACY_CONTROL_SCRIPT, setOf("https://mrblindbandit.net", "https://www.mrblindbandit.net"))
+                            StoreScreenshotMode.consentScript(activity.intent)?.let { script ->
+                                WebViewCompat.addDocumentStartJavaScript(this, script, setOf("https://mrblindbandit.net", "https://www.mrblindbandit.net"))
+                            }
+                        }
                         CookieManager.getInstance().setAcceptCookie(true)
                         CookieManager.getInstance().setAcceptThirdPartyCookies(this, prefs.allowThirdPartyCookies)
                         webViewClient = object : WebViewClient() {
@@ -465,6 +479,15 @@ private fun WebScreen(activity: MainActivity, url: String, prefs: AndroidAppPref
                                 loading = false; progress = 100
                                 title = view?.title?.takeIf { it.isNotBlank() } ?: title
                                 if (prefs.announcePageLoads) view?.let { it.contentDescription = null; it.announceForAccessibilityCompat("Page loaded: $title") }
+                            }
+                            override fun onRenderProcessGone(view: WebView?, detail: android.webkit.RenderProcessGoneDetail?): Boolean {
+                                // The page's renderer crashed or was stopped to free memory. Without this, Android
+                                // closes the whole app. Drop the dead WebView and return to the app instead.
+                                view?.let { (it.parent as? android.view.ViewGroup)?.removeView(it); it.destroy() }
+                                webViewRef = null
+                                Toast.makeText(context, "The page stopped responding. Please open it again.", Toast.LENGTH_LONG).show()
+                                onClose()
+                                return true
                             }
                         }
                         webChromeClient = object : WebChromeClient() {
@@ -496,6 +519,9 @@ private fun WebScreen(activity: MainActivity, url: String, prefs: AndroidAppPref
     }
     DisposableEffect(Unit) { onDispose { webViewRef?.destroy() } }
 }
+
+private const val GLOBAL_PRIVACY_CONTROL_SCRIPT =
+    "(function(){try{Object.defineProperty(Navigator.prototype,'globalPrivacyControl',{get:function(){return true;},configurable:true});}catch(e){}})();"
 
 /** Posts a polite accessibility announcement without the deprecated View API. */
 private fun View.announceForAccessibilityCompat(text: String) {

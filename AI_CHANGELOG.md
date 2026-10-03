@@ -10,6 +10,18 @@ Cross-links:
 
 ---
 
+## 2026-09-27 — Store listing and compliance pass (Grok Bot, branch `store/listing-compliance-2026`)
+
+- Store name "Mr. BlindBandit Mobile"; home-screen label "BlindBandit" on both platforms (launchers truncate longer labels).
+- iOS sign-in buttons now follow the providers enabled in Clerk (Guideline 4.8): Apple only when enabled, Google only alongside Apple. Clerk production currently enables Google only, so iOS shows email only until the owner enables Apple.
+- On-device objectionable-language filter for messages (Settings > Safety, on by default) plus safety links (Guideline 1.2 / Play UGC).
+- In-app browser sends Global Privacy Control so the site keeps ads and analytics off inside the apps.
+- Fixed broken links: `/store/` (404) replaced by Blindbandit Records `/label/`; OkHttp license URL.
+- Privacy manifest adds Other User Content. Usage strings use the store name.
+- Debug-only store screenshot mode and `.github/workflows/store-screenshots.yml` (Android 1080x1920, iPhone 6.9-inch 1320x2868).
+
+---
+
 ## 2026-09-27 — Installable build artifacts (Grok Bot, branch `ci/build-artifacts`)
 
 - Added `.github/workflows/build-artifacts.yml` (workflow_dispatch): Android release APK signed with a throwaway debug keystore (sideloadable) and an unsigned iOS IPA built for `generic/platform=iOS`.

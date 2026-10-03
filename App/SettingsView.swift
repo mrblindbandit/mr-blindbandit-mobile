@@ -22,6 +22,7 @@ struct Settings: View {
     @AppStorage(SettingsKey.notifyMessages) private var notifyMessages = true
     @AppStorage(SettingsKey.notifyCalls) private var notifyCalls = true
     @AppStorage(SettingsKey.requireDeviceUnlock) private var requireDeviceUnlock = true
+    @AppStorage(ContentFilter.settingKey) private var filterOffensiveLanguage = true
 
     @State private var confirmSignOut = false
     @State private var confirmClearSessions = false
@@ -35,19 +36,33 @@ struct Settings: View {
     }
 
     var body: some View {
+        ScrollViewReader { proxy in
+            settingsForm
+                .onAppear {
+                    guard StoreScreenshotMode.isActive, StoreScreenshotMode.screen == "accessibility" else { return }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        proxy.scrollTo("accessibility", anchor: .top)
+                    }
+                }
+        }
+    }
+
+    private var settingsForm: some View {
         Form {
             accountSection
             notificationsSection
             accessibilitySection
+                .id("accessibility")
             audioSection
             appearanceSection
+            safetySection
             privacySection
             legalSection
             supportSection
             aboutSection
         }
         .navigationTitle("Settings")
-        .confirmationDialog("Sign out of Mr. Blindbandit?", isPresented: $confirmSignOut, titleVisibility: .visible) {
+        .confirmationDialog("Sign out of \(AppConfig.appDisplayName)?", isPresented: $confirmSignOut, titleVisibility: .visible) {
             Button("Sign out", role: .destructive) {
                 communications.reset()
                 Task { await auth.signOut() }
@@ -200,6 +215,23 @@ struct Settings: View {
         }
     }
 
+    private var safetySection: some View {
+        Section {
+            Toggle("Filter offensive language", isOn: $filterOffensiveLanguage)
+                .accessibilityHint("Masks profanity and slurs in messages from other people.")
+            Link(destination: AppConfig.communityGuidelinesURL) { Label("Community guidelines", systemImage: "person.3") }
+            Link(destination: AppConfig.trustAndSafetyURL) { Label("Trust & Safety Center", systemImage: "shield.lefthalf.filled") }
+            Link(destination: AppConfig.reportContentURL) { Label("Report content on the web", systemImage: "exclamationmark.bubble") }
+            Link(destination: URL(string: "mailto:safety@mrblindbandit.net?subject=Safety%20report")!) {
+                Label("Email safety@mrblindbandit.net", systemImage: "envelope.badge.shield.half.filled")
+            }
+        } header: {
+            Text("Safety")
+        } footer: {
+            Text("In a conversation, use the Safety menu to report or block someone. Reports go to Blindbandit moderators, and blocking stops messages and calls between you.")
+        }
+    }
+
     private var legalSection: some View {
         Section("Legal") {
             Link("Terms of Use", destination: AppConfig.termsURL)
@@ -210,7 +242,7 @@ struct Settings: View {
 
     private var supportSection: some View {
         Section("Support") {
-            Link(destination: URL(string: "mailto:\(AppConfig.supportEmail)?subject=Mr.%20Blindbandit%20app%20support")!) {
+            Link(destination: URL(string: "mailto:\(AppConfig.supportEmail)?subject=Mr.%20BlindBandit%20Mobile%20support")!) {
                 Label("Email \(AppConfig.supportEmail)", systemImage: "envelope")
             }
             Link(destination: AppConfig.supportURL) { Label("Help center", systemImage: "questionmark.circle") }
@@ -222,7 +254,7 @@ struct Settings: View {
             HStack(spacing: 14) {
                 BlindbanditLogoImage(size: 48)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Mr. Blindbandit").font(.headline)
+                    Text(AppConfig.appDisplayName).font(.headline)
                     Text(versionText).foregroundStyle(.secondary)
                     Text("© Blindbandit Records").font(.footnote).foregroundStyle(.secondary)
                 }
@@ -321,7 +353,7 @@ struct LicensesView: View {
                     .accessibilityHint("Opens the full license text")
                 }
             } footer: {
-                Text("Mr. Blindbandit is built with these open-source libraries. Thank you to their authors.")
+                Text("\(AppConfig.appDisplayName) is built with these open-source libraries. Thank you to their authors.")
             }
         }
         .navigationTitle("Open-source licenses")

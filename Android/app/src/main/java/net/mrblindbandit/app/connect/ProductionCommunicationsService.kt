@@ -26,6 +26,7 @@ data class ServerConversation(
     val peerHandle: String,
     val peerName: String,
     val lastBody: String,
+    val lastSenderId: String = "",
     val lastCreatedAt: Long,
     val verified: Boolean,
 )
@@ -97,6 +98,7 @@ class ProductionCommunicationsService(
                             peerHandle = other?.optString("handle").orEmpty(),
                             peerName = other?.optString("display_name").orEmpty().ifBlank { other?.optString("handle").orEmpty().ifBlank { "Blindbandit user" } },
                             lastBody = last?.optString("body").orEmpty(),
+                            lastSenderId = last?.optString("sender_id").orEmpty(),
                             lastCreatedAt = last?.optLong("created_at") ?: 0L,
                             verified = other?.optBoolean("verified") ?: false,
                         )

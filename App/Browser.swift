@@ -23,6 +23,10 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
     @Published var forward = false
     private var progressObservation: NSKeyValueObservation?
 
+    static let globalPrivacyControlScript = """
+    (function(){try{Object.defineProperty(Navigator.prototype,'globalPrivacyControl',{get:function(){return true;},configurable:true});}catch(e){}})();
+    """
+
     convenience init(path: String) {
         self.init(url: URL(string: "https://mrblindbandit.net" + path)!)
     }
@@ -35,6 +39,21 @@ final class Browser: NSObject, ObservableObject, WKNavigationDelegate, WKUIDeleg
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         config.defaultWebpagePreferences.preferredContentMode = .mobile
         config.mediaTypesRequiringUserActionForPlayback = []
+        // Signal Global Privacy Control on mrblindbandit.net pages. The site's consent manager
+        // (consent.js) then keeps advertising and analytics off, so in-app web pages never load
+        // ad or analytics tags. This keeps the "no tracking, no ads" App Privacy answers true.
+        config.userContentController.addUserScript(WKUserScript(
+            source: Browser.globalPrivacyControlScript,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        ))
+        if let consentScript = StoreScreenshotMode.consentScript {
+            config.userContentController.addUserScript(WKUserScript(
+                source: consentScript,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            ))
+        }
         web = WKWebView(frame: .zero, configuration: config)
         super.init()
         web.navigationDelegate = self

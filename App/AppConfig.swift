@@ -2,7 +2,10 @@ import Foundation
 
 /// Central client configuration. Reusable backend secrets never ship in the binary.
 enum AppConfig {
-    static let appDisplayName = "Mr. Blindbandit"
+    /// Store name on the App Store and Google Play. The Home Screen label is the shorter
+    /// "BlindBandit" (CFBundleDisplayName) because iOS truncates labels longer than about 12 characters.
+    static let appDisplayName = "Mr. BlindBandit Mobile"
+    static let homeScreenName = "BlindBandit"
     static let marketingVersion = "1.7"
     static let webBaseURL = URL(string: "https://mrblindbandit.net")!
     static let apiBaseURL = URL(string: "https://api.mrblindbandit.net")!
@@ -22,8 +25,11 @@ enum AppConfig {
 
     static var isClerkConfigured: Bool { clerkPublishableKey.hasPrefix("pk_") }
 
+    static let communityGuidelinesURL = URL(string: "https://mrblindbandit.net/community-guidelines/")!
+    static let trustAndSafetyURL = URL(string: "https://mrblindbandit.net/mobile/trust-safety/")!
+    static let reportContentURL = URL(string: "https://mrblindbandit.net/report-content/")!
+
     /// Clerk production instance "mr. blindbandit - Blindbandit Records" (clerk.mrblindbandit.net).
-    /// Email + password, Google, and Sign in with Apple. Apple is required by App Store Review
-    /// Guideline 4.8 because Google sign-in is offered; the Apple provider must be enabled in Clerk.
-    static var enableSignInWithApple: Bool { true }
+    /// Social buttons follow the providers enabled in Clerk; see `SignInProviderPolicy`
+    /// (App Store Review Guideline 4.8).
 }

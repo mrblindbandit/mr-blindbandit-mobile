@@ -81,4 +81,52 @@ final class BlindbanditTests: XCTestCase {
         XCTAssertNil(AppAppearance.system.colorScheme)
         XCTAssertEqual(AppAppearance.dark.colorScheme, .dark)
     }
+    // MARK: Sign-in providers (Guideline 4.8)
+
+    func testGoogleIsHiddenUnlessAppleIsEnabled() {
+        XCTAssertEqual(SignInProviderPolicy.visible(enabledStrategies: ["oauth_google"]), .init(google: false, apple: false))
+        XCTAssertEqual(SignInProviderPolicy.visible(enabledStrategies: ["oauth_google", "oauth_apple"]), .init(google: true, apple: true))
+        XCTAssertEqual(SignInProviderPolicy.visible(enabledStrategies: ["oauth_apple"]), .init(google: false, apple: true))
+        XCTAssertEqual(SignInProviderPolicy.visible(enabledStrategies: []), .init(google: false, apple: false))
+    }
+
+    func testFrontendAPIHostFromPublishableKey() {
+        XCTAssertEqual(SignInProviderPolicy.frontendAPIHost(fromPublishableKey: ProductionPublicConfig.clerkPublishableKey), "clerk.mrblindbandit.net")
+        XCTAssertNil(SignInProviderPolicy.frontendAPIHost(fromPublishableKey: "not-a-key"))
+    }
+
+    func testEnabledStrategiesParsing() throws {
+        let json = #"{"user_settings":{"social":{"oauth_google":{"enabled":true},"oauth_apple":{"enabled":false},"oauth_github":{"enabled":true}}}}"#
+        let strategies = SignInProviderPolicy.enabledStrategies(fromEnvironmentJSON: Data(json.utf8))
+        XCTAssertEqual(strategies, ["oauth_google", "oauth_github"])
+        XCTAssertTrue(SignInProviderPolicy.enabledStrategies(fromEnvironmentJSON: Data("oops".utf8)).isEmpty)
+        let linkOnly = #"{"user_settings":{"social":{"oauth_apple":{"enabled":true,"authenticatable":false},"oauth_google":{"enabled":true,"authenticatable":true}}}}"#
+        XCTAssertEqual(SignInProviderPolicy.enabledStrategies(fromEnvironmentJSON: Data(linkOnly.utf8)), ["oauth_google"])
+    }
+
+    // MARK: Content filter (Guideline 1.2)
+
+    func testContentFilterMasksBlockedWords() {
+        XCTAssertEqual(ContentFilter.mask("what the Fuck is this"), "what the **** is this")
+        XCTAssertEqual(ContentFilter.mask("shitty day"), "****** day")
+        XCTAssertTrue(ContentFilter.containsBlockedLanguage("you BITCHES"))
+        XCTAssertTrue(ContentFilter.containsBlockedLanguage("he raped"))
+    }
+
+    func testContentFilterLeavesEverydayWordsAlone() {
+        for text in ["Great mix on the new track", "Scunthorpe grass class", "spicy cocktail in the cockpit", "Pakistan and Dickens", "flame retardant"] {
+            XCTAssertEqual(ContentFilter.mask(text), text)
+        }
+    }
+
+    func testContentFilterCanBeTurnedOff() {
+        XCTAssertEqual(ContentFilter.display("oh shit", enabled: false), "oh shit")
+        XCTAssertEqual(ContentFilter.display("oh shit", enabled: true), "oh ****")
+    }
+
+    func testAppNames() {
+        XCTAssertEqual(AppConfig.appDisplayName, "Mr. BlindBandit Mobile")
+        XCTAssertLessThanOrEqual(AppConfig.appDisplayName.count, 30)
+        XCTAssertLessThanOrEqual(AppConfig.homeScreenName.count, 12)
+    }
 }

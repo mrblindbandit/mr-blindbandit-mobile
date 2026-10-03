@@ -22,7 +22,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.ShoppingBag
+import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
@@ -74,7 +74,7 @@ fun MoreHubScreen(
         item {
             Group("Blindbandit Records") {
                 Entry(Icons.Default.MusicNote, "Music") { onOpenSite("$base/music/") }
-                Entry(Icons.Default.ShoppingBag, "Store") { onOpenSite("$base/store/") }
+                Entry(Icons.Default.Album, "Blindbandit Records") { onOpenSite("$base/label/") }
                 Entry(Icons.Default.Groups, "Community") { onOpenSite("$base/community/") }
                 Entry(Icons.Default.Business, "Label portal") { onOpenSite("$base/portal/") }
                 Entry(Icons.Default.Info, "About Mr. Blindbandit") { onOpenSite("$base/about/") }

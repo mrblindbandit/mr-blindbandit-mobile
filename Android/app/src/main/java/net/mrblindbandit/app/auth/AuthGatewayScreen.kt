@@ -133,6 +133,33 @@ fun AuthGatewayScreen(auth: ClerkAuthService, reduceMotion: Boolean) {
         if (auth.busy) CircularProgressIndicator(color = Color(0xFFFFD54F))
         if (auth.statusMessage.isNotBlank()) {
             Text(auth.statusMessage, color = Color(0xFFFFD54F), textAlign = TextAlign.Center)
+
+            // A Clerk account can require an additional browser-based verification step.
+            // Never leave the user at a dead-end message: expose the required action as a
+            // real, accessible button so Play reviewers and users can complete sign-in.
+            if (auth.requiresAccountVerification) {
+                Button(
+                    onClick = {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse(AppConfig.ACCOUNT_URL))
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFFFD54F),
+                        contentColor = Color.Black
+                    ),
+                    enabled = !auth.busy,
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Complete verification", fontWeight = FontWeight.Bold)
+                }
+                Text(
+                    "After verification, return here and tap Sign in again.",
+                    color = Color.White.copy(alpha = 0.85f),
+                    textAlign = TextAlign.Center
+                )
+            }
         }
         if (!AppConfig.isClerkConfigured) {
             Text("Authentication is temporarily unavailable.", color = Color(0xFFFF9800), textAlign = TextAlign.Center)

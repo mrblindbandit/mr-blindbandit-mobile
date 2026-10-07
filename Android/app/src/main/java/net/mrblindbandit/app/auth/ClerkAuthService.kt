@@ -44,6 +44,8 @@ class ClerkAuthService(context: Context) {
     var passwordDraft by mutableStateOf("")
     var nameDraft by mutableStateOf("")
     var verificationCodeDraft by mutableStateOf("")
+    var requiresAccountVerification by mutableStateOf(false)
+        private set
 
     /** True only in debug store-screenshot runs (see StoreScreenshotMode); never in release builds. */
     var storeScreenshotMode = false
@@ -106,6 +108,7 @@ class ClerkAuthService(context: Context) {
         val displayName = fullName.ifBlank { user.username?.takeIf { it.isNotBlank() } ?: email.substringBefore("@").ifBlank { "Blindbandit User" } }
         state = AuthState.SignedIn(displayName, email)
         needsEmailVerification = false
+        requiresAccountVerification = false
         deletionRequested = false
         statusMessage = ""
     }
@@ -140,6 +143,7 @@ class ClerkAuthService(context: Context) {
     suspend fun continueWithEmail(signUp: Boolean): Boolean {
         busy = true
         statusMessage = ""
+        requiresAccountVerification = false
         return try {
             ensureConfigured()
             val email = emailDraft.trim().lowercase()
@@ -182,7 +186,10 @@ class ClerkAuthService(context: Context) {
                     statusMessage = "Signed in."
                     true
                 } else {
-                    if (statusMessage.isBlank()) statusMessage = "This account needs one more verification step. Finish it at mrblindbandit.net/account, then sign in again."
+                    if (statusMessage.isBlank()) {
+                        requiresAccountVerification = true
+                        statusMessage = "This account needs one more verification step. Tap Complete verification below, then sign in again."
+                    }
                     false
                 }
             }
@@ -281,6 +288,7 @@ class ClerkAuthService(context: Context) {
             nameDraft = ""
             verificationCodeDraft = ""
             needsEmailVerification = false
+            requiresAccountVerification = false
             if (statusMessage.isBlank()) statusMessage = "Signed out."
         } catch (e: Exception) {
             statusMessage = e.localizedMessage ?: "Sign out failed."

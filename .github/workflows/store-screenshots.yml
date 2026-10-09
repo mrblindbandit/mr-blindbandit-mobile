@@ -50,13 +50,13 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: bash scripts/capture-android-screenshots.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: store-screenshots-android
           path: store-screenshots/android/*.png
           if-no-files-found: error
           retention-days: 30
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: android-crash-log
@@ -80,13 +80,13 @@ jobs:
           mkdir -p build
       - name: Capture screenshots on a 6.9-inch iPhone simulator
         run: bash scripts/capture-ios-screenshots.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: store-screenshots-ios
           path: store-screenshots/ios/*.png
           if-no-files-found: error
           retention-days: 30
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: failure()
         with:
           name: store-screenshots-ios-log

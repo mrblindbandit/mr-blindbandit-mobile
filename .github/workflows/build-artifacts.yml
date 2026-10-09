@@ -66,7 +66,7 @@ jobs:
           sign "$RUNNER_TEMP/arm64.apk" "dist/MrBlindbandit-android-$V.apk"
           rm -f "$KS" "$RUNNER_TEMP/arm64.apk"
           ls -la dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: MrBlindbandit-android-apk
           path: dist/*.apk
@@ -99,7 +99,7 @@ jobs:
           mv dist/*.ipa "dist/MrBlindbandit-ios-unsigned-${VERSION}.ipa"
           unzip -l dist/*.ipa | tail -3
           ls -la dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: MrBlindbandit-ios-unsigned-ipa
           path: dist/*.ipa

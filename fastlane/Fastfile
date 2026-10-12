@@ -5,8 +5,9 @@ platform :ios do
     api_key = app_store_connect_api_key(
       key_id: ENV.fetch("ASC_KEY_ID"), issuer_id: ENV.fetch("ASC_ISSUER_ID"),
       key_content: ENV.fetch("ASC_KEY_P8"), in_house: false)
-    setup_ci
-    cert(api_key: api_key, team_id: ENV.fetch("APPLE_TEAM_ID"), keychain_path: ENV.fetch("KEYCHAIN_PATH"), keychain_password: "")
+    create_keychain(name: "ci_signing", password: "ci_signing", default_keychain: true, unlock: true, timeout: 3600, lock_when_sleeps: false)
+    keychain_path = File.expand_path("~/Library/Keychains/ci_signing-db")
+    cert(api_key: api_key, team_id: ENV.fetch("APPLE_TEAM_ID"), keychain_path: keychain_path, keychain_password: "ci_signing")
     sigh(api_key: api_key, force: true, app_identifier: "net.mrblindbandit.app", team_id: ENV.fetch("APPLE_TEAM_ID"))
     update_code_signing_settings(path: "Blindbandit.xcodeproj", use_automatic_signing: false,
       team_id: ENV.fetch("APPLE_TEAM_ID"), code_sign_identity: "Apple Distribution",

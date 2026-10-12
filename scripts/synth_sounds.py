@@ -50,6 +50,6 @@ TONES = {
   "notif_ambient_tide":    (arp([64,71,76], .16, length=1.4, bright=.3), 1.9, None),
 }
 if __name__ == "__main__":
-    outs = sys.argv[1:] or ["App/Resources/Sounds", "Android/app/src/main/res/raw"]
+    outs = sys.argv[1:] or ["App/Resources/Sounds"]
     for name, (ev, dur, pad) in {**RINGS, **TONES}.items():
         save(name, render(ev, dur, pad), outs); print("made", name)

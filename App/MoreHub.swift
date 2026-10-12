@@ -23,6 +23,10 @@ struct MoreHubView: View {
                 .accessibilityElement(children: .combine)
             }
 
+            Section("Listen") {
+                NavigationLink { ListenHubView() } label: { Label("Listen to Blindbandit Records", systemImage: "headphones") }
+            }
+
             Section("Your account") {
                 NavigationLink { Settings() } label: {
                     Label("Settings", systemImage: "gearshape.fill")

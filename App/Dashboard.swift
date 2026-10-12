@@ -90,7 +90,7 @@ struct ProfessionalHome: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .accessibilityAddTraits(.isHeader)
 
-                    Button { router.selection = .listen } label: {
+                    NavigationLink { ListenHubView() } label: {
                         WideDashboardCard(icon: "headphones", title: "Listen", subtitle: "Mr. Blindbandit on Spotify, Apple Music and more")
                     }
                     .buttonStyle(.plain)

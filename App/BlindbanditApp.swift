@@ -110,6 +110,7 @@ struct BlindbanditApp: App {
     @AppStorage(SettingsKey.highContrast) private var highContrast = false
     @AppStorage(SettingsKey.keepScreenAwake) private var keepScreenAwake = false
     @State private var showingLaunchCover = true
+    @AppStorage("permissionsOnboardingDone") private var permissionsOnboardingDone = false
 
     var body: some Scene {
         WindowGroup {
@@ -126,7 +127,9 @@ struct BlindbanditApp: App {
                     AuthGatewayView(auth: auth)
                         .environmentObject(preferences)
                 case .signedIn:
-                    if lock.unlocked || !lock.isRequired {
+                    if !permissionsOnboardingDone && !StoreScreenshotMode.isActive {
+                        PermissionsOnboarding()
+                    } else if lock.unlocked || !lock.isRequired {
                         MainTabs()
                             .accessibilityHidden(phase != .active && lock.isRequired)
                     } else {

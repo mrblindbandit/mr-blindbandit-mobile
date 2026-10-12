@@ -19,6 +19,10 @@ struct Settings: View {
     @AppStorage(SettingsKey.keepScreenAwake) private var keepScreenAwake = false
     @AppStorage(SettingsKey.uiSounds) private var uiSounds = true
     @AppStorage("ambientUITheme") private var ambientUITheme = false
+    @State private var showingRingtones = false
+    @State private var showingTextTones = false
+    @State private var testNotificationMessage = ""
+    @State private var sendingTest = false
     @AppStorage("selectedRingtone") private var ringtoneID = CallSounds.Ringtone.default.rawValue
     @AppStorage("selectedNotificationTone") private var textToneID = CallSounds.NotificationTone.message.rawValue
     @AppStorage(SettingsKey.startCallsWithCameraOff) private var startCallsWithCameraOff = false
@@ -124,6 +128,22 @@ struct Settings: View {
             } else if push.authorizationStatus == .denied {
                 Button("Open iPhone notification settings") { openSystemSettings() }
             }
+            Button {
+                Task {
+                    sendingTest = true
+                    switch await TestNotification.send(auth: auth) {
+                    case .sentByServer: testNotificationMessage = "Test notification sent. It should arrive in a few seconds."
+                    case .localFallback(let note), .failed(let note): testNotificationMessage = note
+                    }
+                    sendingTest = false
+                }
+            } label: {
+                Label(sendingTest ? "Sending test notification…" : "Send test notification", systemImage: "paperplane.fill")
+            }
+            .disabled(sendingTest)
+            if !testNotificationMessage.isEmpty {
+                Text(testNotificationMessage).font(.footnote).foregroundStyle(.secondary)
+            }
             Toggle("New messages", isOn: $notifyMessages)
             Toggle("Incoming calls", isOn: $notifyCalls)
         } header: {
@@ -181,20 +201,14 @@ struct Settings: View {
             Toggle("Call and message sounds", isOn: $uiSounds)
             Toggle("Ambient UI sounds", isOn: $ambientUITheme)
                 .accessibilityHint("Uses soft bell versions of the call and message sounds")
-            Picker("Ringtone", selection: $ringtoneID) {
-                ForEach(CallSounds.Ringtone.allCases) { Text($0.title).tag($0.rawValue) }
+            Button { showingRingtones = true } label: {
+                LabeledContent("Ringtone", value: CallSounds.Ringtone(rawValue: ringtoneID)?.title ?? "Default")
             }
-            .accessibilityHint("Plays a preview when you choose a ringtone")
-            .onChange(of: ringtoneID) { _, id in
-                if let tone = CallSounds.Ringtone(rawValue: id) { CallSounds.selectedRingtone = tone; CallSounds.previewRingtone(tone) }
+            .foregroundStyle(.primary)
+            Button { showingTextTones = true } label: {
+                LabeledContent("Text tone", value: CallSounds.NotificationTone(rawValue: textToneID)?.title ?? "Message")
             }
-            Picker("Text tone", selection: $textToneID) {
-                ForEach(CallSounds.NotificationTone.allCases) { Text($0.title).tag($0.rawValue) }
-            }
-            .accessibilityHint("Plays a preview when you choose a text tone")
-            .onChange(of: textToneID) { _, id in
-                if let tone = CallSounds.NotificationTone(rawValue: id) { CallSounds.selectedNotificationTone = tone; CallSounds.previewNotification(tone) }
-            }
+            .foregroundStyle(.primary)
             Toggle("Start video calls with camera off", isOn: $startCallsWithCameraOff)
             LabeledContent("Microphone", value: privacy.text(for: privacy.microphone))
             LabeledContent("Camera", value: privacy.text(for: privacy.camera))
@@ -204,7 +218,19 @@ struct Settings: View {
         } header: {
             Text("Audio & calls")
         } footer: {
-            Text("Calls use echo cancellation and noise suppression. The app asks for the microphone and camera only when you start or join a call.")
+            Text("Calls use echo cancellation and noise suppression. The microphone and camera are used only during calls and recordings you start.")
+        }
+        .sheet(isPresented: $showingRingtones) {
+            TonePickerSheet(title: "Ringtone", tones: CallSounds.Ringtone.allCases, name: { $0.title },
+                            preview: { CallSounds.previewRingtone($0) },
+                            save: { CallSounds.selectedRingtone = $0; ringtoneID = $0.rawValue },
+                            selection: CallSounds.Ringtone(rawValue: ringtoneID) ?? .default)
+        }
+        .sheet(isPresented: $showingTextTones) {
+            TonePickerSheet(title: "Text tone", tones: CallSounds.NotificationTone.allCases, name: { $0.title },
+                            preview: { CallSounds.previewNotification($0) },
+                            save: { CallSounds.selectedNotificationTone = $0; textToneID = $0.rawValue },
+                            selection: CallSounds.NotificationTone(rawValue: textToneID) ?? .message)
         }
     }
 

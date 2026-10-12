@@ -53,3 +53,25 @@ if __name__ == "__main__":
     outs = sys.argv[1:] or ["App/Resources/Sounds"]
     for name, (ev, dur, pad) in {**RINGS, **TONES}.items():
         save(name, render(ev, dur, pad), outs); print("made", name)
+
+# Ambient UI theme (Settings → Sounds → "Ambient UI sounds"): soft-bell variants of every UI cue.
+UI = {
+  "ambient_call_initiated":  (arp([67,71,74], .11, length=.9), 1.2, None),
+  "ambient_call_connected":  (arp([62,69,74,78], .09, length=1.0, bright=.5), 1.3, None),
+  "ambient_hangup":          (arp([74,69,62], .12, length=.9, bright=.3), 1.2, None),
+  "ambient_busy_tone":       (arp([60,60,60], .35, length=.3, bright=.2), 1.3, None),
+  "ambient_message_sent":    (arp([79], .1, length=.5, bright=.6), .6, None),
+  "ambient_attachment_sent": (arp([74,81], .07, length=.6), .8, None),
+  "ambient_voicenote_sent":  (arp([69,76,81], .07, length=.7, bright=.4), .9, None),
+  "ambient_typing_ping":     (arp([88], .1, length=.25, amp=.6, bright=.2), .35, None),
+  "ambient_notif_delivered": (arp([76,79], .06, length=.4, bright=.3), .55, None),
+  "ambient_notif_read":      (arp([79,83], .06, length=.4, bright=.3), .55, None),
+  "ambient_ringback_outgoing": (arp([64,71], .5, length=1.2, bright=.3, repeat=2, gap=1.0), 4.0, [52,59]),
+}
+MORE_TONES = {
+  "notif_ambient_bell": (arp([72,79,84], .1, length=1.3, bright=.8), 1.7, None),
+  "notif_ambient_mist": (arp([65,72], .18, length=1.5, bright=.1), 2.0, [53]),
+}
+if __name__ == "__main__" and os.environ.get("EXTRA", "1") == "1":
+    for name, (ev, dur, pad) in {**UI, **MORE_TONES}.items():
+        save(name, render(ev, dur, pad), outs); print("made", name)

@@ -62,6 +62,8 @@ enum CallSounds {
         case ambientMoss = "notif_ambient_moss"
         case ambientLantern = "notif_ambient_lantern"
         case ambientTide = "notif_ambient_tide"
+        case ambientBell = "notif_ambient_bell"
+        case ambientMist = "notif_ambient_mist"
 
         var id: String { rawValue }
         var title: String {
@@ -81,8 +83,16 @@ enum CallSounds {
             case .ambientMoss: return "Ambient · Moss"
             case .ambientLantern: return "Ambient · Lantern"
             case .ambientTide: return "Ambient · Tide"
+            case .ambientBell: return "Ambient · Bell"
+            case .ambientMist: return "Ambient · Mist"
             }
         }
+    }
+
+    /// Settings → "Ambient UI sounds": swaps every UI cue for its soft-bell `ambient_` variant.
+    static var ambientUITheme: Bool {
+        get { UserDefaults.standard.bool(forKey: "ambientUITheme") }
+        set { UserDefaults.standard.set(newValue, forKey: "ambientUITheme") }
     }
 
     private static var oneShot: AVAudioPlayer?
@@ -110,6 +120,8 @@ enum CallSounds {
     }
 
     private static func url(named name: String) -> URL? {
+        if ambientUITheme, !name.hasPrefix("ringtone"), !name.hasPrefix("notif_ambient"), !name.hasPrefix("ambient_"),
+           let themed = url(named: "ambient_" + name) { return themed }
         Bundle.main.url(forResource: name, withExtension: "mp3", subdirectory: "Sounds")
             ?? Bundle.main.url(forResource: name, withExtension: "mp3")
             ?? Bundle.main.url(forResource: name, withExtension: "mp3", subdirectory: "Resources/Sounds")

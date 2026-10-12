@@ -18,6 +18,7 @@ struct Settings: View {
     @AppStorage(SettingsKey.speechRate) private var speechRate = 1.0
     @AppStorage(SettingsKey.keepScreenAwake) private var keepScreenAwake = false
     @AppStorage(SettingsKey.uiSounds) private var uiSounds = true
+    @AppStorage("ambientUITheme") private var ambientUITheme = false
     @AppStorage("selectedRingtone") private var ringtoneID = CallSounds.Ringtone.default.rawValue
     @AppStorage("selectedNotificationTone") private var textToneID = CallSounds.NotificationTone.message.rawValue
     @AppStorage(SettingsKey.startCallsWithCameraOff) private var startCallsWithCameraOff = false
@@ -178,6 +179,8 @@ struct Settings: View {
     private var audioSection: some View {
         Section {
             Toggle("Call and message sounds", isOn: $uiSounds)
+            Toggle("Ambient UI sounds", isOn: $ambientUITheme)
+                .accessibilityHint("Uses soft bell versions of the call and message sounds")
             Picker("Ringtone", selection: $ringtoneID) {
                 ForEach(CallSounds.Ringtone.allCases) { Text($0.title).tag($0.rawValue) }
             }

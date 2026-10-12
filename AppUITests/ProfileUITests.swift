@@ -33,6 +33,10 @@ final class ProfileUITests: XCTestCase {
             alert.buttons.element(boundBy: 0).tap(); return true
         }
 
+        // The app lock is on by default; the CI simulator has no passcode, so Unlock opens the app.
+        let unlock = app.buttons["Unlock"]
+        if unlock.waitForExistence(timeout: 10) { unlock.tap() }
+
         let more = app.tabBars.buttons["More"]
         XCTAssertTrue(more.waitForExistence(timeout: 45), "Did not reach the main tabs after sign-in")
         more.tap()

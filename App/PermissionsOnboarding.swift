@@ -30,7 +30,7 @@ struct PermissionsOnboarding: View {
         Step(id: "camera", symbol: "video.fill", title: "Camera",
              reason: "Used only when you start or join a video call. You can always join with the camera off."),
         Step(id: "faceid", symbol: "faceid", title: "Face ID",
-             reason: "Lets you lock the app with Face ID. The app lock stays off until you turn it on in Settings."),
+             reason: "Lets you unlock the app with Face ID instead of your passcode. You can turn the app lock off in Settings."),
     ]
 
     var body: some View {
@@ -102,7 +102,7 @@ struct PermissionsOnboarding: View {
             let context = LAContext()
             if context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil) {
                 _ = try? await context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics,
-                                                      localizedReason: "Allow Face ID so you can lock the app later.")
+                                                      localizedReason: "Allow Face ID to unlock Blind Bandit.")
             }
         default: break
         }

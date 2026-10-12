@@ -17,7 +17,13 @@ class CallSounds(private val context: Context) {
         AMBIENT_GLASS("ringtone_ambient_glass", "Ambient · Glass"),
         AMBIENT_NIGHT("ringtone_ambient_night", "Ambient · Night"),
         AMBIENT_RAIN("ringtone_ambient_rain", "Ambient · Rain"),
-        AMBIENT_SPACE("ringtone_ambient_space", "Ambient · Space")
+        AMBIENT_SPACE("ringtone_ambient_space", "Ambient · Space"),
+        AMBIENT_DAWN("ringtone_ambient_dawn", "Ambient · Dawn"),
+        AMBIENT_LAGOON("ringtone_ambient_lagoon", "Ambient · Lagoon"),
+        AMBIENT_EMBER("ringtone_ambient_ember", "Ambient · Ember"),
+        AMBIENT_HORIZON("ringtone_ambient_horizon", "Ambient · Horizon"),
+        AMBIENT_VELVET("ringtone_ambient_velvet", "Ambient · Velvet"),
+        AMBIENT_CROWN("ringtone_ambient_crown", "Ambient · Crown")
     }
 
     enum class NotificationTone(val resName: String, val title: String) {
@@ -29,7 +35,13 @@ class CallSounds(private val context: Context) {
         AMBIENT_GLOW("notif_ambient_glow", "Ambient · Glow"),
         AMBIENT_DROP("notif_ambient_drop", "Ambient · Drop"),
         AMBIENT_PETAL("notif_ambient_petal", "Ambient · Petal"),
-        AMBIENT_WIND("notif_ambient_wind", "Ambient · Wind")
+        AMBIENT_WIND("notif_ambient_wind", "Ambient · Wind"),
+        AMBIENT_HALO("notif_ambient_halo", "Ambient · Halo"),
+        AMBIENT_RIPPLE("notif_ambient_ripple", "Ambient · Ripple"),
+        AMBIENT_SPARK("notif_ambient_spark", "Ambient · Spark"),
+        AMBIENT_MOSS("notif_ambient_moss", "Ambient · Moss"),
+        AMBIENT_LANTERN("notif_ambient_lantern", "Ambient · Lantern"),
+        AMBIENT_TIDE("notif_ambient_tide", "Ambient · Tide")
     }
 
     var playUISounds: Boolean = true

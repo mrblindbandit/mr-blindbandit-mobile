@@ -197,6 +197,19 @@ private fun SettingsRoot(
         item {
             Section("Sounds & calls") {
                 ToggleRow("App sounds", prefs.uiSounds, "Ringback, connect, and message sounds", prefs::setUiSounds)
+                val sounds = remember { net.mrblindbandit.app.connect.CallSounds(context) }
+                var ringtone by remember { mutableStateOf(sounds.selectedRingtone) }
+                var textTone by remember { mutableStateOf(sounds.selectedNotificationTone) }
+                LinkRow("Ringtone: ${ringtone.title} (tap for next)") {
+                    val all = net.mrblindbandit.app.connect.CallSounds.Ringtone.values()
+                    ringtone = all[(ringtone.ordinal + 1) % all.size]
+                    sounds.selectedRingtone = ringtone; sounds.persist(); sounds.previewRingtone(ringtone)
+                }
+                LinkRow("Text tone: ${textTone.title} (tap for next)") {
+                    val all = net.mrblindbandit.app.connect.CallSounds.NotificationTone.values()
+                    textTone = all[(textTone.ordinal + 1) % all.size]
+                    sounds.selectedNotificationTone = textTone; sounds.persist(); sounds.previewNotification(textTone)
+                }
                 ToggleRow("Start video calls with camera off", prefs.startCallsWithCameraOff, "Turn your camera on when you are ready", prefs::setStartCallsWithCameraOff)
                 ToggleRow("Use speakerphone by default", prefs.speakerphoneByDefault, "Route call audio to the loudspeaker", prefs::setSpeakerphoneByDefault)
                 ToggleRow("Echo cancellation", prefs.echoCancellation, "Reduce echo during calls", prefs::setEchoCancellation)

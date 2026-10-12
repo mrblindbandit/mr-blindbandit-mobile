@@ -103,6 +103,7 @@ import net.mrblindbandit.app.creator.NativeCreatorToolkitScreen
 import net.mrblindbandit.app.settings.SettingsScreen
 import net.mrblindbandit.app.ui.BlindbanditTheme
 import net.mrblindbandit.app.ui.Spacing
+import net.mrblindbandit.app.ui.openInBrowser
 
 class MainActivity : ComponentActivity() {
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
@@ -431,7 +432,7 @@ private fun WebScreen(activity: MainActivity, url: String, prefs: AndroidAppPref
             actions = {
                 IconButton(onClick = { webViewRef?.reload() }) { Icon(Icons.Default.Refresh, contentDescription = "Reload page") }
                 IconButton(onClick = {
-                    runCatching { activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(webViewRef?.url ?: url))) }
+                    openInBrowser(activity, webViewRef?.url ?: url)
                 }) { Icon(Icons.Default.OpenInBrowser, contentDescription = "Open in browser") }
             },
         )
@@ -470,7 +471,7 @@ private fun WebScreen(activity: MainActivity, url: String, prefs: AndroidAppPref
                                 val target = request?.url?.toString() ?: return false
                                 if (UrlPolicy.isFirstParty(target)) return false
                                 if (target.startsWith("https://") || target.startsWith("mailto:") || target.startsWith("tel:")) {
-                                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target))) }
+                                    openInBrowser(context, target)
                                 }
                                 return true
                             }
@@ -499,7 +500,7 @@ private fun WebScreen(activity: MainActivity, url: String, prefs: AndroidAppPref
                             override fun onPermissionRequest(request: PermissionRequest?) { if (request != null) activity.handleMediaPermission(request) }
                         }
                         setDownloadListener { downloadUrl, _, _, _, _ ->
-                            if (downloadUrl.startsWith("https://")) runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl))) }
+                            if (downloadUrl.startsWith("https://")) openInBrowser(context, downloadUrl)
                         }
                         loadUrl(url)
                     }

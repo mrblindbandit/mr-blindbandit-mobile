@@ -406,7 +406,7 @@ object OpenSourceLicenses {
     )
 }
 
-private fun openExternal(context: Context, url: String) = safeStart(context, Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+private fun openExternal(context: Context, url: String) = net.mrblindbandit.app.ui.openInBrowser(context, url)
 
 private fun openAppNotificationSettings(context: Context) {
     val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)

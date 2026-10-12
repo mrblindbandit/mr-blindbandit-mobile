@@ -1,7 +1,5 @@
 package net.mrblindbandit.app.auth
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -42,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import net.mrblindbandit.app.brand.SpinningBrandLogo
 import net.mrblindbandit.app.config.AppConfig
+import net.mrblindbandit.app.ui.openInBrowser
 
 @Composable
 fun AuthGatewayScreen(auth: ClerkAuthService, reduceMotion: Boolean) {
@@ -123,16 +122,48 @@ fun AuthGatewayScreen(auth: ClerkAuthService, reduceMotion: Boolean) {
                     ) { Text("Verify email", fontWeight = FontWeight.Bold) }
                 }
 
-                TextButton(onClick = { mode = if (signUp) "email" else "signup" }) {
+                TextButton(onClick = { mode = if (signUp) "email" else "signup"; auth.clearStatus() }) {
                     Text(if (signUp) "Already have an account? Sign in" else "Need an account? Create one", color = Color.White.copy(0.8f))
                 }
-                TextButton(onClick = { mode = "landing" }) { Text("Back", color = Color(0xFFFFD54F)) }
+                TextButton(onClick = { mode = "landing"; auth.clearStatus() }) { Text("Back", color = Color(0xFFFFD54F)) }
             }
         }
 
         if (auth.busy) CircularProgressIndicator(color = Color(0xFFFFD54F))
         if (auth.statusMessage.isNotBlank()) {
             Text(auth.statusMessage, color = Color(0xFFFFD54F), textAlign = TextAlign.Center)
+
+            // A Clerk account can require an additional browser-based verification step.
+            // Never leave the user at a dead-end message: expose the required action as a
+            // real, accessible button so Play reviewers and users can complete sign-in.
+            if (auth.requiresAccountVerification) {
+                Button(
+                    onClick = {
+                        openInBrowser(context, AppConfig.ACCOUNT_URL)
+                    },
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFFFD54F),
+                        contentColor = Color.Black
+                    ),
+                    enabled = !auth.busy,
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Complete verification", fontWeight = FontWeight.Bold)
+                }
+                Text(
+                    "After verification, return here and tap Sign in again.",
+                    color = Color.White.copy(alpha = 0.85f),
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+        if (auth.startupFailed && !auth.busy) {
+            OutlinedButton(
+                onClick = { scope.launch { auth.retryStartup() } },
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(14.dp)
+            ) { Text("Try again", color = Color(0xFFFFD54F), fontWeight = FontWeight.SemiBold) }
         }
         if (!AppConfig.isClerkConfigured) {
             Text("Authentication is temporarily unavailable.", color = Color(0xFFFF9800), textAlign = TextAlign.Center)
@@ -141,10 +172,10 @@ fun AuthGatewayScreen(auth: ClerkAuthService, reduceMotion: Boolean) {
         Text("By continuing you agree to the Terms of Use and acknowledge the Privacy Policy.",
             color = Color.White.copy(0.85f), fontSize = 14.sp, textAlign = TextAlign.Center)
         TextButton(onClick = {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://mrblindbandit.net/privacy/")))
+            openInBrowser(context, AppConfig.PRIVACY_URL)
         }) { Text("Privacy Policy", color = Color(0xFFFFD54F)) }
         TextButton(onClick = {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://mrblindbandit.net/terms/")))
+            openInBrowser(context, AppConfig.TERMS_URL)
         }) { Text("Terms of Use", color = Color(0xFFFFD54F)) }
         Spacer(Modifier.height(24.dp))
     }

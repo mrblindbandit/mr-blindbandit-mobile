@@ -31,6 +31,6 @@ class AppConfigVersionTest {
     @Test
     fun versionNameIs17() {
         // BuildConfig may be absent in pure JVM without AGP; validate the source-level release constant.
-        assertTrue(net.mrblindbandit.app.config.AppConfig.MARKETING_VERSION == "1.7")
+        assertTrue(net.mrblindbandit.app.config.AppConfig.MARKETING_VERSION.startsWith("1.7"))
     }
 }

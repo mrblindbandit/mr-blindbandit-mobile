@@ -30,6 +30,7 @@ sealed class AuthState {
 class ClerkAuthService(context: Context) {
     private val appContext = context.applicationContext
     private var configured = false
+    private var initializeCalled = false
 
     var state: AuthState by mutableStateOf(AuthState.Unknown)
         private set
@@ -44,6 +45,24 @@ class ClerkAuthService(context: Context) {
     var passwordDraft by mutableStateOf("")
     var nameDraft by mutableStateOf("")
     var verificationCodeDraft by mutableStateOf("")
+    var requiresAccountVerification by mutableStateOf(false)
+        private set
+    /** True when Clerk could not start, so the sign-in screen can offer a working "Try again" control. */
+    var startupFailed by mutableStateOf(false)
+        private set
+
+    fun clearStatus() {
+        if (!busy) {
+            statusMessage = ""
+            requiresAccountVerification = false
+        }
+    }
+
+    suspend fun retryStartup() {
+        busy = true
+        statusMessage = ""
+        try { configure() } finally { busy = false }
+    }
 
     /** True only in debug store-screenshot runs (see StoreScreenshotMode); never in release builds. */
     var storeScreenshotMode = false
@@ -75,14 +94,20 @@ class ClerkAuthService(context: Context) {
             refresh()
             return
         }
-        configured = true
-        Clerk.initialize(appContext, publishableKey = AppConfig.clerkPublishableKey)
+        if (!initializeCalled) {
+            initializeCalled = true
+            Clerk.initialize(appContext, publishableKey = AppConfig.clerkPublishableKey)
+        }
         val ready = withTimeoutOrNull(10_000) { Clerk.isInitialized.first { it } } ?: false
         if (!ready) {
+            // Leave configured=false so the next tap retries instead of failing silently.
+            startupFailed = true
             state = AuthState.SignedOut
             statusMessage = Clerk.initializationError.value?.localizedMessage ?: "Sign-in could not start. Check your connection and try again."
             return
         }
+        configured = true
+        startupFailed = false
         refresh()
     }
 
@@ -106,6 +131,7 @@ class ClerkAuthService(context: Context) {
         val displayName = fullName.ifBlank { user.username?.takeIf { it.isNotBlank() } ?: email.substringBefore("@").ifBlank { "Blindbandit User" } }
         state = AuthState.SignedIn(displayName, email)
         needsEmailVerification = false
+        requiresAccountVerification = false
         deletionRequested = false
         statusMessage = ""
     }
@@ -117,9 +143,12 @@ class ClerkAuthService(context: Context) {
             ensureConfigured()
             run {
                 var ok = false
-                Clerk.auth.signInWithOAuth(OAuthProvider.GOOGLE)
-                    .onSuccess { ok = true }
-                    .onFailure { statusMessage = it.errorMessage }
+                val result = withTimeoutOrNull(120_000) { Clerk.auth.signInWithOAuth(OAuthProvider.GOOGLE) }
+                if (result == null) {
+                    statusMessage = "Google sign-in did not finish. Please try again, or continue with email."
+                } else {
+                    result.onSuccess { ok = true }.onFailure { statusMessage = it.errorMessage }
+                }
                 refresh()
                 if (ok && state is AuthState.SignedIn) {
                     statusMessage = "Signed in with Google."
@@ -140,6 +169,7 @@ class ClerkAuthService(context: Context) {
     suspend fun continueWithEmail(signUp: Boolean): Boolean {
         busy = true
         statusMessage = ""
+        requiresAccountVerification = false
         return try {
             ensureConfigured()
             val email = emailDraft.trim().lowercase()
@@ -182,7 +212,10 @@ class ClerkAuthService(context: Context) {
                     statusMessage = "Signed in."
                     true
                 } else {
-                    if (statusMessage.isBlank()) statusMessage = "This account needs one more verification step. Finish it at mrblindbandit.net/account, then sign in again."
+                    if (statusMessage.isBlank()) {
+                        requiresAccountVerification = true
+                        statusMessage = "This account needs one more verification step. Tap Complete verification below, then sign in again."
+                    }
                     false
                 }
             }
@@ -281,6 +314,7 @@ class ClerkAuthService(context: Context) {
             nameDraft = ""
             verificationCodeDraft = ""
             needsEmailVerification = false
+            requiresAccountVerification = false
             if (statusMessage.isBlank()) statusMessage = "Signed out."
         } catch (e: Exception) {
             statusMessage = e.localizedMessage ?: "Sign out failed."

@@ -138,9 +138,9 @@ struct DashboardCard: View {
         VStack(alignment: .leading, spacing: 10) {
             Image(systemName: icon)
                 .font(.title)
-                .foregroundStyle(.yellow)
+                .foregroundStyle(LinearGradient(colors: [Color(red: 1, green: 0.88, blue: 0.54), Brand.gold, Brand.goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
                 .frame(width: 48, height: 48)
-                .background(.black, in: RoundedRectangle(cornerRadius: 14))
+                .background(Image("BBIconTile").resizable())
                 .accessibilityHidden(true)
             Text(title).font(.headline).foregroundStyle(.primary)
             Text(subtitle).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.leading)
@@ -163,9 +163,9 @@ struct WideDashboardCard: View {
         HStack(spacing: 16) {
             Image(systemName: icon)
                 .font(.largeTitle)
-                .foregroundStyle(.yellow)
+                .foregroundStyle(LinearGradient(colors: [Color(red: 1, green: 0.88, blue: 0.54), Brand.gold, Brand.goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
                 .frame(width: 58, height: 58)
-                .background(.black, in: RoundedRectangle(cornerRadius: 16))
+                .background(Image("BBIconTile").resizable())
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 5) {
                 Text(title).font(.headline).foregroundStyle(.primary)

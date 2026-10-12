@@ -97,7 +97,11 @@ struct ChronicleView: View {
     var body: some View {
         List {
             if let message = feed.errorMessage {
-                Text(message).foregroundStyle(.secondary)
+                VStack(spacing: 12) {
+                    Image("BBEmptyChronicle").resizable().scaledToFit().frame(maxWidth: 220).accessibilityHidden(true)
+                    Text(message).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity).padding(.vertical, 24).listRowSeparator(.hidden)
             }
             ForEach(feed.stories) { story in
                 NavigationLink {

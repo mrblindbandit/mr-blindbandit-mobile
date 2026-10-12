@@ -42,7 +42,7 @@ final class ProfileUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Username"].firstMatch.waitForExistence(timeout: 10))
 
         // The fix: loading must end within the timeout (loaded or an error with Retry), never spin forever.
-        let loading = app.staticTexts["Loading profile"]
+        let loading = app.staticTexts["Updating profile details"]
         let deadline = Date().addingTimeInterval(20)
         while loading.exists && Date() < deadline { sleep(1) }
         let shot = XCTAttachment(screenshot: app.screenshot())

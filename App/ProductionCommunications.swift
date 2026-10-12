@@ -117,7 +117,7 @@ enum BlindbanditAPI {
     ) async throws -> Data {
         // Store screenshot mode never configures Clerk, so never touch Clerk.shared there.
         if StoreScreenshotMode.isActive { throw AuthServiceError.noActiveSession }
-        guard let token = try await Clerk.shared.auth.getToken(), !token.isEmpty else {
+        guard let token = await clerkTokenWithTimeout() else {
             throw AuthServiceError.noActiveSession
         }
         var request = URLRequest(url: url(path))

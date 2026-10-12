@@ -50,7 +50,7 @@ enum TestNotification {
 
     @MainActor
     static func send(auth: ClerkAuthService) async -> Outcome {
-        if let token = try? await auth.sessionToken(), !token.isEmpty {
+        if let token = await clerkTokenWithTimeout() {
             var request = URLRequest(url: URL(string: "https://mrblindbandit.net/api/push/test")!)
             request.httpMethod = "POST"
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")

@@ -29,7 +29,7 @@ enum UsernameAPI {
     }
 
     private static func send(_ path: String, method: String = "GET", body: [String: Any]? = nil) async throws -> Data {
-        guard !StoreScreenshotMode.isActive, let token = try? await Clerk.shared.auth.getToken(), !token.isEmpty else {
+        guard !StoreScreenshotMode.isActive, let token = await clerkTokenWithTimeout() else {
             throw Failure.server("Sign in to manage your username.")
         }
         var request = URLRequest(url: URL(string: path, relativeTo: base)!)
@@ -240,7 +240,7 @@ struct ProfileView: View {
             Section("Blindbandit profile") {
                 switch phase {
                 case .loading:
-                    HStack { ProgressView(); Text("Loading profile") }
+                    HStack { ProgressView(); Text("Updating profile details") }
                         .accessibilityElement(children: .combine)
                 case .loaded:
                     Label("Profile is up to date", systemImage: "checkmark.seal.fill")
@@ -260,19 +260,48 @@ struct ProfileView: View {
 
     func load() async {
         phase = .loading
-        let ok = await withTaskGroup(of: Bool?.self) { group in
-            group.addTask { await communications.bootstrap(force: true); return true }
-            group.addTask { try? await Task.sleep(for: .seconds(12)); return nil }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
+        // A task group would wait for a hung request even after cancelAll, so race a separate timer.
+        let watchdog = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(12))
+            if phase == .loading {
+                phase = .failed("Loading your profile is taking too long. Your account details above are from this iPhone.")
+            }
         }
-        if ok == nil {
-            phase = .failed("Loading your profile is taking too long. Your account details above are from this iPhone.")
-        } else if !communications.statusMessage.isEmpty && communications.myHandle.isEmpty {
+        await communications.bootstrap(force: true)
+        watchdog.cancel()
+        if !communications.statusMessage.isEmpty && communications.myHandle.isEmpty {
             phase = .failed(communications.statusMessage)
         } else {
             phase = .loaded
         }
     }
+}
+
+/// Runs `operation` but gives up after `seconds`, even if the operation ignores cancellation
+/// (e.g. a Clerk token refresh that never resolves). Returns nil on timeout.
+func withHardTimeout<T: Sendable>(seconds: Double, _ operation: @escaping @Sendable () async throws -> T) async -> T? {
+    await withCheckedContinuation { (continuation: CheckedContinuation<T?, Never>) in
+        let gate = OnceGate()
+        let work = Task {
+            let value = try? await operation()
+            if gate.claim() { continuation.resume(returning: value) }
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(seconds))
+            if gate.claim() { work.cancel(); continuation.resume(returning: nil) }
+        }
+    }
+}
+
+final class OnceGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var done = false
+    func claim() -> Bool { lock.lock(); defer { lock.unlock() }; if done { return false }; done = true; return true }
+}
+
+/// Clerk session token with a hard 8 s limit so no screen can wait on Clerk forever.
+func clerkTokenWithTimeout() async -> String? {
+    let token: String?? = await withHardTimeout(seconds: 8) { @MainActor in try await Clerk.shared.auth.getToken() }
+    guard let value = token ?? nil, !value.isEmpty else { return nil }
+    return value
 }

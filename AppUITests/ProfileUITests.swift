@@ -11,6 +11,7 @@ final class ProfileUITests: XCTestCase {
             throw XCTSkip("Reviewer credentials are not configured")
         }
         let app = XCUIApplication()
+        app.launchArguments += ["-UITestSkipAppLock"]
         app.launch()
 
         let emailEntry = app.buttons["Continue with email"]
@@ -32,10 +33,6 @@ final class ProfileUITests: XCTestCase {
         addUIInterruptionMonitor(withDescription: "System alerts") { alert in
             alert.buttons.element(boundBy: 0).tap(); return true
         }
-
-        // The app lock is on by default; the CI simulator has no passcode, so Unlock opens the app.
-        let unlock = app.buttons["Unlock"]
-        if unlock.waitForExistence(timeout: 10) { unlock.tap() }
 
         let more = app.tabBars.buttons["More"]
         XCTAssertTrue(more.waitForExistence(timeout: 45), "Did not reach the main tabs after sign-in")

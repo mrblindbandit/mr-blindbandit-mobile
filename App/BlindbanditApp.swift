@@ -19,6 +19,10 @@ final class DeviceLock: ObservableObject {
     /// nothing to verify against, so the app opens rather than trapping the person on this screen.
     var isRequired: Bool {
         if StoreScreenshotMode.isActive { return false }
+        #if DEBUG
+        // UI tests on CI simulators have no passcode or biometrics to unlock with.
+        if ProcessInfo.processInfo.arguments.contains("-UITestSkipAppLock") { return false }
+        #endif
         return UserDefaults.standard.object(forKey: SettingsKey.requireDeviceUnlock) as? Bool ?? true
     }
 

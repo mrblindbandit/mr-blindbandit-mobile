@@ -49,7 +49,7 @@ targets:
         INFOPLIST_KEY_UIBackgroundModes: [audio, remote-notification]
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         MARKETING_VERSION: '1.7.3'
-        CURRENT_PROJECT_VERSION: '8'
+        CURRENT_PROJECT_VERSION: '9'
     dependencies:
       - package: LiveKitClient
         product: LiveKit

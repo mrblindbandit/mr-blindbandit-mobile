@@ -273,7 +273,10 @@ struct ConnectHubView: View {
                         if communications.isLoading && communications.conversations.isEmpty {
                             ProgressView("Loading conversations")
                         } else if communications.conversations.isEmpty {
-                            Text("No conversations yet. Send a message to start one.")
+                            VStack(spacing: 10) {
+                                Image("BBEmptyInbox").resizable().scaledToFit().frame(maxWidth: 180).accessibilityHidden(true)
+                                Text("No conversations yet. Send a message to start one.")
+                            }
                                 .foregroundStyle(.secondary)
                         } else {
                             ForEach(communications.conversations) { conversation in

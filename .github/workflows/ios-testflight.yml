@@ -1,6 +1,8 @@
 name: iOS TestFlight upload
 on:
   workflow_dispatch:
+  push:
+    branches: [ios/push-compliance-1.7.3]
 permissions:
   contents: read
 jobs:
@@ -8,9 +10,9 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 60
     env:
-      ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-      ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-      ASC_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - name: Check App Store Connect secrets
@@ -26,3 +28,9 @@ jobs:
           xcodegen generate
       - name: Archive and upload with fastlane
         run: fastlane beta
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: testflight-logs
+          path: ~/Library/Logs/gym
+          if-no-files-found: ignore

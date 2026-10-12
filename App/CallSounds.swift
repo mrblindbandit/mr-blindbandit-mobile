@@ -16,6 +16,12 @@ enum CallSounds {
         case ambientNight = "ringtone_ambient_night"
         case ambientRain = "ringtone_ambient_rain"
         case ambientSpace = "ringtone_ambient_space"
+        case ambientDawn = "ringtone_ambient_dawn"
+        case ambientLagoon = "ringtone_ambient_lagoon"
+        case ambientEmber = "ringtone_ambient_ember"
+        case ambientHorizon = "ringtone_ambient_horizon"
+        case ambientVelvet = "ringtone_ambient_velvet"
+        case ambientCrown = "ringtone_ambient_crown"
 
         var id: String { rawValue }
         var title: String {
@@ -30,6 +36,12 @@ enum CallSounds {
             case .ambientNight: return "Ambient · Night"
             case .ambientRain: return "Ambient · Rain"
             case .ambientSpace: return "Ambient · Space"
+            case .ambientDawn: return "Ambient · Dawn"
+            case .ambientLagoon: return "Ambient · Lagoon"
+            case .ambientEmber: return "Ambient · Ember"
+            case .ambientHorizon: return "Ambient · Horizon"
+            case .ambientVelvet: return "Ambient · Velvet"
+            case .ambientCrown: return "Ambient · Crown"
             }
         }
     }
@@ -44,6 +56,12 @@ enum CallSounds {
         case ambientDrop = "notif_ambient_drop"
         case ambientPetal = "notif_ambient_petal"
         case ambientWind = "notif_ambient_wind"
+        case ambientHalo = "notif_ambient_halo"
+        case ambientRipple = "notif_ambient_ripple"
+        case ambientSpark = "notif_ambient_spark"
+        case ambientMoss = "notif_ambient_moss"
+        case ambientLantern = "notif_ambient_lantern"
+        case ambientTide = "notif_ambient_tide"
 
         var id: String { rawValue }
         var title: String {
@@ -57,6 +75,12 @@ enum CallSounds {
             case .ambientDrop: return "Ambient · Drop"
             case .ambientPetal: return "Ambient · Petal"
             case .ambientWind: return "Ambient · Wind"
+            case .ambientHalo: return "Ambient · Halo"
+            case .ambientRipple: return "Ambient · Ripple"
+            case .ambientSpark: return "Ambient · Spark"
+            case .ambientMoss: return "Ambient · Moss"
+            case .ambientLantern: return "Ambient · Lantern"
+            case .ambientTide: return "Ambient · Tide"
             }
         }
     }

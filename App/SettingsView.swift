@@ -18,6 +18,8 @@ struct Settings: View {
     @AppStorage(SettingsKey.speechRate) private var speechRate = 1.0
     @AppStorage(SettingsKey.keepScreenAwake) private var keepScreenAwake = false
     @AppStorage(SettingsKey.uiSounds) private var uiSounds = true
+    @AppStorage("selectedRingtone") private var ringtoneID = CallSounds.Ringtone.default.rawValue
+    @AppStorage("selectedNotificationTone") private var textToneID = CallSounds.NotificationTone.message.rawValue
     @AppStorage(SettingsKey.startCallsWithCameraOff) private var startCallsWithCameraOff = false
     @AppStorage(SettingsKey.notifyMessages) private var notifyMessages = true
     @AppStorage(SettingsKey.notifyCalls) private var notifyCalls = true
@@ -176,6 +178,20 @@ struct Settings: View {
     private var audioSection: some View {
         Section {
             Toggle("Call and message sounds", isOn: $uiSounds)
+            Picker("Ringtone", selection: $ringtoneID) {
+                ForEach(CallSounds.Ringtone.allCases) { Text($0.title).tag($0.rawValue) }
+            }
+            .accessibilityHint("Plays a preview when you choose a ringtone")
+            .onChange(of: ringtoneID) { _, id in
+                if let tone = CallSounds.Ringtone(rawValue: id) { CallSounds.selectedRingtone = tone; CallSounds.previewRingtone(tone) }
+            }
+            Picker("Text tone", selection: $textToneID) {
+                ForEach(CallSounds.NotificationTone.allCases) { Text($0.title).tag($0.rawValue) }
+            }
+            .accessibilityHint("Plays a preview when you choose a text tone")
+            .onChange(of: textToneID) { _, id in
+                if let tone = CallSounds.NotificationTone(rawValue: id) { CallSounds.selectedNotificationTone = tone; CallSounds.previewNotification(tone) }
+            }
             Toggle("Start video calls with camera off", isOn: $startCallsWithCameraOff)
             LabeledContent("Microphone", value: privacy.text(for: privacy.microphone))
             LabeledContent("Camera", value: privacy.text(for: privacy.camera))

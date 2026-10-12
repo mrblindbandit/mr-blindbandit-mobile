@@ -79,7 +79,7 @@ final class AppPreferences: ObservableObject {
 
 @MainActor
 final class TabRouter: ObservableObject {
-    enum Tab: Hashable { case home, create, connect, listen, more }
+    enum Tab: Hashable { case home, create, connect, chronicle, more }
     @Published var selection: Tab = TabRouter.initialTab
 
     private static var initialTab: Tab {
@@ -87,7 +87,8 @@ final class TabRouter: ObservableObject {
         switch StoreScreenshotMode.screen {
         case "create": return .create
         case "connect": return .connect
-        case "listen": return .listen
+        case "listen": return .more
+        case "chronicle": return .chronicle
         case "more", "settings", "accessibility": return .more
         default: return .home
         }
@@ -268,9 +269,9 @@ struct MainTabs: View {
                 .tabItem { Label("Connect", systemImage: "phone.and.waveform.fill") }
                 .tag(TabRouter.Tab.connect)
 
-            NavigationStack { ListenHubView() }
-                .tabItem { Label("Listen", systemImage: "headphones") }
-                .tag(TabRouter.Tab.listen)
+            NavigationStack { ChronicleView() }
+                .tabItem { Label("Chronicle", systemImage: "newspaper.fill") }
+                .tag(TabRouter.Tab.chronicle)
 
             NavigationStack {
                 if StoreScreenshotMode.isActive && ["settings", "accessibility"].contains(StoreScreenshotMode.screen) {

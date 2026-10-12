@@ -135,7 +135,7 @@ jobs:
             <key>method</key><string>app-store-connect</string>
             <key>teamID</key><string>${APPLE_TEAM_ID}</string>
             <key>signingStyle</key><string>manual</string>
-            <key>provisioningProfiles</key><dict><key>net.mrblindbandit.privateapp</key><string>${PROFILE_NAME}</string></dict>
+            <key>provisioningProfiles</key><dict><key>net.mrblindbandit.app</key><string>${PROFILE_NAME}</string></dict>
           </dict></plist>
           PLIST
           xcodebuild -exportArchive -archivePath build/Blindbandit.xcarchive -exportOptionsPlist build/ExportOptions.plist -exportPath build/export

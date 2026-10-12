@@ -154,6 +154,11 @@ enum CallSounds {
         } catch {}
     }
 
+    static func stopPreview() {
+        oneShot?.stop()
+        stopLoop()
+    }
+
     static func stopLoop() {
         loopPlayer?.stop()
         loopPlayer = nil

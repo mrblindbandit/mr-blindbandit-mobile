@@ -19,6 +19,10 @@ final class DeviceLock: ObservableObject {
     /// nothing to verify against, so the app opens rather than trapping the person on this screen.
     var isRequired: Bool {
         if StoreScreenshotMode.isActive { return false }
+        #if DEBUG
+        // UI tests on CI simulators have no passcode or biometrics to unlock with.
+        if ProcessInfo.processInfo.arguments.contains("-UITestSkipAppLock") { return false }
+        #endif
         return UserDefaults.standard.object(forKey: SettingsKey.requireDeviceUnlock) as? Bool ?? true
     }
 
@@ -110,6 +114,7 @@ struct BlindbanditApp: App {
     @AppStorage(SettingsKey.highContrast) private var highContrast = false
     @AppStorage(SettingsKey.keepScreenAwake) private var keepScreenAwake = false
     @State private var showingLaunchCover = true
+    @AppStorage("permissionsOnboardingDone") private var permissionsOnboardingDone = false
 
     var body: some Scene {
         WindowGroup {
@@ -126,7 +131,9 @@ struct BlindbanditApp: App {
                     AuthGatewayView(auth: auth)
                         .environmentObject(preferences)
                 case .signedIn:
-                    if lock.unlocked || !lock.isRequired {
+                    if !permissionsOnboardingDone && !StoreScreenshotMode.isActive {
+                        PermissionsOnboarding()
+                    } else if lock.unlocked || !lock.isRequired {
                         MainTabs()
                             .accessibilityHidden(phase != .active && lock.isRequired)
                     } else {
@@ -248,6 +255,7 @@ struct MainTabs: View {
     @EnvironmentObject private var push: PushNotifications
     @EnvironmentObject private var communications: ProductionCommunicationsService
     @State private var routedURL: RoutedURL?
+    @State private var deepLinkedArticle: DeepLinkedArticle?
 
     var body: some View {
         TabView(selection: $router.selection) {
@@ -300,6 +308,23 @@ struct MainTabs: View {
         .onReceive(NotificationCenter.default.publisher(for: .blindbanditMessageDeepLinkReceived)) { _ in
             AppHaptics.doublePulse()
             router.selection = .connect
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .chronicleArticleDeepLink)) { note in
+            guard let url = note.object as? URL else { return }
+            router.selection = .chronicle
+            deepLinkedArticle = DeepLinkedArticle(url: url)
+        }
+        .onOpenURL { url in
+            if let article = ChronicleDeepLink.articleURL(from: url) {
+                router.selection = .chronicle
+                deepLinkedArticle = DeepLinkedArticle(url: article)
+            }
+        }
+        .sheet(item: $deepLinkedArticle) { item in
+            NavigationStack {
+                ChronicleReader(story: ChronicleDeepLink.story(for: item.url))
+                    .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Done") { deepLinkedArticle = nil } } }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .pushDeepLinkReceived)) { note in
             guard let url = note.object as? URL else { return }

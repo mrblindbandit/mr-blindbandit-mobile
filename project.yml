@@ -25,19 +25,27 @@ targets:
         excludes:
           - "**/*.example"
           - "**/Secrets.local.swift.example"
+          - "Info.plist"
       - path: App/Resources
         buildPhase: resources
         optional: true
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleURLTypes:
+          - CFBundleURLName: net.mrblindbandit.app
+            CFBundleURLSchemes: [mrblindbandit]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.mrblindbandit.app
         TARGETED_DEVICE_FAMILY: '1'
         GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: App/Info.plist
         CODE_SIGN_ENTITLEMENTS: App/Blindbandit.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # App Store name is "Mr. BlindBandit Mobile" (set in App Store Connect). The Home Screen label
         # is shorter because iOS truncates labels longer than about 12 characters.
-        INFOPLIST_KEY_CFBundleDisplayName: BlindBandit
+        INFOPLIST_KEY_CFBundleDisplayName: Blind Bandit
         INFOPLIST_KEY_CFBundleName: BlindBandit
         INFOPLIST_KEY_NSFaceIDUsageDescription: Mr. BlindBandit Mobile uses Face ID to unlock the app. You can turn the app lock off in Settings.
         INFOPLIST_KEY_NSCameraUsageDescription: Mr. BlindBandit Mobile uses the camera only when you start or join a video call.
@@ -49,7 +57,7 @@ targets:
         INFOPLIST_KEY_UIBackgroundModes: [audio, remote-notification]
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         MARKETING_VERSION: '1.7.3'
-        CURRENT_PROJECT_VERSION: '9'
+        CURRENT_PROJECT_VERSION: '10'
     dependencies:
       - package: LiveKitClient
         product: LiveKit
@@ -64,12 +72,24 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
+  BlindbanditUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [AppUITests]
+    dependencies:
+      - target: Blindbandit
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: '1'
 schemes:
   Blindbandit:
     build:
       targets:
         Blindbandit: all
         BlindbanditTests: [test]
+        BlindbanditUITests: [test]
     test:
       targets:
         - BlindbanditTests
+        - BlindbanditUITests

@@ -106,7 +106,7 @@ struct ConnectHubView: View {
                         Text("Call another Blindbandit member by their username. Your username is @\(communications.myHandle.isEmpty ? "…" : communications.myHandle).")
                             .font(.callout)
                             .foregroundStyle(.secondary)
-                        TextField("Blindbandit username", text: $callRecipient)
+                        UsernameSearchField(label: "Blindbandit username", text: $callRecipient)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .textContentType(.username)
@@ -247,7 +247,7 @@ struct ConnectHubView: View {
             } else {
                 List {
                     Section("New message") {
-                        TextField("Blindbandit username", text: $newMessageRecipient)
+                        UsernameSearchField(label: "Blindbandit username", text: $newMessageRecipient)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                         TextField("Message", text: $newMessageBody, axis: .vertical)

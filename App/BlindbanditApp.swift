@@ -251,6 +251,7 @@ struct MainTabs: View {
     @EnvironmentObject private var push: PushNotifications
     @EnvironmentObject private var communications: ProductionCommunicationsService
     @State private var routedURL: RoutedURL?
+    @State private var deepLinkedArticle: DeepLinkedArticle?
 
     var body: some View {
         TabView(selection: $router.selection) {
@@ -303,6 +304,23 @@ struct MainTabs: View {
         .onReceive(NotificationCenter.default.publisher(for: .blindbanditMessageDeepLinkReceived)) { _ in
             AppHaptics.doublePulse()
             router.selection = .connect
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .chronicleArticleDeepLink)) { note in
+            guard let url = note.object as? URL else { return }
+            router.selection = .chronicle
+            deepLinkedArticle = DeepLinkedArticle(url: url)
+        }
+        .onOpenURL { url in
+            if let article = ChronicleDeepLink.articleURL(from: url) {
+                router.selection = .chronicle
+                deepLinkedArticle = DeepLinkedArticle(url: article)
+            }
+        }
+        .sheet(item: $deepLinkedArticle) { item in
+            NavigationStack {
+                ChronicleReader(story: ChronicleDeepLink.story(for: item.url))
+                    .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Done") { deepLinkedArticle = nil } } }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .pushDeepLinkReceived)) { note in
             guard let url = note.object as? URL else { return }

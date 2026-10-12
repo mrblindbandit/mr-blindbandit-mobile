@@ -31,7 +31,7 @@ struct MoreHubView: View {
                 NavigationLink { Settings() } label: {
                     Label("Settings", systemImage: "gearshape.fill")
                 }
-                NavigationLink { Website(url: AppConfig.accountURL, title: "Profile & account") } label: {
+                NavigationLink { ProfileView() } label: {
                     Label("Profile & account", systemImage: "person.crop.circle")
                 }
             }

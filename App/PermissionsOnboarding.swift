@@ -11,6 +11,7 @@ struct PermissionsOnboarding: View {
     @EnvironmentObject private var privacy: PrivacyPermissions
     @AppStorage("permissionsOnboardingDone") private var done = false
     @State private var index = 0
+    @State private var pickingUsername = false
     @State private var busy = false
     @AccessibilityFocusState private var titleFocused: Bool
 
@@ -33,7 +34,19 @@ struct PermissionsOnboarding: View {
     ]
 
     var body: some View {
+        if pickingUsername {
+            NavigationStack {
+                UsernameEditor(onFinished: { done = true })
+                    .navigationTitle("Your username")
+            }
+        } else {
+            permissionStep
+        }
+    }
+
+    private var permissionStep: some View {
         let step = Self.steps[index]
+        return
         VStack(spacing: 28) {
             Spacer()
             Image(systemName: step.symbol)
@@ -101,7 +114,7 @@ struct PermissionsOnboarding: View {
             index += 1
             titleFocused = true
         } else {
-            done = true
+            pickingUsername = true
         }
     }
 }

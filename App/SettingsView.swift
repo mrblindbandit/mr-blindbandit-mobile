@@ -92,6 +92,7 @@ struct Settings: View {
 
     private var accountSection: some View {
         Section("Account & profile") {
+            NavigationLink("Edit username") { UsernameEditor().navigationTitle("Username") }
             if case .signedIn(let name, let email) = auth.state {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(name).font(.headline)

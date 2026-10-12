@@ -7,6 +7,7 @@ extension Notification.Name {
     static let apnsDeviceTokenUpdated = Notification.Name("apnsDeviceTokenUpdated")
     static let apnsRegistrationFailed = Notification.Name("apnsRegistrationFailed")
     static let pushDeepLinkReceived = Notification.Name("pushDeepLinkReceived")
+    static let chronicleArticleDeepLink = Notification.Name("chronicleArticleDeepLink")
     static let blindbanditCallDeepLinkReceived = Notification.Name("blindbanditCallDeepLinkReceived")
     static let blindbanditMessageDeepLinkReceived = Notification.Name("blindbanditMessageDeepLinkReceived")
 }
@@ -59,6 +60,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
            let url = URL(string: rawURL),
            ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
             routePushURL(url)
+        } else if let slug = (userInfo["article_slug"] ?? userInfo["slug"]) as? String, !slug.isEmpty,
+                  let url = URL(string: "mrblindbandit://article/\(slug)") {
+            routePushURL(url)
         } else if let rawLink = userInfo["deep_link"] as? String,
                   let url = URL(string: rawLink, relativeTo: URL(string: "https://mrblindbandit.net")) {
             routePushURL(url)
@@ -67,6 +71,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     }
 
     private func routePushURL(_ url: URL) {
+        if let article = ChronicleDeepLink.articleURL(from: url) {
+            NotificationCenter.default.post(name: .chronicleArticleDeepLink, object: article)
+            return
+        }
         if url.path.hasPrefix("/mobile/calls"),
            let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
            let callID = components.queryItems?.first(where: { $0.name == "id" })?.value,

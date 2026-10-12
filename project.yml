@@ -25,14 +25,22 @@ targets:
         excludes:
           - "**/*.example"
           - "**/Secrets.local.swift.example"
+          - "Info.plist"
       - path: App/Resources
         buildPhase: resources
         optional: true
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleURLTypes:
+          - CFBundleURLName: net.mrblindbandit.app
+            CFBundleURLSchemes: [mrblindbandit]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.mrblindbandit.app
         TARGETED_DEVICE_FAMILY: '1'
         GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: App/Info.plist
         CODE_SIGN_ENTITLEMENTS: App/Blindbandit.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # App Store name is "Mr. BlindBandit Mobile" (set in App Store Connect). The Home Screen label
@@ -64,12 +72,24 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
+  BlindbanditUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [AppUITests]
+    dependencies:
+      - target: Blindbandit
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: '1'
 schemes:
   Blindbandit:
     build:
       targets:
         Blindbandit: all
         BlindbanditTests: [test]
+        BlindbanditUITests: [test]
     test:
       targets:
         - BlindbanditTests
+        - BlindbanditUITests

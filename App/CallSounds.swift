@@ -122,7 +122,7 @@ enum CallSounds {
     private static func url(named name: String) -> URL? {
         if ambientUITheme, !name.hasPrefix("ringtone"), !name.hasPrefix("notif_ambient"), !name.hasPrefix("ambient_"),
            let themed = url(named: "ambient_" + name) { return themed }
-        Bundle.main.url(forResource: name, withExtension: "mp3", subdirectory: "Sounds")
+        return Bundle.main.url(forResource: name, withExtension: "mp3", subdirectory: "Sounds")
             ?? Bundle.main.url(forResource: name, withExtension: "mp3")
             ?? Bundle.main.url(forResource: name, withExtension: "mp3", subdirectory: "Resources/Sounds")
     }

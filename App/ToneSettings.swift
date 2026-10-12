@@ -54,6 +54,7 @@ enum TestNotification {
             var request = URLRequest(url: URL(string: "https://mrblindbandit.net/api/push/test")!)
             request.httpMethod = "POST"
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue("https://mrblindbandit.net", forHTTPHeaderField: "Origin")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = Data("{\"platform\":\"ios\"}".utf8)
             request.timeoutInterval = 15

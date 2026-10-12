@@ -10,6 +10,12 @@ enum UsernameAPI {
         let username: String
         let display_name: String?
         var id: String { username }
+        enum CodingKeys: String, CodingKey { case username, display_name, displayName, handle }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            username = try c.decodeIfPresent(String.self, forKey: .username) ?? c.decode(String.self, forKey: .handle)
+            display_name = try c.decodeIfPresent(String.self, forKey: .display_name) ?? c.decodeIfPresent(String.self, forKey: .displayName)
+        }
     }
 
     static let base = URL(string: "https://mrblindbandit.net/api/")!
@@ -30,6 +36,7 @@ enum UsernameAPI {
         request.httpMethod = method
         request.timeoutInterval = 12
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("https://mrblindbandit.net", forHTTPHeaderField: "Origin")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -48,9 +55,16 @@ enum UsernameAPI {
         return data
     }
 
+    /// Site responses are `{ "success": true, "data": ... }`; returns the `data` payload as JSON.
+    static func payload(_ data: Data) -> Data {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let inner = obj["data"],
+              JSONSerialization.isValidJSONObject(inner) || inner is [Any] else { return data }
+        return (try? JSONSerialization.data(withJSONObject: inner)) ?? data
+    }
+
     static func available(_ username: String) async throws -> Availability {
         let q = username.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? username
-        return try JSONDecoder().decode(Availability.self, from: try await send("users/username-available?u=\(q)"))
+        return try JSONDecoder().decode(Availability.self, from: payload(try await send("users/username-available?u=\(q)")))
     }
 
     static func save(_ username: String) async throws {
@@ -60,7 +74,7 @@ enum UsernameAPI {
 
     static func search(_ query: String) async throws -> [SearchResult] {
         let q = normalize(query).addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? query
-        let data = try await send("users/search?q=\(q)")
+        let data = payload(try await send("users/search?q=\(q)"))
         if let wrapped = try? JSONDecoder().decode([String: [SearchResult]].self, from: data),
            let list = wrapped["results"] ?? wrapped["users"] ?? wrapped["data"] { return list }
         return try JSONDecoder().decode([SearchResult].self, from: data)

@@ -1,8 +1,6 @@
 name: iOS TestFlight upload
 on:
   workflow_dispatch:
-  push:
-    branches: [ios/push-compliance-1.7.3]
 permissions:
   contents: read
 jobs:
@@ -26,27 +24,5 @@ jobs:
           brew install xcodegen
           swift scripts/GenerateAppIcon.swift
           xcodegen generate
-      - name: Archive and upload (cloud-managed signing via ASC API key)
-        run: |
-          set -euo pipefail
-          mkdir -p build
-          KEY="$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"
-          printf '%s' "$ASC_KEY_P8" > "$KEY"
-          AUTH=(-allowProvisioningUpdates -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
-          xcodebuild archive -project Blindbandit.xcodeproj -scheme Blindbandit -configuration Release \
-            -destination 'generic/platform=iOS' -archivePath build/Blindbandit.xcarchive \
-            CODE_SIGNING_ALLOWED=NO DEVELOPMENT_TEAM="$APPLE_TEAM_ID" | tail -20
-          cat > build/ExportOptions.plist <<PLIST
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0"><dict>
-            <key>method</key><string>app-store-connect</string>
-            <key>destination</key><string>upload</string>
-            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
-            <key>signingStyle</key><string>automatic</string>
-            <key>manageAppVersionAndBuildNumber</key><false/>
-          </dict></plist>
-          PLIST
-          xcodebuild -exportArchive -archivePath build/Blindbandit.xcarchive -exportOptionsPlist build/ExportOptions.plist \
-            -exportPath build/export "${AUTH[@]}" 2>&1 | tail -40
-          rm -f "$KEY"
+      - name: Archive and upload with fastlane (API key JWT, no Xcode account)
+        run: fastlane beta

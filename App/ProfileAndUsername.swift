@@ -260,16 +260,16 @@ struct ProfileView: View {
 
     func load() async {
         phase = .loading
-        let ok = await withTaskGroup(of: Bool?.self) { group in
-            group.addTask { await communications.bootstrap(force: true); return true }
-            group.addTask { try? await Task.sleep(for: .seconds(12)); return nil }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
+        // A task group would wait for a hung request even after cancelAll, so race a separate timer.
+        let watchdog = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(12))
+            if phase == .loading {
+                phase = .failed("Loading your profile is taking too long. Your account details above are from this iPhone.")
+            }
         }
-        if ok == nil {
-            phase = .failed("Loading your profile is taking too long. Your account details above are from this iPhone.")
-        } else if !communications.statusMessage.isEmpty && communications.myHandle.isEmpty {
+        await communications.bootstrap(force: true)
+        watchdog.cancel()
+        if !communications.statusMessage.isEmpty && communications.myHandle.isEmpty {
             phase = .failed(communications.statusMessage)
         } else {
             phase = .loaded

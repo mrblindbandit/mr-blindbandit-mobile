@@ -29,7 +29,7 @@ enum UsernameAPI {
     }
 
     private static func send(_ path: String, method: String = "GET", body: [String: Any]? = nil) async throws -> Data {
-        guard !StoreScreenshotMode.isActive, let token = try? await Clerk.shared.auth.getToken(), !token.isEmpty else {
+        guard !StoreScreenshotMode.isActive, let token = await clerkTokenWithTimeout() else {
             throw Failure.server("Sign in to manage your username.")
         }
         var request = URLRequest(url: URL(string: path, relativeTo: base)!)
@@ -240,7 +240,7 @@ struct ProfileView: View {
             Section("Blindbandit profile") {
                 switch phase {
                 case .loading:
-                    HStack { ProgressView(); Text("Loading profile") }
+                    HStack { ProgressView(); Text("Updating profile details") }
                         .accessibilityElement(children: .combine)
                 case .loaded:
                     Label("Profile is up to date", systemImage: "checkmark.seal.fill")
@@ -275,4 +275,33 @@ struct ProfileView: View {
             phase = .loaded
         }
     }
+}
+
+/// Runs `operation` but gives up after `seconds`, even if the operation ignores cancellation
+/// (e.g. a Clerk token refresh that never resolves). Returns nil on timeout.
+func withHardTimeout<T: Sendable>(seconds: Double, _ operation: @escaping @Sendable () async throws -> T) async -> T? {
+    await withCheckedContinuation { (continuation: CheckedContinuation<T?, Never>) in
+        let gate = OnceGate()
+        let work = Task {
+            let value = try? await operation()
+            if gate.claim() { continuation.resume(returning: value) }
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(seconds))
+            if gate.claim() { work.cancel(); continuation.resume(returning: nil) }
+        }
+    }
+}
+
+final class OnceGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var done = false
+    func claim() -> Bool { lock.lock(); defer { lock.unlock() }; if done { return false }; done = true; return true }
+}
+
+/// Clerk session token with a hard 8 s limit so no screen can wait on Clerk forever.
+func clerkTokenWithTimeout() async -> String? {
+    let token: String?? = await withHardTimeout(seconds: 8) { @MainActor in try await Clerk.shared.auth.getToken() }
+    guard let value = token ?? nil, !value.isEmpty else { return nil }
+    return value
 }

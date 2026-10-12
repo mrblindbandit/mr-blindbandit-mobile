@@ -17,7 +17,7 @@ fun openInBrowser(context: Context, url: String) {
     val base = Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     val pm = context.packageManager
-    val browserProbe = Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com")).addCategory(Intent.CATEGORY_BROWSABLE)
+    val browserProbe = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.w3.org/")).addCategory(Intent.CATEGORY_BROWSABLE)
     val browserPkg = runCatching {
         @Suppress("DEPRECATION")
         val def = pm.resolveActivity(browserProbe, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName

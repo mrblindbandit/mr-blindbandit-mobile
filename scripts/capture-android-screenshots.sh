@@ -34,11 +34,11 @@ sleep 20
 shot "01-sign-in"
 
 n=2
-for screen in home music listen community profile create connect more settings accessibility; do
+for screen in home chronicle article music listen community profile create connect more settings accessibility; do
   adb shell am force-stop "$PKG"
   sleep 1
   adb shell am start -W -n "$PKG/.MainActivity" --ez store_screenshots true --es screen "$screen"
-  case "$screen" in music|community|profile|bites) sleep 25 ;; *) sleep 10 ;; esac
+  case "$screen" in music|community|profile|bites|chronicle|article) sleep 25 ;; *) sleep 10 ;; esac
   if [ "$screen" = "accessibility" ]; then
     # Scroll Settings down to the Accessibility section.
     adb shell input swipe 540 1600 540 700 800

@@ -140,6 +140,7 @@ class MainActivity : ComponentActivity() {
             ?: intent.getStringExtra("url")
             ?: intent.getStringExtra("deep_link")
             ?: return null
+        net.mrblindbandit.app.chronicle.ChronicleDeepLink.articleUrl(raw)?.let { return it }
         val absolute = if (raw.startsWith("/")) "https://mrblindbandit.net$raw" else raw
         return absolute.takeIf { UrlPolicy.isFirstParty(it) }
     }
@@ -258,14 +259,22 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
     var currentUrl by rememberSaveable { mutableStateOf(BuildConfig.WEB_BASE_URL + (screenshot?.webPath ?: "/")) }
     var showSettings by rememberSaveable { mutableStateOf(screenshot?.settings == true) }
     var showWeb by rememberSaveable { mutableStateOf(screenshot?.webPath != null) }
+    var showChronicle by rememberSaveable { mutableStateOf(screenshot?.chronicle == true) }
+    var chronicleArticle by rememberSaveable { mutableStateOf<String?>(screenshot?.articleUrl) }
 
     LaunchedEffect(Unit) {
-        if (screenshot != null) auth.useStoreScreenshotAccount("Kaeleb Heck", AppConfig.SUPPORT_EMAIL) else auth.configure()
+        if (screenshot != null) auth.useStoreScreenshotAccount("Bandit Fan", AppConfig.SUPPORT_EMAIL) else auth.configure()
     }
     LaunchedEffect(deepLinkState.value) {
         deepLinkState.value?.let {
-            currentUrl = it
-            showWeb = true
+            val article = net.mrblindbandit.app.chronicle.ChronicleDeepLink.articleUrl(it)
+            if (article != null) {
+                chronicleArticle = article
+                showChronicle = true
+            } else {
+                currentUrl = it
+                showWeb = true
+            }
             deepLinkState.value = null
         }
     }
@@ -292,6 +301,11 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
                     onOpenWeb = { showSettings = false; openWeb(it) },
                     onRequestNotifications = { activity.requestNotificationPermission() },
                 )
+                showChronicle && !showWeb -> net.mrblindbandit.app.chronicle.ChronicleScreen(
+                    onBack = { showChronicle = false; chronicleArticle = null },
+                    initialArticleUrl = chronicleArticle,
+                    onOpenWeb = openWeb,
+                )
                 showWeb -> WebScreen(activity, currentUrl, prefs, onClose = { showWeb = false })
                 else -> {
                     BackHandler(enabled = tab != AppTab.HOME) { tab = AppTab.HOME }
@@ -315,6 +329,7 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
                                     onConnect = { tab = AppTab.CONNECT },
                                     onListen = { tab = AppTab.LISTEN },
                                     onWeb = openWeb,
+                                    onChronicle = { chronicleArticle = null; showChronicle = true },
                                     onSettings = { showSettings = true },
                                     onEnableNotifications = { activity.requestNotificationPermission() },
                                 )
@@ -351,6 +366,7 @@ private fun HomeScreen(
     onConnect: () -> Unit,
     onListen: () -> Unit,
     onWeb: (String) -> Unit,
+    onChronicle: () -> Unit,
     onSettings: () -> Unit,
     onEnableNotifications: () -> Unit,
 ) {
@@ -384,10 +400,11 @@ private fun HomeScreen(
                 )
             }
         }
+        item { HomeCard(Icons.Default.Language, "The Chronicle", "Read the latest Blindbandit Chronicle stories natively. Saved for offline reading.", onChronicle, highlighted = notificationsOn) }
         item { HomeCard(Icons.Default.Phone, "Calls & messages", "Voice calls, video calls, and chat with people on Blindbandit.", onConnect) }
         item { HomeCard(Icons.Default.Build, "Creator tools", "Metronome, BPM tapper, royalty splits, release checklist, and more. Works offline.", onCreator) }
         item { HomeCard(Icons.Default.Headphones, "Listen", "Mr. Blindbandit on your favourite music services.", onListen) }
-        item { HomeCard(Icons.Default.Language, "Music & news", "Releases, the Blindbandit Chronicle, and news from mrblindbandit.net.", { onWeb(BuildConfig.WEB_BASE_URL + "/music/") }) }
+        item { HomeCard(Icons.Default.Language, "Music & releases", "Releases and news from mrblindbandit.net.", { onWeb(BuildConfig.WEB_BASE_URL + "/music/") }) }
         item { HomeCard(Icons.Default.OpenInBrowser, "Label portal", "Blindbandit Records artist and client portal.", { onWeb(BuildConfig.WEB_BASE_URL + "/portal/") }) }
         item { Spacer(Modifier.heightIn(min = Spacing.lg)) }
     }

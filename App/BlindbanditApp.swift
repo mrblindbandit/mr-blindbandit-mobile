@@ -83,14 +83,15 @@ final class AppPreferences: ObservableObject {
 
 @MainActor
 final class TabRouter: ObservableObject {
-    enum Tab: Hashable { case home, create, connect, chronicle, more }
+    enum Tab: Hashable { case home, messages, calls, chronicle, more }
     @Published var selection: Tab = TabRouter.initialTab
 
     private static var initialTab: Tab {
         guard StoreScreenshotMode.isActive else { return .home }
         switch StoreScreenshotMode.screen {
-        case "create": return .create
-        case "connect": return .connect
+        case "create": return .more
+        case "connect", "messages": return .messages
+        case "calls": return .calls
         case "listen": return .more
         case "chronicle": return .chronicle
         case "more", "settings", "accessibility": return .more
@@ -147,11 +148,11 @@ struct BlindbanditApp: App {
                         BlindbanditLogoImage(size: 56)
                         Text(AppConfig.appDisplayName)
                             .font(.headline)
-                        Label("App locked", systemImage: "lock.fill")
+                        Label("Content hidden", systemImage: "eye.slash")
                             .foregroundStyle(.secondary)
                     }
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(AppConfig.appDisplayName). App locked.")
+                    .accessibilityLabel("\(AppConfig.appDisplayName). Content hidden while the app is in the background.")
                 }
 
                 if showingLaunchCover && phase == .active {
@@ -178,7 +179,8 @@ struct BlindbanditApp: App {
                 }
             }
             .onChange(of: phase) { _, value in
-                if value == .background { lock.lock() }
+                // App lock is cold-launch only (1.8.0): returning from background or the
+                // app switcher never re-prompts. `lock.unlocked` stays true for the process lifetime.
                 if value == .active {
                     privacy.refresh()
                     Task { await push.refresh() }
@@ -234,13 +236,21 @@ struct LockedView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                 Button("Unlock") { lock.unlock() }
+                    .accessibilityLabel("Unlock \(AppConfig.appDisplayName)")
+                    .accessibilityHint("Uses Face ID, Touch ID, or your passcode. Only asked when the app first starts.")
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .disabled(lock.busy)
                 if lock.busy { ProgressView("Waiting for iPhone authentication") }
-                if !lock.message.isEmpty { Text(lock.message).foregroundStyle(.secondary) }
+                if !lock.message.isEmpty {
+                    Text(lock.message).foregroundStyle(.secondary)
+                        .accessibilityAddTraits(.updatesFrequently)
+                }
             }
             .padding(30)
+            .onChange(of: lock.message) { _, m in
+                if !m.isEmpty { UIAccessibility.post(notification: .announcement, argument: m) }
+            }
         }
     }
 }
@@ -269,13 +279,14 @@ struct MainTabs: View {
                 .tabItem { Label("Home", systemImage: "house.fill") }
                 .tag(TabRouter.Tab.home)
 
-            NavigationStack { CreatorHubView() }
-                .tabItem { Label("Create", systemImage: "wand.and.stars") }
-                .tag(TabRouter.Tab.create)
+            MessagesTabView()
+                .tabItem { Label("Messages", systemImage: "bubble.left.and.bubble.right.fill") }
+                .badge(communications.unreadCount)
+                .tag(TabRouter.Tab.messages)
 
-            NavigationStack { ConnectHubView() }
-                .tabItem { Label("Connect", systemImage: "phone.and.waveform.fill") }
-                .tag(TabRouter.Tab.connect)
+            CallsTabView()
+                .tabItem { Label("Calls", systemImage: "phone.fill") }
+                .tag(TabRouter.Tab.calls)
 
             NavigationStack { ChronicleView() }
                 .tabItem { Label("Chronicle", systemImage: "newspaper.fill") }
@@ -303,11 +314,21 @@ struct MainTabs: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .blindbanditCallDeepLinkReceived)) { _ in
             AppHaptics.doublePulse()
-            router.selection = .connect
+            router.selection = .calls
         }
         .onReceive(NotificationCenter.default.publisher(for: .blindbanditMessageDeepLinkReceived)) { _ in
             AppHaptics.doublePulse()
-            router.selection = .connect
+            router.selection = .messages
+        }
+        .fullScreenCover(isPresented: Binding(get: { communications.isInCall }, set: { _ in })) {
+            ActiveCallScreen()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            guard !StoreScreenshotMode.isActive else { return }
+            Task {
+                await communications.refreshConversations()
+                await communications.flushPendingMessages()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .chronicleArticleDeepLink)) { note in
             guard let url = note.object as? URL else { return }

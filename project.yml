@@ -56,8 +56,8 @@ targets:
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         INFOPLIST_KEY_UIBackgroundModes: [audio, remote-notification]
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        MARKETING_VERSION: '1.7.3'
-        CURRENT_PROJECT_VERSION: '11'
+        MARKETING_VERSION: '1.8.0'
+        CURRENT_PROJECT_VERSION: '12'
     dependencies:
       - package: LiveKitClient
         product: LiveKit

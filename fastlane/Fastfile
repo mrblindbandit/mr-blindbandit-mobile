@@ -22,6 +22,10 @@ platform :ios do
     build_app(project: "Blindbandit.xcodeproj", scheme: "Blindbandit", configuration: "Release",
       export_method: "app-store", xcargs: "CODE_SIGNING_ALLOWED=YES",
       export_options: { provisioningProfiles: { "net.mrblindbandit.app" => lane_context[SharedValues::SIGH_NAME] } })
-    upload_to_testflight(api_key: api_key, skip_waiting_for_build_processing: true)
+    # Waits for App Store Connect processing so the What to Test notes are attached to this build.
+    notes_path = File.expand_path("WhatToTest.txt", __dir__)
+    upload_to_testflight(api_key: api_key, skip_waiting_for_build_processing: false,
+      changelog: File.exist?(notes_path) ? File.read(notes_path) : nil,
+      distribute_external: false, wait_processing_timeout_duration: 2400)
   end
 end

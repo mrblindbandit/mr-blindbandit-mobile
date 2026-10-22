@@ -53,6 +53,8 @@ struct BlindbanditServerMessage: Identifiable, Decodable, Equatable {
     let body: String
     let created_at: Double
     let read_at: Double?
+    /// Present once the backend records delivery to the recipient's device. Until then "Delivered" is never shown.
+    let delivered_at: Double?
 }
 
 struct BlindbanditLiveKitGrant: Decodable {

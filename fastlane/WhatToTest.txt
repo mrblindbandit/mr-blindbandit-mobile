@@ -10,3 +10,4 @@ Please test:
 - More > Messages & calls: read-aloud speed, Blocked accounts with Unblock. Bell icon in Messages: notification center.
 - Create tools moved to More > Creator tools.
 - App lock (Face ID/passcode) now asks only on a cold launch. Returning from background or the app switcher should NOT re-prompt.
+- Message receipts: each message you send shows Sent, then Delivered (once the server reports it), then Read. VoiceOver announces changes. Settings > Messages & calls > Show read receipts.

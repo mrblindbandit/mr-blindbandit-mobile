@@ -320,6 +320,7 @@ struct ConversationThreadView: View {
     @EnvironmentObject private var privacy: PrivacyPermissions
     @EnvironmentObject private var router: TabRouter
     @AppStorage(ContentFilter.settingKey) private var filterOffensiveLanguage = true
+    @AppStorage("comms.showReadReceipts") private var showReadReceipts = true
     @State private var draft = ""
     @State private var quoting: BlindbanditServerMessage?
     @State private var search = ""
@@ -353,8 +354,16 @@ struct ConversationThreadView: View {
                     }
                     .padding()
                 }
-                .onChange(of: communications.messages) { _, list in
+                .onChange(of: communications.messages) { old, list in
                     if let last = list.last, search.isEmpty { proxy.scrollTo(last.id, anchor: .bottom) }
+                    let me = communications.myProfileID
+                    if let mineNow = list.last(where: { $0.sender_id == me }),
+                       let mineBefore = old.first(where: { $0.id == mineNow.id }),
+                       receipt(for: mineBefore) != receipt(for: mineNow) {
+                        let label = receipt(for: mineNow)
+                        UIAccessibility.post(notification: .announcement, argument: "Your last message: \(label)")
+                        if label == "Read" { AppHaptics.soft() }
+                    }
                 }
             }
             .refreshable { if let c = conversation { await communications.openConversation(c) } }
@@ -461,7 +470,17 @@ struct ConversationThreadView: View {
     }
 
     private func receipt(for message: BlindbanditServerMessage) -> String {
-        message.read_at != nil ? "Read" : "Sent"
+        if showReadReceipts, message.read_at != nil { return "Read" }
+        if message.delivered_at != nil || message.read_at != nil { return "Delivered" }
+        return "Sent"
+    }
+
+    private func receiptIcon(_ label: String) -> String {
+        switch label {
+        case "Read": return "checkmark.circle.fill"
+        case "Delivered": return "checkmark.circle"
+        default: return "checkmark"
+        }
     }
 
     @ViewBuilder
@@ -469,7 +488,6 @@ struct ConversationThreadView: View {
         let mine = message.sender_id == communications.myProfileID
         let sent = Date(timeIntervalSince1970: message.created_at / 1000)
         let shown = mine ? message.body : ContentFilter.display(message.body, enabled: filterOffensiveLanguage)
-        let isLastMine = mine && communications.messages.last(where: { $0.sender_id == communications.myProfileID })?.id == message.id
         HStack {
             if mine { Spacer(minLength: 48) }
             VStack(alignment: mine ? .trailing : .leading, spacing: 4) {
@@ -479,7 +497,11 @@ struct ConversationThreadView: View {
                     .textSelection(.enabled)
                 HStack(spacing: 4) {
                     Text(sent, style: .time)
-                    if isLastMine { Text("· \(receipt(for: message))") }
+                    if mine {
+                        Image(systemName: receiptIcon(receipt(for: message)))
+                            .accessibilityHidden(true)
+                        Text(receipt(for: message))
+                    }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -488,7 +510,7 @@ struct ConversationThreadView: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(mine ? "You" : "@\(handle)"): \(shown)")
-        .accessibilityValue(Text(sent, style: .time) + Text(isLastMine ? ", \(receipt(for: message))" : ""))
+        .accessibilityValue(Text(sent, style: .time) + Text(mine ? ", \(receipt(for: message))" : ""))
         .accessibilityActions { messageActions(message, shown: shown, mine: mine) }
         .contextMenu { messageActions(message, shown: shown, mine: mine) }
     }
@@ -825,6 +847,7 @@ struct NotificationCenterView: View {
 
 struct MessagesSettingsView: View {
     @AppStorage("comms.readAloudRate") private var rate: Double = 0.5
+    @AppStorage("comms.showReadReceipts") private var showReadReceipts = true
 
     var body: some View {
         Form {
@@ -833,6 +856,13 @@ struct MessagesSettingsView: View {
                     .accessibilityValue("\(Int(rate * 200)) percent")
                 Button("Preview") { MessageReader.shared.speak("This is how messages will sound when read aloud.") }
             } header: { Text("Read aloud").accessibilityAddTraits(.isHeader) }
+            Section {
+                Toggle("Show read receipts", isOn: $showReadReceipts)
+                    .onChange(of: showReadReceipts) { _, _ in AppHaptics.selection() }
+                    .accessibilityHint("When off, messages you send show Sent or Delivered instead of Read on this iPhone.")
+            } header: { Text("Receipts").accessibilityAddTraits(.isHeader) } footer: {
+                Text("Each message you send shows Sent, then Delivered once the server confirms delivery, then Read. Hiding your own read status from others needs a server setting that is not available yet.")
+            }
             Section {
                 NavigationLink { BlockedAccountsView() } label: { Label("Blocked accounts", systemImage: "hand.raised") }
             } header: { Text("Safety").accessibilityAddTraits(.isHeader) }

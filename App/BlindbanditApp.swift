@@ -148,11 +148,11 @@ struct BlindbanditApp: App {
                         BlindbanditLogoImage(size: 56)
                         Text(AppConfig.appDisplayName)
                             .font(.headline)
-                        Label("App locked", systemImage: "lock.fill")
+                        Label("Content hidden", systemImage: "eye.slash")
                             .foregroundStyle(.secondary)
                     }
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(AppConfig.appDisplayName). App locked.")
+                    .accessibilityLabel("\(AppConfig.appDisplayName). Content hidden while the app is in the background.")
                 }
 
                 if showingLaunchCover && phase == .active {
@@ -179,7 +179,8 @@ struct BlindbanditApp: App {
                 }
             }
             .onChange(of: phase) { _, value in
-                if value == .background { lock.lock() }
+                // App lock is cold-launch only (1.8.0): returning from background or the
+                // app switcher never re-prompts. `lock.unlocked` stays true for the process lifetime.
                 if value == .active {
                     privacy.refresh()
                     Task { await push.refresh() }
@@ -235,13 +236,21 @@ struct LockedView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                 Button("Unlock") { lock.unlock() }
+                    .accessibilityLabel("Unlock \(AppConfig.appDisplayName)")
+                    .accessibilityHint("Uses Face ID, Touch ID, or your passcode. Only asked when the app first starts.")
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .disabled(lock.busy)
                 if lock.busy { ProgressView("Waiting for iPhone authentication") }
-                if !lock.message.isEmpty { Text(lock.message).foregroundStyle(.secondary) }
+                if !lock.message.isEmpty {
+                    Text(lock.message).foregroundStyle(.secondary)
+                        .accessibilityAddTraits(.updatesFrequently)
+                }
             }
             .padding(30)
+            .onChange(of: lock.message) { _, m in
+                if !m.isEmpty { UIAccessibility.post(notification: .announcement, argument: m) }
+            }
         }
     }
 }

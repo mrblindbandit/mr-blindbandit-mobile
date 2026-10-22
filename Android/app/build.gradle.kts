@@ -27,8 +27,8 @@ android {
         applicationId = "net.mrblindbandit.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "1.7.3"
+        versionCode = 11
+        versionName = "1.7.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("String", "WEB_BASE_URL", "\"https://mrblindbandit.net\"")
@@ -74,7 +74,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             isDebuggable = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")

@@ -10,11 +10,13 @@ import android.content.Intent
  * adb shell am start -n net.mrblindbandit.app/.MainActivity --ez store_screenshots true --es screen listen
  */
 object StoreScreenshotMode {
-    data class Request(val tab: AppTab, val settings: Boolean, val webPath: String? = null)
+    data class Request(val tab: AppTab, val settings: Boolean, val webPath: String? = null, val chronicle: Boolean = false, val articleUrl: String? = null)
 
     fun from(intent: Intent?): Request? {
         if (!BuildConfig.DEBUG || intent?.getBooleanExtra("store_screenshots", false) != true) return null
         return when (intent.getStringExtra("screen")) {
+            "chronicle", "news" -> Request(AppTab.HOME, false, chronicle = true)
+            "article" -> Request(AppTab.HOME, false, chronicle = true, articleUrl = "https://mrblindbandit.net/publications/the-hidden-cost-of-proving-you-are-human-online/")
             "create" -> Request(AppTab.CREATOR, false)
             "connect" -> Request(AppTab.CONNECT, false)
             "listen" -> Request(AppTab.LISTEN, false)

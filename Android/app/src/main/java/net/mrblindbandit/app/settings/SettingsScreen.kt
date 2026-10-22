@@ -170,6 +170,11 @@ private fun SettingsRoot(
                 }
                 ToggleRow("New messages", prefs.notifyMessages, "Alert me when someone messages me", prefs::setNotifyMessages)
                 ToggleRow("Incoming calls", prefs.notifyCalls, "Alert me when someone calls me", prefs::setNotifyCalls)
+                Button(
+                    onClick = { sendTestNotification(context) },
+                    enabled = notificationsAllowed,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = Spacing.minTouch),
+                ) { Text("Send test notification") }
                 LinkRow("Open system notification settings") { openAppNotificationSettings(context) }
             }
         }
@@ -197,6 +202,7 @@ private fun SettingsRoot(
         item {
             Section("Sounds & calls") {
                 ToggleRow("App sounds", prefs.uiSounds, "Ringback, connect, and message sounds", prefs::setUiSounds)
+                TonePickers()
                 ToggleRow("Start video calls with camera off", prefs.startCallsWithCameraOff, "Turn your camera on when you are ready", prefs::setStartCallsWithCameraOff)
                 ToggleRow("Use speakerphone by default", prefs.speakerphoneByDefault, "Route call audio to the loudspeaker", prefs::setSpeakerphoneByDefault)
                 ToggleRow("Echo cancellation", prefs.echoCancellation, "Reduce echo during calls", prefs::setEchoCancellation)
@@ -418,5 +424,81 @@ private fun safeStart(context: Context, intent: Intent) {
         context.startActivity(intent)
     } catch (_: ActivityNotFoundException) {
         android.widget.Toast.makeText(context, "No app is available to open this.", android.widget.Toast.LENGTH_SHORT).show()
+    }
+}
+
+
+@Composable
+private fun TonePickers() {
+    val context = LocalContext.current
+    val sounds = remember { net.mrblindbandit.app.connect.CallSounds(context) }
+    var ringtone by remember { mutableStateOf(sounds.selectedRingtone) }
+    var notifTone by remember { mutableStateOf(sounds.selectedNotificationTone) }
+    var picker by remember { mutableStateOf<String?>(null) }
+    LinkRow("Ringtone: ${ringtone.title}", external = false) { picker = "ring" }
+    LinkRow("Message tone: ${notifTone.title}", external = false) { picker = "notif" }
+    if (picker != null) {
+        val isRing = picker == "ring"
+        var pendingRing by remember { mutableStateOf(ringtone) }
+        var pendingNotif by remember { mutableStateOf(notifTone) }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { picker = null },
+            title = { Text(if (isRing) "Ringtone" else "Message tone") },
+            text = {
+                LazyColumn(Modifier.selectableGroup()) {
+                    if (isRing) {
+                        items(net.mrblindbandit.app.connect.CallSounds.Ringtone.entries.size) { i ->
+                            val t = net.mrblindbandit.app.connect.CallSounds.Ringtone.entries[i]
+                            ToneRow(t.title, t == pendingRing) { pendingRing = t; sounds.previewRingtone(t) }
+                        }
+                    } else {
+                        items(net.mrblindbandit.app.connect.CallSounds.NotificationTone.entries.size) { i ->
+                            val t = net.mrblindbandit.app.connect.CallSounds.NotificationTone.entries[i]
+                            ToneRow(t.title, t == pendingNotif) { pendingNotif = t; sounds.previewNotification(t) }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (isRing) { sounds.selectedRingtone = pendingRing; ringtone = pendingRing }
+                    else { sounds.selectedNotificationTone = pendingNotif; notifTone = pendingNotif }
+                    sounds.persist(); picker = null
+                }) { Text("Done") }
+            },
+            dismissButton = { TextButton(onClick = { picker = null }) { Text("Cancel") } },
+        )
+    }
+}
+
+@Composable
+private fun ToneRow(title: String, selected: Boolean, onSelect: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = Spacing.minTouch)
+            .selectable(selected = selected, onClick = onSelect, role = androidx.compose.ui.semantics.Role.RadioButton),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = null)
+        Spacer(Modifier.width(Spacing.sm))
+        Text(title + if (selected) "" else "", style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+private fun sendTestNotification(context: Context) {
+    net.mrblindbandit.app.BlindbanditFirebaseMessagingService.ensureChannels(context)
+    val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+    val pending = android.app.PendingIntent.getActivity(context, 4242, intent, android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT)
+    val n = androidx.core.app.NotificationCompat.Builder(context, net.mrblindbandit.app.BlindbanditFirebaseMessagingService.CHANNEL_MESSAGES)
+        .setSmallIcon(net.mrblindbandit.app.R.drawable.ic_notification)
+        .setContentTitle("Test notification")
+        .setContentText("Notifications from Blindbandit are working.")
+        .setContentIntent(pending)
+        .setAutoCancel(true)
+        .build()
+    try {
+        androidx.core.app.NotificationManagerCompat.from(context).notify(4242, n)
+        android.widget.Toast.makeText(context, "Test notification sent", android.widget.Toast.LENGTH_SHORT).show()
+    } catch (_: SecurityException) {
+        android.widget.Toast.makeText(context, "Turn on notifications first", android.widget.Toast.LENGTH_LONG).show()
     }
 }

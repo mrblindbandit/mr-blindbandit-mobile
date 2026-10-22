@@ -6,6 +6,18 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 
 ---
 
+## [1.8.0 iOS] — 2026-10-23
+
+### Fixed
+- Messages inbox showed nothing: the conversation list returns `verified` as 0/1 and the app required true/false, so the whole list failed to decode. Booleans are now decoded leniently.
+- Outgoing calls that fail now always send end to the server, so they no longer stay "ringing".
+
+### Added
+- Dedicated Messages and Calls tabs (Create moved to More > Creator tools).
+- Messages: 5-second live refresh, unread dots and tab badge, read receipts, pin, mute, mark unread, conversation and in-thread search, reply with quote, copy, share, read aloud with speed, drafts, offline send queue, username check, notification center.
+- Calls: server call history with call back, missed filter, favorites, ringback with 45-second no-answer end, speaker control, full-screen in-call controls, report a call.
+- Blocked accounts list with Unblock.
+
 ## [1.7.1 Android] — 2026-10-03
 
 ### Added

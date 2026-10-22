@@ -10,6 +10,12 @@ Cross-links:
 
 ---
 
+## 2026-10-23 — iOS 1.8.0 (12) Messages and Calls tabs (Grok Bot, branch `feat/ios-calls-messages`)
+
+- Missing DM to @kheck: `GET /v1/social/messages` returns `other.verified` as integer 0; `Bool?` threw a type mismatch and the inbox decode failed. Server data was correct; no data fix. Added `FlexibleBool`.
+- New: App/CommsTabs.swift, App/CommsModels.swift. Uses /messages/{id}/read, /calls/history, /blocks, DELETE /profiles/{h}/block, /notifications.
+- Fastlane waits for processing and attaches fastlane/WhatToTest.txt.
+
 ## 2026-09-27 — Store listing and compliance pass (Grok Bot, branch `store/listing-compliance-2026`)
 
 - Store name "Mr. BlindBandit Mobile"; home-screen label "BlindBandit" on both platforms (launchers truncate longer labels).

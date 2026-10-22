@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -258,7 +259,12 @@ fun ChronicleScreen(onBack: () -> Unit, initialArticleUrl: String? = null, onOpe
             actions = { IconButton(onClick = { scope.launch { load() } }, enabled = !loading) { Icon(Icons.Default.Refresh, contentDescription = "Refresh stories") } },
         )
     }) { inner ->
-        LazyColumn(Modifier.fillMaxSize().padding(inner), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        PullToRefreshBox(
+            isRefreshing = loading && stories.isNotEmpty(),
+            onRefresh = { scope.launch { load() } },
+            modifier = Modifier.fillMaxSize().padding(inner),
+        ) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (loading && stories.isEmpty()) item {
                 Row(Modifier.fillMaxWidth().padding(24.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(24.dp)); Spacer(Modifier.width(12.dp)); Text("Loading the Chronicle")
@@ -267,6 +273,7 @@ fun ChronicleScreen(onBack: () -> Unit, initialArticleUrl: String? = null, onOpe
             if (offline) item { Text("You're offline. Showing saved stories.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             error?.let { msg -> item { Text(msg, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth().padding(24.dp)) } }
             items(stories, key = { it.id }) { story -> ChronicleRow(story) { open = story } }
+        }
         }
     }
 }

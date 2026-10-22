@@ -66,7 +66,7 @@ struct ProfessionalHome: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .accessibilityAddTraits(.isHeader)
 
-                    Button { router.selection = .connect } label: {
+                    Button { router.selection = .messages } label: {
                         WideDashboardCard(icon: "phone.and.waveform.fill", title: "Calls & messages", subtitle: "Voice calls, video calls and messages with Blindbandit members")
                     }
                     .buttonStyle(.plain)

@@ -1,0 +1,11 @@
+Blindbandit 1.8.0: dedicated Messages and Calls tabs.
+
+Please test:
+- Messages tab: your conversations load (fixes the empty inbox), unread dot and tab badge, new messages arrive within about 5 seconds while the app is open, "Read" under your last message once the other person opens it.
+- Swipe a conversation to pin, mute or mark unread. Search conversations and search inside a thread.
+- Long-press (or VoiceOver Actions) on a message: Reply, Copy, Share, Read aloud, Report.
+- New message: type a username; unknown usernames are caught before sending. Drafts are kept per conversation. Messages typed offline send automatically when you reconnect.
+- Calls tab: voice and video by username, favorites, recent calls from the server with call back. Outgoing calls ring, stop after 45 seconds with no answer, and always cancel on the server if a call fails.
+- In-call: mute, speaker, camera, end.
+- More > Messages & calls: read-aloud speed, Blocked accounts with Unblock. Bell icon in Messages: notification center.
+- Create tools moved to More > Creator tools.

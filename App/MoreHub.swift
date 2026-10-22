@@ -23,11 +23,18 @@ struct MoreHubView: View {
                 .accessibilityElement(children: .combine)
             }
 
+            Section("Create") {
+                NavigationLink { CreatorHubView() } label: { Label("Creator tools", systemImage: "wand.and.stars") }
+            }
+
             Section("Listen") {
                 NavigationLink { ListenHubView() } label: { Label("Listen to Blindbandit Records", systemImage: "headphones") }
             }
 
             Section("Your account") {
+                NavigationLink { MessagesSettingsView() } label: {
+                    Label("Messages & calls", systemImage: "bubble.left.and.bubble.right")
+                }
                 NavigationLink { Settings() } label: {
                     Label("Settings", systemImage: "gearshape.fill")
                 }

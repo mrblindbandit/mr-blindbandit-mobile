@@ -8,6 +8,8 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 
 
 ## 2.0.6 (21)
+- Calls start instantly: the iPhone call screen appears as soon as you press Call, while the call is set up in the background. Step timings are logged.
+- Hanging up now ends the call everywhere and it no longer calls you back: the end is sent with retries, and this iPhone ignores any late ring for a call that already ended.
 - New default ringtone: "Mr. BlindBandit". Used for CallKit incoming calls, the call notification fallback and in-app ringing. If you picked a different tone it stays; anyone on the old default moves to the new one. A second tone, "Mr. BlindBandit Classic", is also in the list. The old default is now called "Original".
 - Fix: remote participants heard no audio from the phone during screen share. The broadcast share was started with `ScreenShareCaptureOptions(useBroadcastExtension:)` and the default `appAudio: false`, so LiveKit's BroadcastScreenCapturer never enabled the extension's `.audioApp` stream. It now passes `appAudio: true`; app audio is mixed into the microphone track.
 - While sharing, the mic track stays published and mute is applied as mixer mic volume 0, so muting doesn't silence the shared audio. Call audio session adds `.mixWithOthers` so media keeps playing during calls.

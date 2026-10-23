@@ -87,3 +87,14 @@ final class RingtoneDefault206Tests: XCTestCase {
         XCTAssertEqual(d.string(forKey: "selectedRingtone"), "ringtone_gold")
     }
 }
+
+final class EndedCalls206Tests: XCTestCase {
+    func testEndedAndStale() {
+        let id = "t-" + UUID().uuidString
+        XCTAssertFalse(EndedCalls.shouldIgnore(id: id, createdAtMs: Date().timeIntervalSince1970 * 1000))
+        EndedCalls.mark(id)
+        XCTAssertTrue(EndedCalls.shouldIgnore(id: id, createdAtMs: Date().timeIntervalSince1970 * 1000))
+        XCTAssertTrue(EndedCalls.isStale(createdAtMs: (Date().timeIntervalSince1970 - 120) * 1000))
+        XCTAssertFalse(EndedCalls.isStale(createdAtMs: 0))
+    }
+}

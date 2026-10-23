@@ -43,6 +43,7 @@ final class CallKitManager: NSObject {
     /// Called from AppDelegate.didFinishLaunching so VoIP pushes delivered at cold launch are handled.
     func setUp() {
         guard provider == nil else { return }
+        Task { await EndedCalls.flushPending() }
         if isAvailable {
             let config = CXProviderConfiguration()
             config.supportsVideo = true
@@ -82,6 +83,15 @@ final class CallKitManager: NSObject {
     }
 
     func hasCall(_ callID: String) -> Bool { uuids[callID] != nil }
+
+    /// 2.0.6: the outgoing UI is shown under a local ID before the server call exists; move all state to the real ID.
+    func rebind(from old: String, to new: String) {
+        guard let id = uuids.removeValue(forKey: old) else { return }
+        uuids[new] = id
+        if outgoing.remove(old) != nil { outgoing.insert(new) }
+        if connected.remove(old) != nil { connected.insert(new) }
+        if answered.remove(old) != nil { answered.insert(new) }
+    }
 
     private func uuid(for callID: String) -> UUID {
         if let existing = uuids[callID] { return existing }
@@ -358,6 +368,7 @@ extension CallKitManager: CXProviderDelegate {
     nonisolated func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
         MainActor.assumeIsolated {
             guard let callID = callID(for: action.callUUID) else { action.fulfill(); return }
+            EndedCalls.mark(callID)
             let wasConnected = answered.contains(callID) || outgoing.contains(callID)
             uuids[callID] = nil
             registered.remove(action.callUUID)
@@ -452,6 +463,16 @@ extension CallKitManager: PKPushRegistryDelegate {
                         Task { @MainActor in self?.reportEnded(callID: call.id, reason: .unanswered) }
                         completion()
                     }
+                }
+                return
+            }
+            // 2.0.6: never ring again for a call this user already ended, or one that's too old to still be ringing.
+            if EndedCalls.shouldIgnore(id: call.id, createdAtMs: call.created_at) {
+                CallTiming.log("VoIP push ignored for ended/stale call \(call.id)")
+                let id = "ignored-" + call.id + "-" + UUID().uuidString
+                reportIncoming(BlindbanditIncomingCall(id: id, kind: call.kind, from_handle: call.from_handle, from_name: call.from_name, group_id: call.group_id, group_name: call.group_name, created_at: call.created_at)) { [weak self] in
+                    Task { @MainActor in self?.reportEnded(callID: id, reason: .remoteEnded) }
+                    completion()
                 }
                 return
             }

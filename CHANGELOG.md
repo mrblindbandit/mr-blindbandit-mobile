@@ -11,6 +11,7 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 - CallKit end reports wait until iOS has registered the call. The server's call_end push ends the call as remote-ended or unanswered.
 - Tapping a Recents entry calls back, including at cold launch.
 - Notification taps open the right conversation, group or call. Routing reads every payload shape (deep_link/url/link, conversation_id/conversationId/c/thread_id, aps thread-id, group_id, call_id, nested data/payload, or sender handle only), survives cold launch and the Face ID lock, and logs key names only.
+- Every message has its own VoiceOver status line under it, in DMs and groups ('Sent/Delivered/Read <time>', 'Read by …'), which updates live. Incoming messages get a time line. The group typing indicator is polled and announced. UI test added.
 
 ## [1.9.0 iOS (13)] — 2026-10-23
 

@@ -1,2 +1,2 @@
-Tapping a message notification now opens that conversation, whether the app was closed, in the background or behind Face ID.
+In conversations, swipe past each of your messages to hear its status as a separate item, such as 'Delivered 2:34 PM' or 'Read 5:08 AM'. In groups it says 'Read by' with names or a count. Incoming messages have a time line, and group typing is announced.
 

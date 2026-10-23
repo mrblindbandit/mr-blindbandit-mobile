@@ -127,6 +127,9 @@ struct BlindbanditApp: App {
     var body: some Scene {
         WindowGroup {
             ZStack {
+                if ProcessInfo.processInfo.arguments.contains("-UITestMessageStatus") {
+                    MessageStatusUITestView()
+                } else {
                 switch auth.state {
                 case .unknown:
                     ZStack {
@@ -147,6 +150,7 @@ struct BlindbanditApp: App {
                     } else {
                         LockedView(lock: lock)
                     }
+                }
                 }
 
                 if phase != .active, lock.isRequired, case .signedIn = auth.state {

@@ -241,24 +241,27 @@ struct GroupChatView: View {
                     ForEach(messages) { m in
                         let mine = m.sender_handle.lowercased() == communications.myHandle.lowercased()
                         VStack(alignment: mine ? .trailing : .leading, spacing: 2) {
-                            if !mine { Text(m.sender_name).font(.caption.bold()) }
-                            Text(m.body).padding(10)
-                                .background(mine ? Brand.gold.opacity(0.35) : Color.secondary.opacity(0.15), in: RoundedRectangle(cornerRadius: 14))
-                            Text(MessageStatus.stamp(m.created_at)).font(.caption2).foregroundStyle(.secondary)
+                            VStack(alignment: mine ? .trailing : .leading, spacing: 2) {
+                                if !mine { Text(m.sender_name).font(.caption.bold()) }
+                                Text(m.body).padding(10)
+                                    .background(mine ? Brand.gold.opacity(0.35) : Color.secondary.opacity(0.15), in: RoundedRectangle(cornerRadius: 14))
+                            }
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel("\(mine ? "You" : m.sender_name): \(m.body)")
+                            .accessibilityActions {
+                                Button("Copy") { UIPasteboard.general.string = m.body }
+                                Button("Read aloud") { MessageReader.shared.speak(m.body) }
+                            }
+                            .contextMenu {
+                                Button { UIPasteboard.general.string = m.body } label: { Label("Copy", systemImage: "doc.on.doc") }
+                                Button { MessageReader.shared.speak(m.body) } label: { Label("Read aloud", systemImage: "speaker.wave.2") }
+                            }
+                            MessageStatusCaption(text: mine ? MessageStatus.groupCaption(for: m) : MessageStatus.stamp(m.created_at), mine: mine)
                         }
                         .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
                         .listRowSeparator(.hidden)
                         .id(m.id)
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("\(mine ? "You" : m.sender_name): \(m.body). \(MessageStatus.stamp(m.created_at))")
-                        .accessibilityActions {
-                            Button("Copy") { UIPasteboard.general.string = m.body }
-                            Button("Read aloud") { MessageReader.shared.speak(m.body) }
-                        }
-                        .contextMenu {
-                            Button { UIPasteboard.general.string = m.body } label: { Label("Copy", systemImage: "doc.on.doc") }
-                            Button { MessageReader.shared.speak(m.body) } label: { Label("Read aloud", systemImage: "speaker.wave.2") }
-                        }
+                        .accessibilityElement(children: .contain)
                     }
                     if let first = typing.first {
                         TypingIndicatorBubble(name: typing.count > 1 ? "\(typing.count) people" : "@\(first)")
@@ -303,7 +306,7 @@ struct GroupChatView: View {
     private func pingTyping() {
         guard Date().timeIntervalSince(lastTypingSent) > 4, !draft.isEmpty else { return }
         lastTypingSent = Date()
-        Task { _ = await BlindbanditAPI.sendGroupTyping(id: groupID) }
+        Task { updateTyping(await BlindbanditAPI.sendGroupTyping(id: groupID)) }
     }
 
     private func send() async {
@@ -321,6 +324,18 @@ struct GroupChatView: View {
         }
     }
 
+    /// Shows the typing bubble and announces anyone who just started typing (never me).
+    private func updateTyping(_ handles: [String]) {
+        let me = communications.myHandle.lowercased()
+        let others = handles.map(BlindbanditHandle.normalize).filter { !$0.isEmpty && $0.lowercased() != me }
+        let started = others.filter { !typing.contains($0) }
+        typing = others
+        if !started.isEmpty {
+            let who = started.count > 1 ? "\(started.count) people are" : "@\(started[0]) is"
+            UIAccessibility.post(notification: .announcement, argument: "\(who) typing")
+        }
+    }
+
     private func refresh() async {
         do {
             let fresh = try await BlindbanditAPI.groupMessages(id: groupID)
@@ -331,6 +346,7 @@ struct GroupChatView: View {
             messages = fresh
             error = ""
             await BlindbanditAPI.markGroupRead(id: groupID)
+            updateTyping(await BlindbanditAPI.groupTyping(id: groupID))
         } catch {
             self.error = error.localizedDescription
         }

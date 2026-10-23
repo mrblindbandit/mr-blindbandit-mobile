@@ -113,4 +113,23 @@ final class PushRouteTests: XCTestCase {
         XCTAssertNil(PushRoute.parse(["aps": ["alert": "hello"]]))
         XCTAssertFalse(PushRoute.keySummary(["data": ["conversation_id": c]]).contains(c))
     }
+
+    func testStatusCaptionsIncludeTime() {
+        let now = Date()
+        let ms = now.timeIntervalSince1970 * 1000
+        XCTAssertTrue(MessageStatus.caption(sent: ms, delivered: nil, read: nil, showRead: true, now: now).hasPrefix("Sent "))
+        XCTAssertTrue(MessageStatus.caption(sent: ms, delivered: ms, read: nil, showRead: true, now: now).hasPrefix("Delivered "))
+        XCTAssertTrue(MessageStatus.caption(sent: ms, delivered: ms, read: ms, showRead: true, now: now).hasPrefix("Read "))
+        XCTAssertTrue(MessageStatus.caption(sent: ms, delivered: ms, read: ms, showRead: false, now: now).hasPrefix("Delivered "))
+    }
+
+    func testGroupReadByCaption() throws {
+        let json = #"{"id":"m1","sender_handle":"me","body":"hi","created_at":1700000000000,"read_by":[{"handle":"sam","read_at":1700000060000},{"display_name":"Ana"}]}"#
+        let m = try JSONDecoder().decode(BlindbanditGroupMessage.self, from: Data(json.utf8))
+        XCTAssertEqual(m.read_by, ["@sam", "Ana"])
+        XCTAssertTrue(MessageStatus.groupCaption(for: m).hasPrefix("Read by @sam, Ana "))
+        let counted = try JSONDecoder().decode(BlindbanditGroupMessage.self, from: Data(#"{"id":"m2","body":"x","created_at":"2026-10-23T06:00:00Z","read_count":3}"#.utf8))
+        XCTAssertEqual(MessageStatus.groupCaption(for: counted), "Read by 3")
+        XCTAssertGreaterThan(counted.created_at, 1_700_000_000_000)
+    }
 }

@@ -6,6 +6,13 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 
 ---
 
+## 2.0.0 (15)
+- End-to-end encryption (p256-v1, CryptoKit) for DMs and groups when the server supports it. Keys sync through iCloud Keychain. Includes safety numbers with QR codes, key-change alerts, padding and signed unsend. Older plaintext chats keep working.
+- Security & Privacy in every chat: clear from server, disappearing timers (30s to 90d), relay-only, one-tap Unsend, screenshot and recording alerts, Face ID chat lock, hidden previews, link-preview blocking, metadata strip, view-once, receipt and typing switches, export or delete my data, and a security log. Any feature the server doesn't support yet shows "Needs server update".
+- App security: relock timeout, app-switcher blur, jailbreak warning, devices and sessions, and an optional recovery passphrase.
+- Edit, star, pin, scheduled and silent send, and invite links with approval, slow mode and admins-only posting.
+- On-device AI (Apple Intelligence, iOS 26): a permanent AI chat pinned at the top of Messages, @AI in chats (public or private), catch-me-up, smart replies, rewrite, scam warnings, translation with Original (including Cebuano and Tagalog), dictation, natural voices and action detection. Nothing is sent to a server.
+
 ## 1.9.0 (14)
 - Calls are logged in Phone > Recents: incoming and outgoing calls, whether answered, missed or declined, with the real name, @handle and audio/video type.
 - CallKit end reports wait until iOS has registered the call. The server's call_end push ends the call as remote-ended or unanswered.

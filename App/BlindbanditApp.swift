@@ -122,6 +122,7 @@ struct BlindbanditApp: App {
     @AppStorage(SettingsKey.highContrast) private var highContrast = false
     @AppStorage(SettingsKey.keepScreenAwake) private var keepScreenAwake = false
     @State private var showingLaunchCover = true
+    @State private var backgroundedAt: Date?
     @AppStorage("permissionsOnboardingDone") private var permissionsOnboardingDone = false
 
     var body: some Scene {
@@ -153,7 +154,7 @@ struct BlindbanditApp: App {
                 }
                 }
 
-                if phase != .active, lock.isRequired, case .signedIn = auth.state {
+                if phase != .active, lock.isRequired || AppSecurity.blurSwitcher, case .signedIn = auth.state {
                     Color(uiColor: .systemBackground).ignoresSafeArea()
                     VStack(spacing: 12) {
                         BlindbanditLogoImage(size: 56)
@@ -196,6 +197,12 @@ struct BlindbanditApp: App {
             .onChange(of: phase) { _, value in
                 // App lock is cold-launch only (1.8.0): returning from background or the
                 // app switcher never re-prompts. `lock.unlocked` stays true for the process lifetime.
+                if value == .background { backgroundedAt = Date() }
+                if value == .active, let since = backgroundedAt {
+                    backgroundedAt = nil
+                    let t = AppSecurity.relockSeconds
+                    if t >= 0, Date().timeIntervalSince(since) >= Double(t) { lock.lock() }
+                }
                 if value == .active {
                     privacy.refresh()
                     Task { await push.refresh() }

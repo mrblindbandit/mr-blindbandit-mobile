@@ -1,2 +1,1 @@
-In conversations, swipe past each of your messages to hear its status as a separate item, such as 'Delivered 2:34 PM' or 'Read 5:08 AM'. In groups it says 'Read by' with names or a count. Incoming messages have a time line, and group typing is announced.
-
+2.0.0: Messages now show an AI chat pinned at the top. Ask it anything, or dictate. It runs on this iPhone. In any chat, type "@AI" and a question, or "/ai" for a private answer. Open a chat's ⋯ menu, then Security & Privacy, to verify safety numbers and set disappearing messages and other protections. Long-press your own message to Unsend or Edit it. Settings has Security and AI pages. Server features that aren't live yet say "Needs server update".

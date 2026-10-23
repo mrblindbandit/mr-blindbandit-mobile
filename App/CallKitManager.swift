@@ -280,6 +280,22 @@ final class CallKitManager: NSObject {
 
     // MARK: VoIP payload
 
+    static let myIDKey = "calls.myProfileID", myHandleKey = "calls.myHandle"
+
+    /// True unless the push names a callee that isn't the signed-in account.
+    nonisolated static func isAddressedToMe(_ payload: [AnyHashable: Any]) -> Bool {
+        let root = (payload["data"] as? [AnyHashable: Any]) ?? payload
+        let d = UserDefaults.standard
+        let myID = d.string(forKey: myIDKey) ?? "", myHandle = (d.string(forKey: myHandleKey) ?? "").lowercased()
+        let ids = ["user_id", "callee_id", "to_user_id", "recipient_id"].compactMap { root[$0] as? String }.filter { !$0.isEmpty }
+        let handles = ["callee_handle", "to_handle"].compactMap { root[$0] as? String }.map { $0.lowercased().replacingOccurrences(of: "@", with: "") }.filter { !$0.isEmpty }
+        if let from = root["from_handle"] as? String, !myHandle.isEmpty, from.lowercased() == myHandle,
+           (root["type"] as? String ?? "call") == "call", (root["group_id"] as? String) == nil { return false } // my own outgoing call
+        if !ids.isEmpty, !myID.isEmpty, !ids.contains(myID) { return false }
+        if !handles.isEmpty, !myHandle.isEmpty, !handles.contains(myHandle) { return false }
+        return true
+    }
+
     /// Parses `{type:'call'|'call_end', call_id, kind, from_handle, from_name, group_id?, group_name?}`.
     nonisolated static func parseVoIP(_ payload: [AnyHashable: Any]) -> (type: String, call: BlindbanditIncomingCall?) {
         let root = (payload["data"] as? [AnyHashable: Any]) ?? payload
@@ -401,7 +417,21 @@ extension CallKitManager: PKPushRegistryDelegate {
                 }
                 return
             }
+            // 2.0.5: only ring for invites addressed to the signed-in account.
+            if !CallKitManager.isAddressedToMe(payload.dictionaryPayload) {
+                let id = UUID().uuidString
+                reportIncoming(BlindbanditIncomingCall(id: id, kind: "voice", from_handle: "", from_name: "Blind Bandit call", group_id: nil, group_name: nil, created_at: 0)) { [weak self] in
+                    Task { @MainActor in self?.reportEnded(callID: id, reason: .failed) }
+                    completion()
+                }
+                return
+            }
             if parsed.type == "call_end" {
+                // The server sends "answered on another device" to the answerer's own devices too.
+                // If THIS device answered, that push is about us: never tear the call down.
+                if service?.joiningCallID == call.id {
+                    completion(); return
+                }
                 if uuids[call.id] != nil {
                     let reason = CallKitManager.endReason(wasConnected: answered.contains(call.id) || connected.contains(call.id))
                     service?.remoteEnded(callID: call.id)

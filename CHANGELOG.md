@@ -7,6 +7,10 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 ---
 
 
+## 2.0.5 (20)
+- Fix: answering a call failed and the caller's side ended right away. The server's "answered on another device" call_end VoIP push also reached the answering iPhone, which tore down the call it was joining (and then reported the failure back to the caller). The app now ignores call_end for a call it is joining.
+- Fix: VoIP call invites only ring when addressed to the signed-in account (callee id/handle checked when present; your own outgoing call never rings you; stale pushes after sign-out are rejected).
+
 ## 2.0.4 (19)
 - Fix: AI chat refused "play X on Apple Music". Music commands are now parsed deterministically and drive MusicKit directly; the instructions tell the model to always use the appleMusic tool; authorization denied/restricted gives spoken guidance; real MusicKit errors are logged (os_log + Settings > AI > Music debug log).
 

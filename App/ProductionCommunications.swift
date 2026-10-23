@@ -76,7 +76,7 @@ struct BlindbanditCallResponse: Decodable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = (try? c.decode(String.self, forKey: .id)) ?? (try c.decode(String.self, forKey: .call_id))
+        if let value = try? c.decode(String.self, forKey: .id) { id = value } else { id = try c.decode(String.self, forKey: .call_id) }
         room = (try? c.decode(String.self, forKey: .room)) ?? ""
         kind = (try? c.decode(String.self, forKey: .kind)) ?? "voice"
         status = (try? c.decode(String.self, forKey: .status)) ?? "ringing"

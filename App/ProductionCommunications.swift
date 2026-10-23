@@ -498,6 +498,8 @@ final class ProductionCommunicationsService: ObservableObject {
             let profile = try await BlindbanditAPI.currentProfile()
             myProfileID = profile.id
             myHandle = profile.handle
+            UserDefaults.standard.set(profile.id, forKey: CallKitManager.myIDKey)
+            UserDefaults.standard.set(profile.handle, forKey: CallKitManager.myHandleKey)
             AIPersona.serverHandle = profile.handle
             myVerified = profile.verified == true
             E2EEService.shared.myUserID = profile.id
@@ -808,6 +810,7 @@ final class ProductionCommunicationsService: ObservableObject {
     private var holdRestore: (mic: Bool, camera: Bool)?
     private var announcedIncoming: Set<String> = []
     private var callIsIncoming = false
+    private(set) var joiningCallID: String?
 
     func startCall(recipient: String, video: Bool) async {
         let handle = BlindbanditHandle.normalize(recipient)
@@ -955,6 +958,7 @@ final class ProductionCommunicationsService: ObservableObject {
 
     /// The caller hung up, someone answered on another device, or the server sent call_end.
     func remoteEnded(callID: String) {
+        if joiningCallID == callID { return } // our own "answered elsewhere" echo
         if incomingCall?.id == callID {
             let missed = incomingCall
             incomingCall = nil
@@ -1021,6 +1025,8 @@ final class ProductionCommunicationsService: ObservableObject {
         let invite = incomingCall?.id == id ? incomingCall : nil
         CallSounds.stopLoop()
         statusMessage = "Joining call…"
+        joiningCallID = id
+        defer { joiningCallID = nil }
         do {
             let response = try await BlindbanditAPI.joinCall(id: id)
             if let invite {
@@ -1438,6 +1444,8 @@ final class ProductionCommunicationsService: ObservableObject {
         messages = []
         myProfileID = ""
         myHandle = ""
+        UserDefaults.standard.removeObject(forKey: CallKitManager.myIDKey)
+        UserDefaults.standard.removeObject(forKey: CallKitManager.myHandleKey)
         statusMessage = ""
         missedGroupCalls = []
         bootstrapped = false

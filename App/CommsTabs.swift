@@ -1359,7 +1359,7 @@ enum MessageStatus {
     /// "Sent", "Delivered", "Read 5:08 AM", "Read Yesterday 9:14 PM", "Read Mon 9:14 PM" or "Read Oct 3, 9:14 PM".
     static func caption(for message: BlindbanditServerMessage, showRead: Bool, now: Date = Date()) -> String {
         if message.id.hasPrefix("local-") { return "Sending…" }
-        caption(sent: message.created_at, delivered: message.delivered_at, read: message.read_at, showRead: showRead, now: now)
+        return caption(sent: message.created_at, delivered: message.delivered_at, read: message.read_at, showRead: showRead, now: now)
     }
 
     /// "Sent 2:33 PM", "Delivered 2:34 PM" or "Read 5:08 AM", in the device's time zone.

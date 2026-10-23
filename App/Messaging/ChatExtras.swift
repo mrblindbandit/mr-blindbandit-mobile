@@ -349,7 +349,7 @@ enum HistoryBackup {
         do {
             _ = try await SecurityAPI.gated(.historyBackup) {
                 try await BlindbanditAPI.request("v1/backups/history", method: "PUT",
-                    body: ["v": 1, "blob": sealed.base64EncodedString(), "updated_at": Int(Date().timeIntervalSince1970 * 1000)])
+                    body: ["v": 1, "blob": sealed.base64EncodedString(), "ciphertext": sealed.base64EncodedString(), "metadata": ["v": 1], "updated_at": Int(Date().timeIntervalSince1970 * 1000)])
             }
             UserDefaults.standard.set(Date(), forKey: "history.lastBackup")
             return "Backed up \(LocalMessageStore.shared.snapshot.payloads.count) messages."
@@ -365,7 +365,8 @@ enum HistoryBackup {
     static func restore() async -> String {
         guard let data = try? await SecurityAPI.gated(.historyBackup, { try await BlindbanditAPI.request("v1/backups/history") }),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let b64 = (obj["blob"] as? String) ?? ((obj["data"] as? [String: Any])?["blob"] as? String),
+              let inner = (obj["data"] as? [String: Any]) ?? obj,
+              let b64 = (inner["blob"] as? String) ?? (inner["ciphertext"] as? String),
               let blob = Data(base64Encoded: b64), let box = try? AES.GCM.SealedBox(combined: blob),
               let plain = try? AES.GCM.open(box, using: key),
               let snap = try? JSONDecoder().decode(LocalMessageStore.Snapshot.self, from: plain) else { return "No history backup found yet." }

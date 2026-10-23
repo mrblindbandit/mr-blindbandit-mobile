@@ -187,6 +187,7 @@ struct BlindbanditApp: App {
             .environmentObject(router)
             .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
             .tint(highContrast ? Color.primary : Brand.gold)
+            .task { await SharePlayCalls.listen(communications) }
             .task {
                 auth.configure()
                 UIApplication.shared.isIdleTimerDisabled = keepScreenAwake

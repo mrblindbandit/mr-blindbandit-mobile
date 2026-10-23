@@ -30,12 +30,14 @@ final class IdentityStore {
 
     func handleKey(_ handle: String) -> String { handle.lowercased() }
 
-    func identity(handle: String) -> E2EELocalIdentity? {
+    func identity(handle: String, createIfMissing: Bool = true) -> E2EELocalIdentity? {
         lock.lock(); defer { lock.unlock() }
         let synced: SyncedIdentity
         if let existing = Keychain.getCodable(SyncedIdentity.self, identityAccount) {
             synced = existing
             if Keychain.get(deviceAccount) == nil { restoredFromICloud = true }
+        } else if !createIfMissing {
+            return nil
         } else {
             synced = SyncedIdentity(sign: E2EECrypto.b64u(P256.Signing.PrivateKey().rawRepresentation),
                                     dh: E2EECrypto.b64u(P256.KeyAgreement.PrivateKey().rawRepresentation),
@@ -44,6 +46,7 @@ final class IdentityStore {
         }
         let deviceID: String
         if let d = Keychain.get(deviceAccount), let s = String(data: d, encoding: .utf8) { deviceID = s } else {
+            guard createIfMissing else { return nil }
             deviceID = "d_ios_" + E2EECrypto.b64u(E2EECrypto.random(12))
             Keychain.set(Data(deviceID.utf8), account: deviceAccount)
         }
@@ -141,5 +144,18 @@ final class KeychainSessionStorage: E2EESessionStorage {
         guard var s = IdentityStore.shared.prekeys(createIfMissing: false) else { return }
         s.opks[id] = nil
         IdentityStore.shared.savePrekeys(s)
+    }
+}
+
+
+/// One-time copy of E2EE keys into the shared keychain group so the Notification Service Extension can read them.
+enum SharedKeychainMigration {
+    static func run() {
+        guard Keychain.sharedGroup != nil, !UserDefaults.standard.bool(forKey: "keychain.sharedMigrated.v1") else { return }
+        for (account, synced) in [("identity.v1", true), ("device.v1", false), ("prekeys.v1", false), ("sessions.v1", false)] {
+            if let d = Keychain.get(account) { Keychain.set(d, account: account, synced: synced) }
+        }
+        KeychainSessionStorage.shared.reload()
+        UserDefaults.standard.set(true, forKey: "keychain.sharedMigrated.v1")
     }
 }

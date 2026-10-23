@@ -32,6 +32,8 @@ final class E2EEService: ObservableObject {
 
     func bootstrap(handle: String) async {
         myHandle = handle.lowercased()
+        SharedKeychainMigration.run()
+        UserDefaults(suiteName: "group.net.mrblindbandit.app")?.set(myHandle, forKey: "myHandle")
         guard let id = IdentityStore.shared.identity(handle: handle) else { return }
         identity = id
         guard ServerFeatures.shared.isAvailable(.keys) else { return }

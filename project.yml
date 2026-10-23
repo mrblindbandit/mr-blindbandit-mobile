@@ -37,7 +37,10 @@ targets:
             CFBundleURLSchemes: [mrblindbandit]
         # CallKit: incoming calls arrive as PushKit VoIP pushes; Recents/Siri redial via INStartCallIntent.
         UIBackgroundModes: [audio, remote-notification, voip]
-        NSUserActivityTypes: [INStartCallIntent]
+        NSUserActivityTypes: [INStartCallIntent, INSendMessageIntent]
+        BBKeychainGroup: $(AppIdentifierPrefix)net.mrblindbandit.shared
+        RTCAppGroupIdentifier: group.net.mrblindbandit.app
+        RTCScreenSharingExtension: net.mrblindbandit.app.ScreenShare
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.mrblindbandit.app
@@ -70,6 +73,64 @@ targets:
         product: LiveKit
       - package: Clerk
         product: ClerkKit
+      - target: ScreenShare
+        embed: true
+      - target: NotificationService
+        embed: true
+  ScreenShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ScreenShare
+        excludes: [Info.plist]
+    info:
+      path: ScreenShare/Info.plist
+      properties:
+        CFBundleDisplayName: Mr. BlindBandit
+        RTCAppGroupIdentifier: group.net.mrblindbandit.app
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.broadcast-services-upload
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SampleHandler
+          RPBroadcastProcessMode: RPBroadcastProcessModeSampleBuffer
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.mrblindbandit.app.ScreenShare
+        CODE_SIGN_ENTITLEMENTS: ScreenShare/ScreenShare.entitlements
+        MARKETING_VERSION: '2.0.2'
+        CURRENT_PROJECT_VERSION: '17'
+        TARGETED_DEVICE_FAMILY: '1'
+        APPLICATION_EXTENSION_API_ONLY: YES
+    dependencies:
+      - package: LiveKitClient
+        product: LiveKit
+  NotificationService:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: NotificationService
+        excludes: [Info.plist]
+      - App/Security/E2EECrypto.swift
+      - App/Security/E2EEEnvelope.swift
+      - App/Security/MessageCrypto.swift
+      - App/Security/IdentityStore.swift
+      - App/Security/Keychain.swift
+    info:
+      path: NotificationService/Info.plist
+      properties:
+        CFBundleDisplayName: Mr. BlindBandit Notifications
+        BBKeychainGroup: $(AppIdentifierPrefix)net.mrblindbandit.shared
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.usernotifications.service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
+          NSExtensionAttributes:
+            IntentsSupported: [INSendMessageIntent]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.mrblindbandit.app.NotificationService
+        CODE_SIGN_ENTITLEMENTS: NotificationService/NotificationService.entitlements
+        MARKETING_VERSION: '2.0.2'
+        CURRENT_PROJECT_VERSION: '17'
+        TARGETED_DEVICE_FAMILY: '1'
   BlindbanditTests:
     type: bundle.unit-test
     platform: iOS

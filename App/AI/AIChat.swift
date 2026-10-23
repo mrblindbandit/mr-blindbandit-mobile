@@ -406,7 +406,7 @@ enum AIMemoryDigest {
 extension AIToolbox {
     static func all() -> [any Tool] {
         [SearchMyChatsTool(), ReadChatTool(), DraftMessageTool(), ReminderTool(), CalendarTool(), ContactsTool(), PlacesTool(),
-         TranslateTool(), DescribePhotoTool(), DateMathTool(), UnitConvertTool(), RememberTool(), NoteToSelfTool()]
+         TranslateTool(), DescribePhotoTool(), DateMathTool(), UnitConvertTool(), RememberTool(), NoteToSelfTool(), WeatherTool()]
     }
 }
 

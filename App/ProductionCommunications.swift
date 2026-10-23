@@ -1210,9 +1210,15 @@ final class ProductionCommunicationsService: ObservableObject {
         let enable = !screenSharing
         Task {
             do {
-                _ = try await room.localParticipant.setScreenShare(enabled: enable)
+                // Whole-iPhone sharing through the Broadcast Upload extension (iOS asks you to Start Broadcast);
+                // turn off "Share whole screen" in Settings to share just this app.
+                let whole = UserDefaults.standard.object(forKey: "screenShare.wholeScreen") as? Bool ?? true
+                _ = try await room.localParticipant.setScreenShare(enabled: enable,
+                    captureOptions: ScreenShareCaptureOptions(useBroadcastExtension: whole))
                 screenSharing = enable
-                statusMessage = enable ? "Sharing your screen. Everyone in the call sees this app." : "Stopped sharing your screen."
+                statusMessage = enable
+                    ? (whole ? "Choose Mr. BlindBandit, then Start Broadcast. Everyone in the call will see your whole screen." : "Sharing your screen. Everyone in the call sees this app.")
+                    : "Stopped sharing your screen."
             } catch {
                 statusMessage = "Screen sharing failed: \(error.localizedDescription)"
             }

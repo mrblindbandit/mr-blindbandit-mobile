@@ -15,13 +15,22 @@ platform :ios do
     import_certificate(certificate_path: p12, certificate_password: ENV.fetch("IOS_DIST_P12_PASSWORD"),
       keychain_path: keychain_path, keychain_password: "ci_signing")
     File.delete(p12)
-    sigh(api_key: api_key, force: true, app_identifier: "net.mrblindbandit.app", team_id: ENV.fetch("APPLE_TEAM_ID"))
-    update_code_signing_settings(path: "Blindbandit.xcodeproj", use_automatic_signing: false,
-      team_id: ENV.fetch("APPLE_TEAM_ID"), code_sign_identity: "Apple Distribution",
-      profile_name: lane_context[SharedValues::SIGH_NAME], targets: ["Blindbandit"])
+    # One App Store profile per signed target, force-regenerated so new capabilities (App Group, WeatherKit, SCA,
+    # communication / time-sensitive notifications, SharePlay) are included.
+    targets = { "Blindbandit" => "net.mrblindbandit.app",
+                "ScreenShare" => "net.mrblindbandit.app.ScreenShare",
+                "NotificationService" => "net.mrblindbandit.app.NotificationService" }
+    profiles = {}
+    targets.each do |target, ident|
+      sigh(api_key: api_key, force: true, app_identifier: ident, team_id: ENV.fetch("APPLE_TEAM_ID"))
+      profiles[ident] = lane_context[SharedValues::SIGH_NAME]
+      update_code_signing_settings(path: "Blindbandit.xcodeproj", use_automatic_signing: false,
+        team_id: ENV.fetch("APPLE_TEAM_ID"), code_sign_identity: "Apple Distribution",
+        profile_name: profiles[ident], targets: [target])
+    end
     build_app(project: "Blindbandit.xcodeproj", scheme: "Blindbandit", configuration: "Release",
       export_method: "app-store", xcargs: "CODE_SIGNING_ALLOWED=YES",
-      export_options: { provisioningProfiles: { "net.mrblindbandit.app" => lane_context[SharedValues::SIGH_NAME] } })
+      export_options: { provisioningProfiles: profiles })
     # Waits for App Store Connect processing so the What to Test notes are attached to this build.
     notes_path = File.expand_path("WhatToTest.txt", __dir__)
     upload_to_testflight(api_key: api_key, skip_waiting_for_build_processing: false,

@@ -147,6 +147,9 @@ struct Settings: View {
             }
             Toggle("New messages", isOn: $notifyMessages)
             Toggle("Incoming calls", isOn: $notifyCalls)
+            Toggle("Share whole screen in calls", isOn: Binding(get: { UserDefaults.standard.object(forKey: "screenShare.wholeScreen") as? Bool ?? true },
+                                                                set: { UserDefaults.standard.set($0, forKey: "screenShare.wholeScreen") }))
+                .accessibilityHint("On shares everything on your iPhone using Start Broadcast. Off shares only this app.")
         } header: {
             Text("Notifications")
         } footer: {

@@ -4,6 +4,7 @@ import SwiftUI
 /// Opt-in "Cloud AI (uses server)": Cloudflare Workers AI behind mrblindbandit.net.
 /// Nothing is sent unless Cloud AI and that feature are on, and E2EE chat content only when the user invokes a cloud feature on it.
 /// Every call falls back to on-device when the server is out of daily quota (429) or not updated yet (404).
+@MainActor
 enum CloudAI {
     enum Feature: String, CaseIterable, Identifiable {
         case chat, image, transcribe, translate, summaries, linkCheck

@@ -6,6 +6,23 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 
 ---
 
+## [1.9.0 iOS (13)] — 2026-10-23
+
+### Added
+- CallKit calling: native incoming call screen (also on the lock screen), Recents with real names (never IDs), answer, decline, hold, mute and video from the system UI, Blind Bandit ringtone, PushKit VoIP pushes, and call back from Recents and Siri.
+- Voice and Video buttons in each conversation's top bar.
+- Video calls with your own and the other person's video, flip camera, in-app screen share, and switching between voice and video mid-call.
+- Group calls with a grid, active speaker highlight, joined/left announcements, add people mid-call, raise hand, in-call chat, mute and quality indicators, an audio output picker, pin video, mute someone just for you, and admin remove.
+- Groups tab (replaces Chronicle, which moved to More > Read and listen): create and name a group, group chat with typing, members, admins, rename, add or remove members, leave, delete, group voice and video calls, missed group calls.
+- People directory with Message, Call and Video.
+- Full-screen incoming call screen. Magic Tap answers or ends the call (setting), and mute is in Actions.
+- Status under your messages ("Sent", "Delivered", "Read 5:08 AM", "Read Yesterday 9:14 PM"), included in VoiceOver labels and announced when it changes. Typing bubble, which respects Reduce Motion.
+- Tapping a notification opens the right conversation, group or call from a cold start, the background or the foreground, waiting for Face ID first.
+- VoiceOver Actions and long-press menus on conversations (timed mute, pin, read/unread, call, video, archive, delete, block, report), on messages (reply, copy, react, read aloud, forward, delete for me, report, show time sent and read), on call participants and on calls. Rotors for unread messages, their messages and my messages.
+
+### Changed
+- Version 1.9.0, build 13. Android paused for this release.
+
 ## [1.8.0 Android] — 2026-10-23
 
 ### Added

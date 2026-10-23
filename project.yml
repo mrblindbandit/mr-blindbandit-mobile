@@ -35,6 +35,9 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: net.mrblindbandit.app
             CFBundleURLSchemes: [mrblindbandit]
+        # CallKit: incoming calls arrive as PushKit VoIP pushes; Recents/Siri redial via INStartCallIntent.
+        UIBackgroundModes: [audio, remote-notification, voip]
+        NSUserActivityTypes: [INStartCallIntent]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.mrblindbandit.app
@@ -54,10 +57,10 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_UIRequiresFullScreen: YES
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
-        INFOPLIST_KEY_UIBackgroundModes: [audio, remote-notification]
+        INFOPLIST_KEY_UIBackgroundModes: [audio, remote-notification, voip]
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        MARKETING_VERSION: '1.8.0'
-        CURRENT_PROJECT_VERSION: '12'
+        MARKETING_VERSION: '1.9.0'
+        CURRENT_PROJECT_VERSION: '13'
     dependencies:
       - package: LiveKitClient
         product: LiveKit

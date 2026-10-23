@@ -27,7 +27,8 @@ struct MoreHubView: View {
                 NavigationLink { CreatorHubView() } label: { Label("Creator tools", systemImage: "wand.and.stars") }
             }
 
-            Section("Listen") {
+            Section("Read and listen") {
+                NavigationLink { ChronicleView() } label: { Label("The Blindbandit Chronicle", systemImage: "newspaper") }
                 NavigationLink { ListenHubView() } label: { Label("Listen to Blindbandit Records", systemImage: "headphones") }
             }
 

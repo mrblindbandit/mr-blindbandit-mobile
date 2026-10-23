@@ -83,8 +83,14 @@ final class AppPreferences: ObservableObject {
 
 @MainActor
 final class TabRouter: ObservableObject {
-    enum Tab: Hashable { case home, messages, calls, chronicle, more }
+    enum Tab: Hashable { case home, messages, groups, calls, more }
     @Published var selection: Tab = TabRouter.initialTab
+    /// Set when a notification asks for a DM thread; MessagesTabView opens it and clears it.
+    @Published var pendingThread: ThreadTarget?
+    /// Set when a notification asks for a group chat; GroupsTabView opens it and clears it.
+    @Published var pendingGroupID: String?
+
+    struct ThreadTarget: Equatable { let id: String?; let handle: String? }
 
     private static var initialTab: Tab {
         guard StoreScreenshotMode.isActive else { return .home }
@@ -93,7 +99,8 @@ final class TabRouter: ObservableObject {
         case "connect", "messages": return .messages
         case "calls": return .calls
         case "listen": return .more
-        case "chronicle": return .chronicle
+        case "chronicle": return .more
+        case "groups": return .groups
         case "more", "settings", "accessibility": return .more
         default: return .home
         }
@@ -288,9 +295,9 @@ struct MainTabs: View {
                 .tabItem { Label("Calls", systemImage: "phone.fill") }
                 .tag(TabRouter.Tab.calls)
 
-            NavigationStack { ChronicleView() }
-                .tabItem { Label("Chronicle", systemImage: "newspaper.fill") }
-                .tag(TabRouter.Tab.chronicle)
+            GroupsTabView()
+                .tabItem { Label("Groups", systemImage: "person.3.fill") }
+                .tag(TabRouter.Tab.groups)
 
             NavigationStack {
                 if StoreScreenshotMode.isActive && ["settings", "accessibility"].contains(StoreScreenshotMode.screen) {
@@ -312,16 +319,18 @@ struct MainTabs: View {
             guard let token = note.object as? String else { return }
             Task { await registerPushTokenIfPossible(token) }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .blindbanditCallDeepLinkReceived)) { _ in
-            AppHaptics.doublePulse()
-            router.selection = .calls
+        // Tapped notifications. PendingRouter keeps the route through cold launch, sign-in and
+        // Face ID; this view only exists once the app is unlocked, so the thread opens right after.
+        .onReceive(PendingRouter.shared.$pending.compactMap { $0 }) { _ in
+            guard let route = PendingRouter.shared.consume() else { return }
+            open(route)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .blindbanditMessageDeepLinkReceived)) { _ in
-            AppHaptics.doublePulse()
-            router.selection = .messages
+        .onAppear { CallKitManager.shared.attach(communications) }
+        .onContinueUserActivity("INStartCallIntent") { activity in
+            CallKitManager.shared.handle(userActivity: activity)
         }
-        .fullScreenCover(isPresented: Binding(get: { communications.isInCall }, set: { _ in })) {
-            ActiveCallScreen()
+        .fullScreenCover(isPresented: Binding(get: { communications.isInCall || communications.incomingCall != nil }, set: { _ in })) {
+            CallContainerScreen()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
             guard !StoreScreenshotMode.isActive else { return }
@@ -332,13 +341,11 @@ struct MainTabs: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .chronicleArticleDeepLink)) { note in
             guard let url = note.object as? URL else { return }
-            router.selection = .chronicle
             deepLinkedArticle = DeepLinkedArticle(url: url)
         }
         .onOpenURL { url in
-            if let article = ChronicleDeepLink.articleURL(from: url) {
-                router.selection = .chronicle
-                deepLinkedArticle = DeepLinkedArticle(url: article)
+            if let route = PushRoute.parse(url: url), url.scheme == "mrblindbandit" || url.path.hasPrefix("/mobile/") || route.isArticle {
+                open(route)
             }
         }
         .sheet(item: $deepLinkedArticle) { item in
@@ -368,14 +375,35 @@ struct MainTabs: View {
         }
     }
 
+    private func open(_ route: PushRoute) {
+        AppHaptics.doublePulse()
+        switch route {
+        case .conversation(let id, let handle):
+            router.selection = .messages
+            router.pendingThread = TabRouter.ThreadTarget(id: id, handle: handle)
+        case .group(let id):
+            router.selection = .groups
+            router.pendingGroupID = id
+        case .call(let id):
+            router.selection = .calls
+            Task { await communications.presentIncomingCall(id: id) }
+        case .article(let url):
+            deepLinkedArticle = DeepLinkedArticle(url: url)
+        case .web(let url):
+            if Browser.isFirstPartyURL(url) { routedURL = RoutedURL(url: url) } else { UIApplication.shared.open(url) }
+        }
+    }
+
     /// Sends the APNs token to the Blindbandit API so calls and messages can reach this iPhone.
     private func registerPushTokenIfPossible(_ token: String) async {
-        guard !token.isEmpty else { return }
+        let voip = UserDefaults.standard.string(forKey: CallKitManager.voipTokenKey) ?? ""
+        guard !token.isEmpty || !voip.isEmpty else { return }
         let key = "registeredPushToken"
-        guard UserDefaults.standard.string(forKey: key) != token else { return }
+        let fingerprint = token + "|" + voip
+        guard UserDefaults.standard.string(forKey: key) != fingerprint else { return }
         do {
             try await BlindbanditAPI.registerPushToken(token)
-            UserDefaults.standard.set(token, forKey: key)
+            UserDefaults.standard.set(fingerprint, forKey: key)
         } catch {
             // Registration is retried on the next launch or token change.
         }

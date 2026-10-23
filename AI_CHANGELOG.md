@@ -10,6 +10,14 @@ Cross-links:
 
 ---
 
+## 2026-10-23 — iOS 1.9.0 (13), PR #47
+- New files: CallKitManager.swift (CallKit/PushKit/INStartCallIntent, caller identity), CallScreens.swift (incoming + active grid call UI), CallEngineTypes.swift, CallsGroupsAPI.swift, GroupsAndPeople.swift, PushRoute.swift (pure push parser plus PendingRouter queue), AppTests/Release190Tests.swift.
+- The LiveKit audio session is handed to CallKit (auto-config off; engine availability switches in didActivate/didDeactivate).
+- Mute timers, archive, delete-for-me and reactions are device-local (LocalComms) until the server routes in /workspace/site-ai-prompt-190-addendum.md exist.
+- The app-switcher name scrambling was requested and then cancelled. It was not shipped, and the "Content hidden" behaviour is unchanged.
+- Android was not touched (paused). See the PR description for the Android TODO list.
+
+
 ## 2026-10-23 — Android 1.8.0 (12) Messages and Calls tabs (Grok Bot, branch `feat/android-calls-messages`)
 
 - Port of iOS 1.8.0. New connect/: Lenient.kt, CommsModels.kt, LocalComms.kt, Announcer.kt, MessagesScreen.kt, CallsScreen.kt, CommsUi.kt, CommsSettings.kt; ConnectScreens/ConnectCompatibility removed.

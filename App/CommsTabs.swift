@@ -86,16 +86,28 @@ struct CommsErrorView: View {
 
 struct MessagesTabView: View {
     @EnvironmentObject private var communications: ProductionCommunicationsService
+    @EnvironmentObject private var router: TabRouter
+    @EnvironmentObject private var privacy: PrivacyPermissions
     @AppStorage(ContentFilter.settingKey) private var filterOffensiveLanguage = true
     @State private var path: [String] = []
     @State private var search = ""
     @State private var composing = false
     @State private var pinned = LocalComms.pinned
     @State private var muted = LocalComms.muted
+    @State private var muteUntil = LocalComms.muteUntil
+    @State private var archivedAt = LocalComms.archivedAt
+    @State private var deletedAt = LocalComms.deletedAt
+    @State private var showArchived = false
+    @State private var reporting: BlindbanditConversation?
+    @State private var confirmDelete: BlindbanditConversation?
+    @State private var confirmBlock: BlindbanditConversation?
 
     private var visibleConversations: [BlindbanditConversation] {
         let q = search.trimmingCharacters(in: .whitespaces).lowercased()
         let filtered = communications.conversations.filter { c in
+            if let at = deletedAt[c.id], c.updated_at <= at { return false }
+            if let at = archivedAt[c.id], c.updated_at <= at { return showArchived }
+            if showArchived { return false }
             guard !q.isEmpty else { return true }
             return (c.other?.handle.lowercased().contains(q) ?? false)
                 || (c.other?.display_name.lowercased().contains(q) ?? false)
@@ -156,7 +168,9 @@ struct MessagesTabView: View {
                                     Button(pinned.contains(conversation.id) ? "Unpin" : "Pin") { togglePin(conversation) }.tint(Brand.goldDeep)
                                 }
                                 .swipeActions(edge: .trailing) {
-                                    Button(muted.contains(conversation.id) ? "Unmute" : "Mute") { toggleMute(conversation) }
+                                    Button(muted.contains(conversation.id) ? "Unmute" : "Mute") {
+                                        setMute(conversation, nil, unmute: muted.contains(conversation.id))
+                                    }
                                     Button("Unread") { communications.markUnread(conversation) }.tint(.blue)
                                 }
                                 .contextMenu { rowMenu(conversation) }
@@ -165,6 +179,40 @@ struct MessagesTabView: View {
                     }
                 } header: {
                     Text("Conversations").accessibilityAddTraits(.isHeader)
+                }
+            }
+            .safeAreaInset(edge: .top) {
+                if !archivedAt.isEmpty {
+                    Toggle("Show archived", isOn: $showArchived).padding(.horizontal).font(.subheadline)
+                }
+            }
+            .confirmationDialog("Delete this conversation from this phone?", isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }), titleVisibility: .visible, presenting: confirmDelete) { c in
+                Button("Delete", role: .destructive) {
+                    deletedAt[c.id] = c.updated_at
+                    LocalComms.deletedAt = deletedAt
+                    announce("Conversation deleted")
+                }
+            } message: { _ in Text("It comes back if they message you again.") }
+            .confirmationDialog("Block this person?", isPresented: Binding(get: { confirmBlock != nil }, set: { if !$0 { confirmBlock = nil } }), titleVisibility: .visible, presenting: confirmBlock) { c in
+                Button("Block", role: .destructive) {
+                    Task { if await communications.block(handle: c.other?.handle ?? "") { announce("Blocked") } }
+                }
+            }
+            .confirmationDialog("Why are you reporting this?", isPresented: Binding(get: { reporting != nil }, set: { if !$0 { reporting = nil } }), titleVisibility: .visible, presenting: reporting) { c in
+                ForEach(ReportReason.allCases) { reason in
+                    Button(reason.rawValue) {
+                        Task {
+                            if await communications.report(targetType: "conversation", targetID: c.id, reason: reason, details: "") {
+                                announce("Reported. Thank you.")
+                            }
+                        }
+                    }
+                }
+            }
+            .task {
+                while !Task.isCancelled {
+                    expireMutes()
+                    try? await Task.sleep(nanoseconds: 20_000_000_000)
                 }
             }
             .searchable(text: $search, prompt: "Search conversations")
@@ -195,20 +243,112 @@ struct MessagesTabView: View {
             guard !StoreScreenshotMode.isActive else { return }
             await communications.bootstrap()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .blindbanditMessageDeepLinkReceived)) { note in
-            let id = note.object as? String ?? ""
-            Task {
-                await communications.refreshConversations()
-                if communications.conversation(id: id) != nil { path = [id] }
+        .onAppear { openPendingThread() }
+        .onChange(of: router.pendingThread) { _, _ in openPendingThread() }
+    }
+
+    /// Opens the thread a tapped notification asked for. Tries the conversation id first, then the
+    /// sender's handle (older pushes only carry a deep link or from_handle).
+    private func openPendingThread() {
+        guard let target = router.pendingThread else { return }
+        router.pendingThread = nil
+        Task {
+            await communications.bootstrap()
+            if communications.conversation(id: target.id ?? "") == nil { await communications.refreshConversations() }
+            if let id = target.id, communications.conversation(id: id) != nil {
+                path = [id]
+            } else if let handle = target.handle, let match = communications.conversations.first(where: { $0.other?.handle.lowercased() == handle.lowercased() }) {
+                path = [match.id]
+            } else if let id = target.id, !id.isEmpty {
+                // The inbox list may lag behind the push; the thread view loads by id directly.
+                path = [id]
+            } else if let handle = target.handle, !handle.isEmpty {
+                path = ["new:\(handle)"]
+            } else {
+                communications.statusMessage = "That conversation isn't available any more."
+                UIAccessibility.post(notification: .announcement, argument: communications.statusMessage)
             }
         }
     }
 
     @ViewBuilder
     private func rowMenu(_ conversation: BlindbanditConversation) -> some View {
-        Button(pinned.contains(conversation.id) ? "Unpin" : "Pin") { togglePin(conversation) }
-        Button(muted.contains(conversation.id) ? "Unmute" : "Mute") { toggleMute(conversation) }
-        Button("Mark as unread") { communications.markUnread(conversation) }
+        let handle = conversation.other?.handle ?? ""
+        if muted.contains(conversation.id) {
+            Button { setMute(conversation, nil, unmute: true) } label: { Label("Unmute", systemImage: "bell") }
+        } else {
+            Button("Mute for 15 minutes") { setMute(conversation, 15 * 60) }
+            Button("Mute for 1 hour") { setMute(conversation, 3600) }
+            Button("Mute for 8 hours") { setMute(conversation, 8 * 3600) }
+            Button("Mute for 24 hours") { setMute(conversation, 24 * 3600) }
+            Button("Mute until I turn it back on") { setMute(conversation, nil) }
+        }
+        Button { togglePin(conversation) } label: { Label(pinned.contains(conversation.id) ? "Unpin" : "Pin", systemImage: "pin") }
+        if communications.isUnread(conversation) {
+            Button { Task { await communications.openConversation(id: conversation.id) }; announce("Marked as read") } label: { Label("Mark as read", systemImage: "envelope.open") }
+        } else {
+            Button { communications.markUnread(conversation); announce("Marked as unread") } label: { Label("Mark as unread", systemImage: "envelope.badge") }
+        }
+        if !handle.isEmpty {
+            Button { callFromRow(handle, video: false) } label: { Label("Call", systemImage: "phone") }
+            Button { callFromRow(handle, video: true) } label: { Label("Video call", systemImage: "video") }
+        }
+        Button { toggleArchive(conversation) } label: {
+            Label(archivedAt[conversation.id] != nil ? "Unarchive" : "Archive", systemImage: "archivebox")
+        }
+        Button(role: .destructive) { confirmDelete = conversation } label: { Label("Delete", systemImage: "trash") }
+        if !handle.isEmpty {
+            Button(role: .destructive) { confirmBlock = conversation } label: { Label("Block @\(handle)", systemImage: "hand.raised") }
+        }
+        Button(role: .destructive) { reporting = conversation } label: { Label("Report", systemImage: "exclamationmark.bubble") }
+    }
+
+    private func announce(_ text: String) {
+        UIAccessibility.post(notification: .announcement, argument: text)
+    }
+
+    private func name(_ c: BlindbanditConversation) -> String {
+        c.other?.display_name ?? c.other.map { "@\($0.handle)" } ?? "this conversation"
+    }
+
+    private func setMute(_ c: BlindbanditConversation, _ duration: TimeInterval?, unmute: Bool = false) {
+        if unmute { LocalComms.unmute(c.id) } else { LocalComms.mute(c.id, for: duration) }
+        muteUntil = LocalComms.muteUntil
+        muted = LocalComms.muted
+        AppHaptics.selection()
+        communications.objectWillChange.send()
+        if unmute { announce("\(name(c)) unmuted") }
+        else if let duration {
+            let until = Date().addingTimeInterval(duration).formatted(date: duration >= 12 * 3600 ? .abbreviated : .omitted, time: .shortened)
+            announce("\(name(c)) muted until \(until)")
+        } else { announce("\(name(c)) muted until you turn it back on") }
+    }
+
+    /// Ends expired mute timers and says so.
+    private func expireMutes() {
+        let expired = LocalComms.expireMutes()
+        guard !expired.isEmpty else { return }
+        muteUntil = LocalComms.muteUntil
+        muted = LocalComms.muted
+        communications.objectWillChange.send()
+        for id in expired {
+            let label = communications.conversation(id: id).map(name) ?? "A conversation"
+            announce("\(label) is no longer muted")
+        }
+    }
+
+    private func toggleArchive(_ c: BlindbanditConversation) {
+        if archivedAt[c.id] != nil { archivedAt[c.id] = nil; announce("Unarchived") }
+        else { archivedAt[c.id] = c.updated_at; announce("Archived. It comes back when there's a new message.") }
+        LocalComms.archivedAt = archivedAt
+    }
+
+    private func callFromRow(_ handle: String, video: Bool) {
+        Task {
+            guard await CommsPermissions.microphone(privacy, communications) else { return }
+            if video { _ = await CommsPermissions.camera(privacy, communications) }
+            await communications.startCall(recipient: handle, video: video)
+        }
     }
 
     private func togglePin(_ c: BlindbanditConversation) {
@@ -222,6 +362,12 @@ struct MessagesTabView: View {
         LocalComms.muted = muted
         AppHaptics.selection()
         communications.objectWillChange.send()
+    }
+
+    private func muteLabel(_ id: String) -> String? {
+        guard muted.contains(id) else { return nil }
+        guard let until = muteUntil[id], until > 0 else { return "Muted" }
+        return "Muted until \(Date(timeIntervalSince1970: until).formatted(date: .omitted, time: .shortened))"
     }
 
     private func row(_ conversation: BlindbanditConversation) -> some View {
@@ -255,7 +401,7 @@ struct MessagesTabView: View {
             pinned.contains(conversation.id) ? "Pinned" : nil,
             name,
             conversation.other?.verified == true ? "Verified" : nil,
-            muted.contains(conversation.id) ? "Muted" : nil,
+            muteLabel(conversation.id),
             preview
         ].compactMap { $0 }.joined(separator: ", "))
         .accessibilityValue(Text(Date(timeIntervalSince1970: conversation.updated_at / 1000), style: .relative))
@@ -326,16 +472,27 @@ struct ConversationThreadView: View {
     @State private var search = ""
     @State private var reportTarget: ReportTarget?
     @State private var confirmBlock = false
+    @State private var unreadSince: Double?
+    @State private var hidden = LocalComms.hiddenMessages
+    @State private var reactions = LocalComms.reactions
+    @State private var forwarding: String?
+    @Namespace private var rotorSpace
     @Environment(\.dismiss) private var dismiss
     @FocusState private var composerFocused: Bool
 
-    private var conversation: BlindbanditConversation? { communications.conversation(id: conversationID) }
-    private var handle: String { conversation?.other?.handle ?? "" }
+    /// "new:<handle>" opens a fresh thread with someone you haven't messaged yet (from People or a call).
+    private var newHandle: String? { conversationID.hasPrefix("new:") ? String(conversationID.dropFirst(4)) : nil }
+    private var conversation: BlindbanditConversation? {
+        if let newHandle { return communications.conversations.first { $0.other?.handle.lowercased() == newHandle.lowercased() } }
+        return communications.conversation(id: conversationID)
+    }
+    private var handle: String { conversation?.other?.handle ?? newHandle ?? "" }
 
     private var shownMessages: [BlindbanditServerMessage] {
         let q = search.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !q.isEmpty else { return communications.messages }
-        return communications.messages.filter { $0.body.lowercased().contains(q) }
+        let visible = communications.messages.filter { !hidden.contains($0.id) }
+        guard !q.isEmpty else { return visible }
+        return visible.filter { $0.body.lowercased().contains(q) }
     }
 
     var body: some View {
@@ -350,23 +507,49 @@ struct ConversationThreadView: View {
                         }
                         ForEach(shownMessages) { message in
                             bubble(message).id(message.id)
+                                .accessibilityRotorEntry(id: message.id, in: rotorSpace)
+                        }
+                        if communications.otherTyping && search.isEmpty {
+                            TypingIndicatorBubble(name: handle.isEmpty ? "Someone" : "@\(handle)")
+                                .id("typing-indicator")
+                                .transition(.opacity)
                         }
                     }
                     .padding()
                 }
+                .onChange(of: communications.otherTyping) { _, typing in
+                    if typing, search.isEmpty { withAnimation { proxy.scrollTo("typing-indicator", anchor: .bottom) } }
+                }
                 .onChange(of: communications.messages) { old, list in
                     if let last = list.last, search.isEmpty { proxy.scrollTo(last.id, anchor: .bottom) }
                     let me = communications.myProfileID
-                    if let mineNow = list.last(where: { $0.sender_id == me }),
-                       let mineBefore = old.first(where: { $0.id == mineNow.id }),
-                       receipt(for: mineBefore) != receipt(for: mineNow) {
-                        let label = receipt(for: mineNow)
-                        UIAccessibility.post(notification: .announcement, argument: "Your last message: \(label)")
-                        if label == "Read" { AppHaptics.soft() }
+                    for mineNow in list where mineNow.sender_id == me {
+                        guard let mineBefore = old.first(where: { $0.id == mineNow.id }),
+                              MessageStatus.caption(for: mineBefore, showRead: showReadReceipts) != MessageStatus.caption(for: mineNow, showRead: showReadReceipts)
+                        else { continue }
+                        let label = MessageStatus.caption(for: mineNow, showRead: showReadReceipts)
+                        let isLatest = mineNow.id == list.last(where: { $0.sender_id == me })?.id
+                        UIAccessibility.post(notification: .announcement, argument: isLatest ? "Your last message: \(label)" : "Your message \"\(mineNow.body.prefix(40))\": \(label)")
+                        if label.hasPrefix("Read") { AppHaptics.soft() }
                     }
                 }
             }
             .refreshable { if let c = conversation { await communications.openConversation(c) } }
+            .accessibilityRotor("Unread messages") {
+                ForEach(shownMessages.filter { $0.sender_id != communications.myProfileID && $0.created_at > (unreadSince ?? .infinity) }) { m in
+                    AccessibilityRotorEntry(Text(m.body), id: m.id, in: rotorSpace)
+                }
+            }
+            .accessibilityRotor("Messages from @\(handle.isEmpty ? "them" : handle)") {
+                ForEach(shownMessages.filter { $0.sender_id != communications.myProfileID }) { m in
+                    AccessibilityRotorEntry(Text(m.body), id: m.id, in: rotorSpace)
+                }
+            }
+            .accessibilityRotor("My messages") {
+                ForEach(shownMessages.filter { $0.sender_id == communications.myProfileID }) { m in
+                    AccessibilityRotorEntry(Text(m.body), id: m.id, in: rotorSpace)
+                }
+            }
 
             if let q = quoting {
                 HStack {
@@ -383,6 +566,9 @@ struct ConversationThreadView: View {
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(1...5)
                     .focused($composerFocused)
+                    .onChange(of: draft) { _, value in
+                        if !value.isEmpty { communications.userTyped(in: conversationID) }
+                    }
                 Button { send() } label: {
                     Image(systemName: "paperplane.fill").frame(width: Brand.minTouch, height: Brand.minTouch)
                 }
@@ -396,26 +582,30 @@ struct ConversationThreadView: View {
         .navigationTitle(conversation?.other?.display_name ?? "Conversation")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // Video and voice call sit right in the top bar (not in a menu), like Messages and WhatsApp.
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button {
                     Task {
+                        guard await CommsPermissions.microphone(privacy, communications),
+                              await CommsPermissions.camera(privacy, communications) else { return }
+                        await communications.startCall(recipient: handle, video: true)
+                    }
+                } label: { Image(systemName: "video.fill") }
+                .accessibilityLabel("Video call @\(handle)")
+                .accessibilityHint("Starts a video call right away")
+                .disabled(handle.isEmpty || communications.isInCall)
+
+                Button {
+                    Task {
                         guard await CommsPermissions.microphone(privacy, communications) else { return }
-                        router.selection = .calls
                         await communications.startCall(recipient: handle, video: false)
                     }
                 } label: { Image(systemName: "phone.fill") }
                 .accessibilityLabel("Voice call @\(handle)")
+                .accessibilityHint("Starts a voice call right away")
                 .disabled(handle.isEmpty || communications.isInCall)
 
                 Menu {
-                    Button {
-                        Task {
-                            guard await CommsPermissions.microphone(privacy, communications),
-                                  await CommsPermissions.camera(privacy, communications) else { return }
-                            router.selection = .calls
-                            await communications.startCall(recipient: handle, video: true)
-                        }
-                    } label: { Label("Video call", systemImage: "video.fill") }
                     Button { toggleFavorite() } label: {
                         Label(LocalComms.favorites.contains(handle) ? "Remove from favorites" : "Add to favorites", systemImage: "star")
                     }
@@ -428,12 +618,17 @@ struct ConversationThreadView: View {
                 .disabled(handle.isEmpty)
             }
         }
-        .task(id: conversationID) {
+        .task(id: conversation?.id ?? conversationID) {
             draft = LocalComms.draft(for: conversationID)
-            if let c = conversation { await communications.openConversation(c) }
+            if unreadSince == nil, let id = conversation?.id { unreadSince = communications.lastReadStamp[id] ?? 0 }
+            if let id = conversation?.id { await communications.openConversation(id: id) }
+            else if newHandle == nil { await communications.openConversation(id: conversationID) }
         }
         .onChange(of: draft) { _, value in LocalComms.setDraft(value, for: conversationID) }
         .onDisappear { communications.closeConversation() }
+        .sheet(isPresented: Binding(get: { forwarding != nil }, set: { if !$0 { forwarding = nil } })) {
+            ForwardSheet(text: forwarding ?? "")
+        }
         .sheet(item: $reportTarget) { target in
             ReportSheet(target: target) { reason, details in
                 await communications.report(targetType: target.type, targetID: target.id, reason: reason, details: details)
@@ -469,50 +664,73 @@ struct ConversationThreadView: View {
         Task { _ = await communications.sendMessage(recipient: handle, body: body) }
     }
 
-    private func receipt(for message: BlindbanditServerMessage) -> String {
-        if showReadReceipts, message.read_at != nil { return "Read" }
-        if message.delivered_at != nil || message.read_at != nil { return "Delivered" }
-        return "Sent"
-    }
-
-    private func receiptIcon(_ label: String) -> String {
-        switch label {
-        case "Read": return "checkmark.circle.fill"
-        case "Delivered": return "checkmark.circle"
-        default: return "checkmark"
-        }
+    private var latestMineID: String? {
+        communications.messages.last(where: { $0.sender_id == communications.myProfileID })?.id
     }
 
     @ViewBuilder
     private func bubble(_ message: BlindbanditServerMessage) -> some View {
         let mine = message.sender_id == communications.myProfileID
-        let sent = Date(timeIntervalSince1970: message.created_at / 1000)
         let shown = mine ? message.body : ContentFilter.display(message.body, enabled: filterOffensiveLanguage)
-        HStack {
-            if mine { Spacer(minLength: 48) }
-            VStack(alignment: mine ? .trailing : .leading, spacing: 4) {
+        let status = MessageStatus.caption(for: message, showRead: showReadReceipts)
+        let sentLabel = MessageStatus.stamp(message.created_at)
+        VStack(alignment: mine ? .trailing : .leading, spacing: 3) {
+            HStack {
+                if mine { Spacer(minLength: 48) }
                 Text(shown)
                     .padding(12)
                     .background(mine ? Brand.gold.opacity(0.35) : Color.secondary.opacity(0.16), in: RoundedRectangle(cornerRadius: 16))
                     .textSelection(.enabled)
-                HStack(spacing: 4) {
-                    Text(sent, style: .time)
-                    if mine {
-                        Image(systemName: receiptIcon(receipt(for: message)))
-                            .accessibilityHidden(true)
-                        Text(receipt(for: message))
+                    .overlay(alignment: mine ? .bottomLeading : .bottomTrailing) {
+                        if let r = reactions[message.id] {
+                            Text(r).font(.caption).padding(3).background(.regularMaterial, in: Capsule()).offset(y: 10)
+                        }
                     }
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                if !mine { Spacer(minLength: 48) }
             }
-            if !mine { Spacer(minLength: 48) }
+            // Status lives under the bubble, never inside it. Like iMessage it's shown under my latest
+            // message; every message still carries its own status in the VoiceOver label.
+            if mine && message.id == latestMineID {
+                Text(status)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(.trailing, 6)
+            } else if !mine && message.id == communications.messages.last?.id {
+                Text(sentLabel)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 6)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(mine ? "You" : "@\(handle)"): \(shown)")
-        .accessibilityValue(Text(sent, style: .time) + Text(mine ? ", \(receipt(for: message))" : ""))
+        .accessibilityLabel((mine ? "You: \(shown). \(status)" : "@\(handle): \(shown). \(sentLabel)")
+            + (reactions[message.id].map { ". You reacted \(MessageReactions.name($0))" } ?? ""))
+        .accessibilityHint(mine ? "Sent \(sentLabel)" : "")
         .accessibilityActions { messageActions(message, shown: shown, mine: mine) }
         .contextMenu { messageActions(message, shown: shown, mine: mine) }
+    }
+
+    private func react(_ message: BlindbanditServerMessage, _ emoji: String) {
+        let removing = reactions[message.id] == emoji
+        reactions[message.id] = removing ? nil : emoji
+        LocalComms.reactions = reactions
+        AppHaptics.light()
+        UIAccessibility.post(notification: .announcement, argument: removing ? "Reaction removed" : "Reacted \(MessageReactions.name(emoji))")
+        let conv = conversation?.id ?? conversationID
+        Task { await BlindbanditAPI.react(conversationID: conv, messageID: message.id, emoji: removing ? nil : emoji) }
+    }
+
+    private func showTimes(_ message: BlindbanditServerMessage, mine: Bool) {
+        var parts = ["Sent \(MessageStatus.stamp(message.created_at))"]
+        if mine {
+            if let d = message.delivered_at { parts.append("Delivered \(MessageStatus.stamp(d))") }
+            if let r = message.read_at, showReadReceipts { parts.append("Read \(MessageStatus.stamp(r))") }
+            else if message.read_at == nil { parts.append("Not read yet") }
+        }
+        let text = parts.joined(separator: ". ")
+        communications.statusMessage = text
+        UIAccessibility.post(notification: .announcement, argument: text)
     }
 
     @ViewBuilder
@@ -520,7 +738,19 @@ struct ConversationThreadView: View {
         Button { quoting = message; composerFocused = true } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
         Button { UIPasteboard.general.string = shown; AppHaptics.light() } label: { Label("Copy", systemImage: "doc.on.doc") }
         ShareLink(item: shown) { Label("Share", systemImage: "square.and.arrow.up") }
+        ForEach(MessageReactions.all, id: \.emoji) { r in
+            Button { react(message, r.emoji) } label: {
+                Text(reactions[message.id] == r.emoji ? "Remove \(r.name)" : "React \(r.name) \(r.emoji)")
+            }
+        }
         Button { MessageReader.shared.speak(shown) } label: { Label("Read aloud", systemImage: "speaker.wave.2") }
+        Button { forwarding = shown } label: { Label("Forward", systemImage: "arrowshape.turn.up.right") }
+        Button { showTimes(message, mine: mine) } label: { Label("Show time sent and read", systemImage: "clock") }
+        Button(role: .destructive) {
+            hidden.insert(message.id)
+            LocalComms.hiddenMessages = hidden
+            UIAccessibility.post(notification: .announcement, argument: "Deleted for you")
+        } label: { Label("Delete for me", systemImage: "trash") }
         if !mine {
             Button { reportTarget = ReportTarget(type: "message", id: message.id, title: "this message") } label: {
                 Label("Report message", systemImage: "exclamationmark.bubble")
@@ -666,93 +896,6 @@ struct CallsTabView: View {
     }
 }
 
-// MARK: - Active call (shown over every tab while a call is live)
-
-struct ActiveCallScreen: View {
-    @EnvironmentObject private var communications: ProductionCommunicationsService
-
-    var body: some View {
-        VStack(spacing: 20) {
-            if communications.isVideoCall {
-                ZStack(alignment: .bottomTrailing) {
-                    Group {
-                        if let remote = communications.remoteVideoTrack {
-                            SwiftUIVideoView(remote, layoutMode: .fit)
-                        } else {
-                            ZStack {
-                                Color.black
-                                Text(communications.isRinging ? "Ringing…" : "Waiting for video")
-                                    .font(.headline).foregroundStyle(.white)
-                            }
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: Brand.corner))
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(communications.remoteVideoTrack == nil ? "Waiting for the other person's video" : "Video from \(communications.callPeerName)")
-                    if let local = communications.localVideoTrack, communications.cameraEnabled {
-                        SwiftUIVideoView(local, layoutMode: .fill, mirrorMode: .mirror)
-                            .frame(width: 96, height: 128)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .padding(10)
-                            .accessibilityLabel("Your camera preview")
-                    }
-                }
-            } else {
-                Spacer()
-                Image(systemName: "person.crop.circle.fill").font(.system(size: 96)).foregroundStyle(Brand.gold).accessibilityHidden(true)
-            }
-
-            VStack(spacing: 6) {
-                Text(communications.callPeerName.isEmpty ? "Call" : communications.callPeerName).font(.title.bold())
-                Text(communications.isRinging ? "Ringing…" : communications.callTimeLabel).font(.title2.monospacedDigit())
-                Text(communications.isVideoCall ? "Video call" : "Voice call").foregroundStyle(.secondary)
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.isHeader)
-
-            if !communications.isVideoCall { Spacer() }
-
-            HStack(spacing: 16) {
-                control(communications.micEnabled ? "mic.fill" : "mic.slash.fill", communications.micEnabled ? "Mute" : "Unmute", selected: !communications.micEnabled) {
-                    communications.toggleMic()
-                }
-                control("speaker.wave.3.fill", communications.speakerOn ? "Speaker on" : "Speaker", selected: communications.speakerOn) {
-                    communications.toggleSpeaker()
-                }
-                if communications.isVideoCall {
-                    control(communications.cameraEnabled ? "video.fill" : "video.slash.fill", communications.cameraEnabled ? "Camera off" : "Camera on", selected: !communications.cameraEnabled) {
-                        communications.toggleCamera()
-                    }
-                }
-                control("phone.down.fill", communications.isRinging ? "Cancel" : "End", destructive: true) {
-                    communications.endCall()
-                }
-            }
-            .padding(.bottom)
-        }
-        .padding()
-        .background(Color(uiColor: .systemBackground))
-    }
-
-    private func control(_ icon: String, _ label: String, selected: Bool = false, destructive: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.title2)
-                    .frame(width: 64, height: 64)
-                    .background(destructive ? Color.red : (selected ? Color.primary : Color.primary.opacity(0.12)), in: Circle())
-                    .foregroundStyle(destructive ? Color.white : (selected ? Color(uiColor: .systemBackground) : Color.primary))
-                Text(label).font(.caption)
-            }
-        }
-        .frame(minWidth: 72, minHeight: 80)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(label)
-        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
-    }
-}
-
 // MARK: - Blocked accounts and notifications
 
 struct BlockedAccountsView: View {
@@ -868,5 +1011,123 @@ struct MessagesSettingsView: View {
             } header: { Text("Safety").accessibilityAddTraits(.isHeader) }
         }
         .navigationTitle("Messages & calls")
+    }
+}
+
+// MARK: - Message status and typing
+
+enum MessageStatus {
+    /// "Sent", "Delivered", "Read 5:08 AM", "Read Yesterday 9:14 PM", "Read Mon 9:14 PM" or "Read Oct 3, 9:14 PM".
+    static func caption(for message: BlindbanditServerMessage, showRead: Bool, now: Date = Date()) -> String {
+        if showRead, let read = message.read_at { return "Read " + stamp(read, now: now) }
+        if message.delivered_at != nil || message.read_at != nil { return "Delivered" }
+        return "Sent"
+    }
+
+    /// Local-time label for a server millisecond timestamp, including the day when it isn't today.
+    static func stamp(_ millis: Double, now: Date = Date(), calendar: Calendar = .current, locale: Locale = .current) -> String {
+        let date = Date(timeIntervalSince1970: millis / 1000)
+        let time = DateFormatter()
+        time.locale = locale
+        time.timeZone = calendar.timeZone
+        time.dateStyle = .none
+        time.timeStyle = .short
+        let clock = time.string(from: date)
+        if calendar.isDate(date, inSameDayAs: now) { return clock }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) {
+            return "Yesterday \(clock)"
+        }
+        let day = DateFormatter()
+        day.locale = locale
+        day.timeZone = calendar.timeZone
+        if let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: calendar.startOfDay(for: now)).day, days < 7, days > 0 {
+            day.setLocalizedDateFormatFromTemplate("EEE")
+        } else {
+            day.setLocalizedDateFormatFromTemplate("MMMd")
+        }
+        return "\(day.string(from: date)), \(clock)"
+    }
+}
+
+/// Animated three-dot "typing" bubble. Still dots when Reduce Motion is on.
+struct TypingIndicatorBubble: View {
+    let name: String
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var phase = 0
+
+    var body: some View {
+        HStack {
+            HStack(spacing: 5) {
+                ForEach(0..<3) { i in
+                    Circle()
+                        .fill(Color.secondary)
+                        .frame(width: 8, height: 8)
+                        .opacity(reduceMotion ? 0.7 : (phase == i ? 1 : 0.35))
+                        .scaleEffect(reduceMotion ? 1 : (phase == i ? 1.15 : 0.9))
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(Color.secondary.opacity(0.16), in: Capsule())
+            Spacer(minLength: 48)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(name) is typing")
+        .task(id: reduceMotion) {
+            guard !reduceMotion else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 380_000_000)
+                withAnimation(.easeInOut(duration: 0.3)) { phase = (phase + 1) % 3 }
+            }
+        }
+    }
+}
+
+
+enum MessageReactions {
+    static let all: [(emoji: String, name: String)] = [("❤️", "heart"), ("👍", "thumbs up"), ("😂", "laugh")]
+    static func name(_ emoji: String) -> String { all.first { $0.emoji == emoji }?.name ?? emoji }
+}
+
+/// Sends a copy of a message to someone else.
+struct ForwardSheet: View {
+    let text: String
+    @EnvironmentObject private var communications: ProductionCommunicationsService
+    @Environment(\.dismiss) private var dismiss
+    @State private var recipient = ""
+    @State private var sending = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Message") { Text(text) }
+                Section("Send to") {
+                    UsernameSearchField(label: "Blindbandit username", text: $recipient)
+                    ForEach(communications.conversations.prefix(8)) { c in
+                        if let h = c.other?.handle {
+                            Button { recipient = h } label: { Text("\(c.other?.display_name ?? h) (@\(h))") }
+                                .accessibilityAddTraits(BlindbanditHandle.normalize(recipient) == h ? .isSelected : [])
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Forward")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(sending ? "Sending…" : "Send") {
+                        sending = true
+                        Task {
+                            if await communications.sendMessage(recipient: recipient, body: text) != nil {
+                                UIAccessibility.post(notification: .announcement, argument: "Forwarded")
+                                dismiss()
+                            }
+                            sending = false
+                        }
+                    }
+                    .disabled(sending || BlindbanditHandle.normalize(recipient).isEmpty)
+                }
+            }
+        }
     }
 }

@@ -65,12 +65,33 @@ struct BlindbanditLiveKitGrant: Decodable {
     let url: String?
 }
 
+/// Accepts both the 1.8 shape `{id, room, kind, status, livekit:{token,url,…}}` and the 1.9 contract
+/// shape `{call_id, room, livekit_url, token}`.
 struct BlindbanditCallResponse: Decodable {
     let id: String
     let room: String
     let kind: String
     let status: String
     let livekit: BlindbanditLiveKitGrant
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let value = try? c.decode(String.self, forKey: .id) { id = value } else { id = try c.decode(String.self, forKey: .call_id) }
+        room = (try? c.decode(String.self, forKey: .room)) ?? ""
+        kind = (try? c.decode(String.self, forKey: .kind)) ?? "voice"
+        status = (try? c.decode(String.self, forKey: .status)) ?? "ringing"
+        if let grant = try? c.decode(BlindbanditLiveKitGrant.self, forKey: .livekit) {
+            livekit = grant
+        } else {
+            livekit = BlindbanditLiveKitGrant(
+                token: try c.decode(String.self, forKey: .token),
+                identity: nil, room: room, expires_at: nil,
+                url: try? c.decodeIfPresent(String.self, forKey: .livekit_url)
+            )
+        }
+    }
+
+    enum CodingKeys: String, CodingKey { case id, call_id, room, kind, status, livekit, token, livekit_url }
 }
 
 struct BlindbanditMessageResponse: Decodable {
@@ -90,6 +111,19 @@ enum FlexibleBool {
 }
 
 struct ItemsPayload<Item: Decodable>: Decodable { let items: [Item] }
+
+struct BlindbanditThreadPayload: Decodable {
+    let items: [BlindbanditServerMessage]
+    let otherTyping: Bool
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        items = try c.decode([BlindbanditServerMessage].self, forKey: .items)
+        otherTyping = FlexibleBool.decode(c, .other_typing) ?? false
+    }
+
+    enum CodingKeys: String, CodingKey { case items, other_typing }
+}
 
 /// Every API response is wrapped as `{ "success": true, "data": …, "meta": … }`.
 struct BlindbanditEnvelope<Payload: Decodable>: Decodable { let data: Payload }
@@ -134,7 +168,7 @@ enum BlindbanditAPI {
         return components.url!
     }
 
-    private static func escape(_ value: String) -> String {
+    static func escape(_ value: String) -> String {
         value.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-_"))) ?? value
     }
 
@@ -162,6 +196,9 @@ enum BlindbanditAPI {
         guard let http = response as? HTTPURLResponse else { throw CommunicationsError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
             let envelope = try? JSONDecoder().decode(APIErrorEnvelope.self, from: data)
+            if http.statusCode == 404 {
+                throw CommunicationsError.notFound(envelope?.error?.message ?? "")
+            }
             throw CommunicationsError.server(envelope?.error?.message ?? "The Blindbandit server returned an error (HTTP \(http.statusCode)).")
         }
         return data
@@ -176,7 +213,16 @@ enum BlindbanditAPI {
     }
 
     static func messages(conversationID: String) async throws -> [BlindbanditServerMessage] {
-        try decode(ItemsPayload<BlindbanditServerMessage>.self, from: try await request("v1/social/messages/\(escape(conversationID))?limit=100")).items
+        try await thread(conversationID: conversationID).items
+    }
+
+    /// The thread payload also carries `other_typing` (set for six seconds after the other person types).
+    static func thread(conversationID: String) async throws -> BlindbanditThreadPayload {
+        try decode(BlindbanditThreadPayload.self, from: try await request("v1/social/messages/\(escape(conversationID))?limit=100"))
+    }
+
+    static func sendTyping(conversationID: String) async {
+        _ = try? await request("v1/social/messages/\(escape(conversationID))/typing", method: "POST", body: ["typing": true])
     }
 
     static func sendMessage(handle: String, body: String) async throws -> BlindbanditMessageResponse {
@@ -187,7 +233,7 @@ enum BlindbanditAPI {
 
     static func startCall(handle: String, video: Bool) async throws -> BlindbanditCallResponse {
         try decode(BlindbanditCallResponse.self, from: try await request(
-            "v1/social/calls", method: "POST", body: ["handle": handle, "kind": video ? "video" : "voice"]
+            "v1/social/calls", method: "POST", body: ["handle": handle, "to_handle": handle, "kind": video ? "video" : "voice"]
         ))
     }
 
@@ -231,6 +277,8 @@ enum BlindbanditAPI {
             return true
         } catch CommunicationsError.server(_) {
             return false
+        } catch CommunicationsError.notFound(_) {
+            return false
         } catch {
             return nil
         }
@@ -251,8 +299,11 @@ enum BlindbanditAPI {
         try await request("v1/privacy/delete", method: "POST", body: [:])
     }
 
+    /// Registers the APNs alert token and, when PushKit has issued one, the VoIP token used for
+    /// CallKit incoming calls (APNs topic net.mrblindbandit.app.voip, push type voip).
     static func registerPushToken(_ token: String) async throws {
-        guard !token.isEmpty else { return }
+        let voip = UserDefaults.standard.string(forKey: CallKitManager.voipTokenKey) ?? ""
+        guard !token.isEmpty || !voip.isEmpty else { return }
         let installationKey = "blindbandit.installationID"
         let defaults = UserDefaults.standard
         let installationID: String
@@ -270,6 +321,9 @@ enum BlindbanditAPI {
                 "installation_id": installationID,
                 "platform": "ios",
                 "token": token,
+                "voip_token": voip,
+                "apns_voip_topic": (Bundle.main.bundleIdentifier ?? "net.mrblindbandit.app") + ".voip",
+                "supports_callkit": true,
                 "app_version": version,
                 "language": Locale.current.language.languageCode?.identifier ?? "en"
             ]
@@ -281,9 +335,22 @@ enum CommunicationsError: LocalizedError {
     case invalidResponse
     case server(String)
     case liveKitURLMissing
+    /// HTTP 404. Either the item is gone or this server build does not have the route yet.
+    case notFound(String)
+
+    /// True when a 404 most likely means the route is missing on the server rather than a missing item.
+    var isMissingRoute: Bool {
+        guard case .notFound(let message) = self else { return false }
+        let m = message.lowercased()
+        return m.isEmpty || m.contains("route") || m == "not found" || m.contains("no handler") || m.contains("unknown endpoint")
+    }
+
+    static let serverUpdateMessage = "This feature needs a Blindbandit server update that isn't live yet. Everything else keeps working. Please try again after the next server update."
 
     var errorDescription: String? {
         switch self {
+        case .notFound(let message):
+            return isMissingRoute ? Self.serverUpdateMessage : message
         case .invalidResponse: return "The Blindbandit server sent a response the app could not read."
         case .server(let message): return message
         case .liveKitURLMissing: return "The call server is unavailable right now. Please try again shortly."
@@ -319,6 +386,23 @@ final class ProductionCommunicationsService: ObservableObject {
     @Published private(set) var openConversationID: String?
     @Published private(set) var lastReadStamp: [String: Double] = LocalComms.lastRead
     @Published private(set) var pendingMessages: [PendingMessage] = LocalComms.pending
+    @Published private(set) var otherTyping = false
+
+    // Calls (1:1 and group)
+    @Published private(set) var participants: [CallParticipantInfo] = []
+    @Published private(set) var activeSpeakerID: String?
+    @Published private(set) var callGroupID: String?
+    @Published private(set) var callGroupName: String?
+    @Published private(set) var screenSharing = false
+    @Published private(set) var usingFrontCamera = true
+    @Published private(set) var handRaised = false
+    @Published private(set) var raisedHands: Set<String> = []
+    @Published private(set) var callChat: [InCallChatMessage] = []
+    @Published var unreadCallChat = 0
+    @Published private(set) var isOnHold = false
+    @Published private(set) var incomingCall: BlindbanditIncomingCall?
+    @Published private(set) var missedGroupCalls: [BlindbanditIncomingCall] = []
+    @Published private(set) var localQuality: ConnectionQuality = .unknown
 
     private var room: Room?
     private var pollTimer: Timer?
@@ -386,6 +470,8 @@ final class ProductionCommunicationsService: ObservableObject {
     func markUnread(_ conversation: BlindbanditConversation) {
         lastReadStamp[conversation.id] = 0
         LocalComms.lastRead = lastReadStamp
+        let id = conversation.id
+        Task { try? await BlindbanditAPI.markConversationUnread(id: id) }
     }
 
     private func announceNewIncoming(old: [BlindbanditConversation], new: [BlindbanditConversation]) {
@@ -407,15 +493,43 @@ final class ProductionCommunicationsService: ObservableObject {
         try? await BlindbanditAPI.markRead(conversationID: conversation.id)
     }
 
+    /// Opens a thread by id even when the inbox list hasn't caught up yet (e.g. from a notification).
+    func openConversation(id: String) async {
+        if let c = conversation(id: id) { await openConversation(c); return }
+        openConversationID = id
+        await reloadThread(id)
+        await refreshConversations()
+        if let c = conversation(id: id) { markLocallyRead(c) }
+        try? await BlindbanditAPI.markRead(conversationID: id)
+    }
+
     func closeConversation() {
         openConversationID = nil
         messages = []
+        otherTyping = false
+    }
+
+    private var lastTypingSent = Date.distantPast
+
+    /// Tells the server I'm typing, at most once every 3 seconds (the server keeps the flag for 6).
+    func userTyped(in conversationID: String) {
+        guard Date().timeIntervalSince(lastTypingSent) > 3 else { return }
+        lastTypingSent = Date()
+        Task { await BlindbanditAPI.sendTyping(conversationID: conversationID) }
     }
 
     private func reloadThread(_ id: String) async {
         do {
-            let fresh = try await BlindbanditAPI.messages(conversationID: id).sorted { $0.created_at < $1.created_at }
+            let payload = try await BlindbanditAPI.thread(conversationID: id)
+            let fresh = payload.items.sorted { $0.created_at < $1.created_at }
             guard openConversationID == id else { return }
+            if payload.otherTyping != otherTyping {
+                otherTyping = payload.otherTyping
+                if payload.otherTyping {
+                    let who = conversation(id: id)?.other.map { "@\($0.handle)" } ?? "The other person"
+                    UIAccessibility.post(notification: .announcement, argument: "\(who) is typing")
+                }
+            }
             let hadIncoming = fresh.count > messages.count && fresh.last?.sender_id != myProfileID && !messages.isEmpty
             if fresh != messages { messages = fresh }
             if hadIncoming, let current = self.conversation(id: id) {
@@ -438,6 +552,7 @@ final class ProductionCommunicationsService: ObservableObject {
                 guard let self, UIApplication.shared.applicationState == .active else { return }
                 await self.refreshConversations()
                 if let id = self.openConversationID { await self.reloadThread(id) }
+                await self.checkIncomingCalls()
             }
         }
     }
@@ -565,6 +680,16 @@ final class ProductionCommunicationsService: ObservableObject {
         }
     }
 
+    // MARK: - Calls (1:1 and group), driven through CallKit
+
+    private var roomObserver: CallRoomObserver?
+    private var knownParticipantIDs: Set<String> = []
+    private var hadRemote = false
+    private var aloneSince: Date?
+    private var holdRestore: (mic: Bool, camera: Bool)?
+    private var announcedIncoming: Set<String> = []
+    private var callIsIncoming = false
+
     func startCall(recipient: String, video: Bool) async {
         let handle = BlindbanditHandle.normalize(recipient)
         guard !handle.isEmpty else {
@@ -572,30 +697,62 @@ final class ProductionCommunicationsService: ObservableObject {
             AppHaptics.warning()
             return
         }
-        guard !isInCall else { return }
+        // Real display name for CallKit / Recents / car displays, never an id.
+        let known = conversations.first(where: { $0.other?.handle.lowercased() == handle.lowercased() })?.other?.display_name
+        await placeCall(label: "@\(handle)", handle: handle, groupID: nil, groupName: nil, video: video, displayName: known)
+        LocalComms.recordRecent(handle)
+    }
+
+    func startGroupCall(groupID: String, groupName: String, video: Bool, memberCount: Int? = nil) async {
+        await placeCall(label: groupName, handle: nil, groupID: groupID, groupName: groupName, video: video, memberCount: memberCount)
+    }
+
+    private func placeCall(label: String, handle: String?, groupID: String?, groupName: String?, video: Bool, displayName: String? = nil, memberCount: Int? = nil) async {
+        guard !isInCall, activeCallID == nil else {
+            statusMessage = "You're already in a call."
+            UIAccessibility.post(notification: .announcement, argument: statusMessage)
+            return
+        }
         CallSounds.callInitiated()
-        statusMessage = "Calling @\(handle)…"
+        statusMessage = "Calling \(label)…"
+        UIAccessibility.post(notification: .announcement, argument: statusMessage)
         var createdID: String?
         do {
-            let response = try await BlindbanditAPI.startCall(handle: handle, video: video)
+            let response: BlindbanditCallResponse
+            if let groupID {
+                response = try await BlindbanditAPI.startGroupCall(groupID: groupID, video: video)
+            } else {
+                response = try await BlindbanditAPI.startCall(handle: handle ?? "", video: video)
+            }
             createdID = response.id
-            callPeerName = "@\(handle)"
+            callPeerName = label
+            callGroupID = groupID
+            callGroupName = groupName
+            callIsIncoming = false
+            CallKitManager.shared.startOutgoing(callID: response.id, handle: handle ?? "", displayName: displayName ?? label, video: video, groupID: groupID, memberCount: memberCount)
             try await connect(response: response, video: video)
-            LocalComms.recordRecent(handle)
             beginOutgoingRinging()
         } catch {
-            // Never leave the server row as 'ringing' when we could not connect.
-            if let createdID { await BlindbanditAPI.endCall(id: createdID) }
+            if let createdID {
+                await BlindbanditAPI.endCall(id: createdID)
+                CallKitManager.shared.reportEnded(callID: createdID, reason: .failed)
+            }
             teardownRoom()
             CallSounds.busyOrFailed()
-            statusMessage = "Call failed: \(error.localizedDescription)"
+            statusMessage = (error as? CommunicationsError)?.isMissingRoute == true
+                ? CommunicationsError.serverUpdateMessage
+                : "Call failed: \(error.localizedDescription)"
+            UIAccessibility.post(notification: .announcement, argument: statusMessage)
             AppHaptics.error()
         }
         await refreshCallHistory()
     }
 
     private func beginOutgoingRinging() {
-        guard room?.remoteParticipants.isEmpty ?? false else { return }
+        guard room?.remoteParticipants.isEmpty ?? false else {
+            if let id = activeCallID { CallKitManager.shared.reportOutgoingConnected(callID: id) }
+            return
+        }
         isRinging = true
         CallSounds.startRingback()
         statusMessage = "Ringing \(callPeerName)…"
@@ -606,7 +763,7 @@ final class ProductionCommunicationsService: ObservableObject {
             guard !Task.isCancelled, let self, self.isRinging else { return }
             let peer = self.callPeerName
             self.endCall()
-            self.statusMessage = "No answer from \(peer)."
+            self.statusMessage = self.callGroupID == nil ? "No answer from \(peer)." : "No one in \(peer) answered."
             UIAccessibility.post(notification: .announcement, argument: self.statusMessage)
         }
     }
@@ -620,7 +777,8 @@ final class ProductionCommunicationsService: ObservableObject {
         if answered {
             callSeconds = 0
             CallSounds.callConnected()
-            statusMessage = "\(callPeerName) answered."
+            if let id = activeCallID { CallKitManager.shared.reportOutgoingConnected(callID: id) }
+            statusMessage = callGroupID == nil ? "\(callPeerName) answered." : "Someone joined \(callPeerName)."
             UIAccessibility.post(notification: .announcement, argument: statusMessage)
         }
     }
@@ -633,134 +791,517 @@ final class ProductionCommunicationsService: ObservableObject {
     }
 
     private func applySpeaker() {
-        let session = AVAudioSession.sharedInstance()
-        try? session.overrideOutputAudioPort(speakerOn ? .speaker : .none)
+        try? AVAudioSession.sharedInstance().overrideOutputAudioPort(speakerOn ? .speaker : .none)
     }
 
+    // MARK: Incoming
+
+    /// Shows the full-screen incoming UI for a call id (from a push tap or polling).
+    func presentIncomingCall(id: String) async {
+        guard !id.isEmpty, activeCallID != id else { return }
+        if let ringing = try? await BlindbanditAPI.incomingCalls().first(where: { $0.id == id }) {
+            receiveIncoming(ringing)
+            return
+        }
+        // Not ringing any more: just show history so the user sees it was missed.
+        await refreshCallHistory()
+        statusMessage = "That call has already ended."
+        UIAccessibility.post(notification: .announcement, argument: statusMessage)
+    }
+
+    /// Called for every ringing call we learn about (VoIP push, FCM-style polling, push tap).
+    func receiveIncoming(_ call: BlindbanditIncomingCall) {
+        guard activeCallID != call.id, !isInCall || incomingCall == nil else { return }
+        if isInCall {
+            // Already busy: let CallKit show call waiting; we don't steal the screen.
+            CallKitManager.shared.reportIncoming(call)
+            return
+        }
+        incomingCall = call
+        CallKitManager.shared.reportIncoming(call)
+        if !announcedIncoming.contains(call.id) {
+            announcedIncoming.insert(call.id)
+            UIAccessibility.post(notification: .announcement, argument: "Incoming \(call.isVideo ? "video" : "voice") call from \(call.callerLabel)")
+        }
+    }
+
+    func checkIncomingCalls() async {
+        guard !myHandle.isEmpty || !myProfileID.isEmpty else { return }
+        guard let ringing = try? await BlindbanditAPI.incomingCalls() else { return }
+        if let current = incomingCall, !ringing.contains(where: { $0.id == current.id }) {
+            remoteEnded(callID: current.id)
+        }
+        if let first = ringing.first(where: { $0.id != activeCallID }) { receiveIncoming(first) }
+    }
+
+    /// The caller hung up, someone answered on another device, or the server sent call_end.
+    func remoteEnded(callID: String) {
+        if incomingCall?.id == callID {
+            let missed = incomingCall
+            incomingCall = nil
+            CallSounds.stopLoop()
+            CallKitManager.shared.reportEnded(callID: callID, reason: .unanswered)
+            if let missed, missed.group_id != nil {
+                missedGroupCalls.insert(missed, at: 0)
+                missedGroupCalls = Array(missedGroupCalls.prefix(20))
+            }
+            if let missed {
+                statusMessage = "Missed call from \(missed.callerLabel)."
+                UIAccessibility.post(notification: .announcement, argument: statusMessage)
+            }
+            Task { await refreshCallHistory() }
+        } else if activeCallID == callID, isInCall, callGroupID == nil {
+            finishCall(notifyServer: false, announcement: "\(callPeerName) ended the call.")
+        }
+    }
+
+    /// Answer button in the app (or Magic Tap). Goes through CallKit so the system call UI stays in sync.
+    func answerIncoming() {
+        guard let call = incomingCall else { return }
+        CallSounds.stopLoop()
+        CallKitManager.shared.requestAnswer(callID: call.id) { [weak self] ok in
+            guard !ok else { return }
+            Task { @MainActor in _ = await self?.performJoin(id: call.id) }
+        }
+    }
+
+    func declineIncoming() {
+        guard let call = incomingCall else { return }
+        CallSounds.stopLoop()
+        CallKitManager.shared.requestEnd(callID: call.id) { [weak self] ok in
+            guard !ok else { return }
+            Task { @MainActor in self?.performDecline(id: call.id) }
+        }
+    }
+
+    /// CallKit decline (or fallback). Never leaves the server row ringing.
+    func performDecline(id: String) {
+        if incomingCall?.id == id { incomingCall = nil }
+        CallSounds.stopLoop()
+        Task {
+            await BlindbanditAPI.declineCall(id: id)
+            await refreshCallHistory()
+        }
+        statusMessage = "Call declined."
+        UIAccessibility.post(notification: .announcement, argument: statusMessage)
+    }
+
+    /// Kept for older callers (Calls tab "Join" buttons).
     func joinIncomingCall(id: String) async {
-        guard !id.isEmpty, !isInCall else { return }
+        if incomingCall?.id != id {
+            incomingCall = BlindbanditIncomingCall(id: id, kind: "voice", from_handle: "", from_name: "Incoming call", group_id: nil, group_name: nil, created_at: Date().timeIntervalSince1970 * 1000)
+        }
+        _ = await performJoin(id: id)
+    }
+
+    /// Actually joins the LiveKit room. Called from CallKit's answer action.
+    @discardableResult
+    func performJoin(id: String) async -> Bool {
+        guard !id.isEmpty else { return false }
+        if activeCallID == id && isInCall { return true }
+        let invite = incomingCall?.id == id ? incomingCall : nil
         CallSounds.stopLoop()
         statusMessage = "Joining call…"
         do {
             let response = try await BlindbanditAPI.joinCall(id: id)
-            if let peer = callHistory.first(where: { $0.id == id })?.other?.handle {
+            if let invite {
+                callPeerName = invite.group_name ?? invite.from_name
+                callGroupID = invite.group_id
+                callGroupName = invite.group_name
+            } else if let peer = callHistory.first(where: { $0.id == id })?.other?.handle {
                 callPeerName = "@\(peer)"
             } else {
-                callPeerName = "Incoming call"
+                callPeerName = "Call"
             }
-            try await connect(response: response, video: response.kind == "video")
+            callIsIncoming = true
+            incomingCall = nil
+            let voiceOnly = UserDefaults.standard.bool(forKey: "callkit.answerVoiceOnly")
+            UserDefaults.standard.removeObject(forKey: "callkit.answerVoiceOnly")
+            try await connect(response: response, video: !voiceOnly && ((invite?.isVideo ?? false) || response.kind == "video"))
+            return true
         } catch {
+            incomingCall = nil
             await BlindbanditAPI.endCall(id: id)
+            CallKitManager.shared.reportEnded(callID: id, reason: .failed)
             teardownRoom()
             CallSounds.busyOrFailed()
-            statusMessage = "Could not join call: \(error.localizedDescription)"
+            statusMessage = (error as? CommunicationsError)?.isMissingRoute == true
+                ? CommunicationsError.serverUpdateMessage
+                : "Could not join call: \(error.localizedDescription)"
+            UIAccessibility.post(notification: .announcement, argument: statusMessage)
             AppHaptics.error()
+            return false
         }
     }
 
     private func connect(response: BlindbanditCallResponse, video: Bool) async throws {
         let serverURL = (response.livekit.url?.isEmpty == false ? response.livekit.url : nil) ?? AppConfig.liveKitURL
         guard serverURL.hasPrefix("wss://") else { throw CommunicationsError.liveKitURLMissing }
-        let newRoom = Room()
+        let observer = CallRoomObserver(service: self)
+        let newRoom = Room(delegate: observer)
+        roomObserver = observer
+        activeCallID = response.id
         try await newRoom.connect(url: serverURL, token: response.livekit.token)
         room = newRoom
-        activeCallID = response.id
         isVideoCall = video
         micEnabled = true
         try await newRoom.localParticipant.setMicrophone(enabled: true)
         let startCameraOff = UserDefaults.standard.bool(forKey: "startCallsWithCameraOff")
         if video && !startCameraOff {
-            try await newRoom.localParticipant.setCamera(enabled: true)
+            _ = try await newRoom.localParticipant.setCamera(enabled: true)
             cameraEnabled = true
+            speakerOn = true
+            applySpeaker()
         } else {
             cameraEnabled = false
         }
+        usingFrontCamera = true
+        knownParticipantIDs = Set(newRoom.remoteParticipants.values.compactMap { $0.identity?.stringValue })
+        hadRemote = !knownParticipantIDs.isEmpty
+        aloneSince = nil
         isInCall = true
         callSeconds = 0
         startTicker()
-        refreshVideoTracks()
+        refreshParticipants()
         CallSounds.callConnected()
         AppHaptics.success()
-        statusMessage = "Connected with \(callPeerName)."
+        statusMessage = callGroupID == nil ? "Connected with \(callPeerName)." : "Joined \(callPeerName). \(participants.count) in the call."
         UIAccessibility.post(notification: .announcement, argument: statusMessage)
     }
 
-    /// Polls LiveKit participants once per second (driven by the call ticker) so the video
-    /// views pick up tracks as the other person turns their camera on or off.
-    private func refreshVideoTracks() {
+    // MARK: Room state
+
+    func roomChanged() { refreshParticipants() }
+
+    func roomDisconnected(_ closed: Room) {
+        guard closed === room, isInCall else { return }
+        finishCall(notifyServer: true, announcement: "Call disconnected.")
+    }
+
+    /// Rebuilds the grid, active speaker, video tracks and joined/left announcements.
+    private func refreshParticipants() {
         guard let room else {
+            participants = []
             localVideoTrack = nil
             remoteVideoTrack = nil
             return
         }
-        localVideoTrack = room.localParticipant.videoTracks.first?.track as? VideoTrack
-        remoteVideoTrack = room.remoteParticipants.values
-            .flatMap { $0.videoTracks }
-            .compactMap { $0.track as? VideoTrack }
-            .first
+        let local = room.localParticipant
+        let localCamera = local.firstCameraPublication?.track as? VideoTrack
+        let localScreen = local.firstScreenSharePublication?.track as? VideoTrack
+        var list: [CallParticipantInfo] = [CallParticipantInfo(
+            id: local.identity?.stringValue ?? "me", name: "You", isLocal: true,
+            isSpeaking: local.isSpeaking, micOn: micEnabled, cameraOn: cameraEnabled && localCamera != nil,
+            sharingScreen: screenSharing, quality: local.connectionQuality, handRaised: handRaised,
+            videoTrack: localCamera, screenTrack: localScreen
+        )]
+        let remotes = room.remoteParticipants.values.sorted { ($0.joinedAt ?? .distantPast) < ($1.joinedAt ?? .distantPast) }
+        var currentIDs = Set<String>()
+        for p in remotes {
+            let id = p.identity?.stringValue ?? UUID().uuidString
+            currentIDs.insert(id)
+            let name = (p.name?.isEmpty == false ? p.name : nil) ?? "@\(id)"
+            let camera = p.firstCameraPublication
+            let screen = p.firstScreenSharePublication
+            list.append(CallParticipantInfo(
+                id: id, name: name, isLocal: false, isSpeaking: p.isSpeaking,
+                micOn: p.isMicrophoneEnabled(), cameraOn: p.isCameraEnabled() && camera?.track != nil,
+                sharingScreen: screen?.track != nil, quality: p.connectionQuality,
+                handRaised: raisedHands.contains(id),
+                videoTrack: camera?.isMuted == false ? camera?.track as? VideoTrack : nil,
+                screenTrack: screen?.track as? VideoTrack
+            ))
+        }
+        for joined in currentIDs.subtracting(knownParticipantIDs) {
+            let name = list.first(where: { $0.id == joined })?.name ?? "Someone"
+            UIAccessibility.post(notification: .announcement, argument: "\(name) joined the call")
+            AppHaptics.light()
+        }
+        let leftIDs = knownParticipantIDs.subtracting(currentIDs)
+        for left in leftIDs {
+            let name = participants.first(where: { $0.id == left })?.name ?? "Someone"
+            UIAccessibility.post(notification: .announcement, argument: "\(name) left the call")
+            raisedHands.remove(left)
+        }
+        knownParticipantIDs = currentIDs
+        if !currentIDs.isEmpty { hadRemote = true }
+        participants = list
+        localQuality = local.connectionQuality
+        localVideoTrack = localCamera
+        // Prefer someone's screen share, then the active speaker's camera, then anyone's camera.
+        let speaker = room.activeSpeakers.first { !($0 is LocalParticipant) }?.identity?.stringValue
+        activeSpeakerID = speaker
+        remoteVideoTrack = list.first(where: { !$0.isLocal && $0.screenTrack != nil })?.screenTrack
+            ?? list.first(where: { $0.id == speaker && $0.videoTrack != nil })?.videoTrack
+            ?? list.first(where: { !$0.isLocal && $0.videoTrack != nil })?.videoTrack
+
+        // Ending rules: a 1:1 call ends when the other person leaves; a group call when I've been alone 2 minutes.
+        if isRinging, !currentIDs.isEmpty { stopRinging(answered: true) }
+        if !isRinging, hadRemote, currentIDs.isEmpty {
+            if callGroupID == nil, !leftIDs.isEmpty {
+                finishCall(notifyServer: true, announcement: "\(callPeerName) left. Call ended.")
+                return
+            }
+            if aloneSince == nil { aloneSince = Date() }
+            if let since = aloneSince, Date().timeIntervalSince(since) > 120 {
+                finishCall(notifyServer: true, announcement: "Everyone left. Call ended.")
+            }
+        } else {
+            aloneSince = nil
+        }
     }
 
-    func toggleMic() {
-        micEnabled.toggle()
-        let enabled = micEnabled
+    // MARK: Controls
+
+    func toggleMic() { setMic(enabled: !micEnabled) }
+
+    /// Idempotent so CallKit's mute action and the in-app button can both call it without looping.
+    func setMic(enabled: Bool) {
+        guard micEnabled != enabled else { return }
+        micEnabled = enabled
         Task { try? await room?.localParticipant.setMicrophone(enabled: enabled) }
+        if let id = activeCallID { CallKitManager.shared.requestMute(callID: id, muted: !enabled) }
         AppHaptics.selection()
         UIAccessibility.post(notification: .announcement, argument: enabled ? "Microphone on" : "Muted")
+        refreshParticipants()
     }
 
     func toggleCamera() {
-        guard isVideoCall else { return }
+        guard isInCall else { return }
+        if !isVideoCall { upgradeToVideo(); return }
         cameraEnabled.toggle()
         let enabled = cameraEnabled
         Task {
-            try? await room?.localParticipant.setCamera(enabled: enabled)
-            refreshVideoTracks()
+            _ = try? await room?.localParticipant.setCamera(enabled: enabled)
+            refreshParticipants()
         }
         AppHaptics.selection()
         UIAccessibility.post(notification: .announcement, argument: enabled ? "Camera on" : "Camera off")
+    }
+
+    /// Mid-call upgrade from voice to video. The other side sees the new camera track automatically.
+    func upgradeToVideo() {
+        guard isInCall else { return }
+        isVideoCall = true
+        cameraEnabled = true
+        if !speakerOn { speakerOn = true; applySpeaker() }
+        Task {
+            do {
+                _ = try await room?.localParticipant.setCamera(enabled: true)
+                statusMessage = "Switched to video."
+            } catch {
+                cameraEnabled = false
+                statusMessage = "Couldn't turn on the camera: \(error.localizedDescription)"
+            }
+            UIAccessibility.post(notification: .announcement, argument: statusMessage)
+            refreshParticipants()
+        }
+        if let id = activeCallID { CallKitManager.shared.reportVideo(callID: id, video: true) }
+    }
+
+    /// Downgrade back to voice: camera and screen share off, earpiece unless the user chose speaker.
+    func downgradeToVoice() {
+        guard isInCall else { return }
+        isVideoCall = false
+        cameraEnabled = false
+        Task {
+            _ = try? await room?.localParticipant.setCamera(enabled: false)
+            if screenSharing { _ = try? await room?.localParticipant.setScreenShare(enabled: false) }
+            screenSharing = false
+            refreshParticipants()
+        }
+        if let id = activeCallID { CallKitManager.shared.reportVideo(callID: id, video: false) }
+        statusMessage = "Switched to voice only."
+        UIAccessibility.post(notification: .announcement, argument: statusMessage)
+    }
+
+    func switchCamera() {
+        guard let capturer = (room?.localParticipant.firstCameraPublication?.track as? LocalVideoTrack)?.capturer as? CameraCapturer else {
+            statusMessage = "Turn your camera on first."
+            UIAccessibility.post(notification: .announcement, argument: statusMessage)
+            return
+        }
+        Task {
+            _ = try? await capturer.switchCameraPosition()
+            usingFrontCamera = capturer.position != .back
+            AppHaptics.selection()
+            UIAccessibility.post(notification: .announcement, argument: usingFrontCamera ? "Front camera" : "Back camera")
+        }
+    }
+
+    /// In-app screen share (LiveKit captures this app's screen).
+    func toggleScreenShare() {
+        guard let room else { return }
+        let enable = !screenSharing
+        Task {
+            do {
+                _ = try await room.localParticipant.setScreenShare(enabled: enable)
+                screenSharing = enable
+                statusMessage = enable ? "Sharing your screen. Everyone in the call sees this app." : "Stopped sharing your screen."
+            } catch {
+                statusMessage = "Screen sharing failed: \(error.localizedDescription)"
+            }
+            UIAccessibility.post(notification: .announcement, argument: statusMessage)
+            refreshParticipants()
+        }
+    }
+
+    func setHold(_ on: Bool) {
+        guard isInCall, isOnHold != on else { return }
+        isOnHold = on
+        if on {
+            holdRestore = (micEnabled, cameraEnabled)
+            Task {
+                try? await room?.localParticipant.setMicrophone(enabled: false)
+                _ = try? await room?.localParticipant.setCamera(enabled: false)
+            }
+            micEnabled = false
+            cameraEnabled = false
+        } else if let restore = holdRestore {
+            micEnabled = restore.mic
+            cameraEnabled = restore.camera
+            Task {
+                try? await room?.localParticipant.setMicrophone(enabled: restore.mic)
+                if restore.camera { _ = try? await room?.localParticipant.setCamera(enabled: true) }
+            }
+            holdRestore = nil
+        }
+        UIAccessibility.post(notification: .announcement, argument: on ? "Call on hold" : "Call resumed")
+        refreshParticipants()
+    }
+
+    func toggleHand() {
+        handRaised.toggle()
+        send(CallDataMessage(type: "hand", raised: handRaised))
+        UIAccessibility.post(notification: .announcement, argument: handRaised ? "Hand raised" : "Hand lowered")
+        refreshParticipants()
+    }
+
+    func sendCallChat(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let id = UUID().uuidString
+        callChat.append(InCallChatMessage(id: id, sender: "You", text: trimmed, mine: true, date: Date()))
+        send(CallDataMessage(type: "chat", id: id, text: trimmed))
+    }
+
+    private func send(_ message: CallDataMessage) {
+        guard let room, let data = try? JSONEncoder().encode(message) else { return }
+        Task { try? await room.localParticipant.publish(data: data, options: DataPublishOptions(topic: "bb.call", reliable: true)) }
+    }
+
+    func handleCallData(_ data: Data, identity: String, sender: String) {
+        guard let message = try? JSONDecoder().decode(CallDataMessage.self, from: data) else { return }
+        switch message.type {
+        case "hand":
+            if message.raised == true {
+                raisedHands.insert(identity)
+                UIAccessibility.post(notification: .announcement, argument: "\(sender) raised their hand")
+            } else {
+                raisedHands.remove(identity)
+            }
+            refreshParticipants()
+        case "chat":
+            guard let text = message.text, !text.isEmpty else { return }
+            callChat.append(InCallChatMessage(id: message.id ?? UUID().uuidString, sender: sender, text: text, mine: false, date: Date()))
+            unreadCallChat += 1
+            UIAccessibility.post(notification: .announcement, argument: "\(sender) says: \(text)")
+        default:
+            break
+        }
+    }
+
+    /// Adds people to the call that's already running.
+    func invite(handles: [String]) async {
+        guard let id = activeCallID else { return }
+        let clean = handles.map(BlindbanditHandle.normalize).filter { !$0.isEmpty }
+        guard !clean.isEmpty else { return }
+        do {
+            try await BlindbanditAPI.inviteToCall(id: id, handles: clean)
+            statusMessage = "Ringing " + clean.map { "@\($0)" }.joined(separator: ", ") + "."
+        } catch let error as CommunicationsError where error.isMissingRoute {
+            statusMessage = CommunicationsError.serverUpdateMessage
+        } catch {
+            statusMessage = "Couldn't add people: \(error.localizedDescription)"
+        }
+        UIAccessibility.post(notification: .announcement, argument: statusMessage)
+    }
+
+    // MARK: Ending
+
+    /// In-app End button. CallKit runs the end action, which calls finishCall.
+    func endCall() {
+        guard let id = activeCallID else { finishCall(notifyServer: false, announcement: "Call ended."); return }
+        CallKitManager.shared.requestEnd(callID: id) { [weak self] ok in
+            guard !ok else { return }
+            Task { @MainActor in self?.finishCall(notifyServer: true, announcement: "Call ended.") }
+        }
+    }
+
+    /// Tears everything down. Safe to call more than once.
+    func finishCall(notifyServer: Bool, announcement: String) {
+        let id = activeCallID
+        let closingRoom = room
+        let wasActive = isInCall || id != nil
+        stopRinging(answered: false)
+        stopTicker()
+        speakerOn = false
+        Task {
+            try? await closingRoom?.localParticipant.setMicrophone(enabled: false)
+            _ = try? await closingRoom?.localParticipant.setCamera(enabled: false)
+            await closingRoom?.disconnect()
+            if notifyServer, let id { await BlindbanditAPI.endCall(id: id) }
+            await self.refreshCallHistory()
+        }
+        if let id { CallKitManager.shared.reportEnded(callID: id, reason: nil) }
+        room = nil
+        roomObserver = nil
+        activeCallID = nil
+        isInCall = false
+        isVideoCall = false
+        cameraEnabled = false
+        micEnabled = true
+        localVideoTrack = nil
+        remoteVideoTrack = nil
+        callSeconds = 0
+        participants = []
+        activeSpeakerID = nil
+        callGroupID = nil
+        callGroupName = nil
+        screenSharing = false
+        handRaised = false
+        raisedHands = []
+        callChat = []
+        unreadCallChat = 0
+        isOnHold = false
+        holdRestore = nil
+        knownParticipantIDs = []
+        hadRemote = false
+        aloneSince = nil
+        guard wasActive else { return }
+        CallSounds.hangup()
+        statusMessage = announcement
+        UIAccessibility.post(notification: .announcement, argument: statusMessage)
     }
 
     private func teardownRoom() {
         let closingRoom = room
         Task { await closingRoom?.disconnect() }
         room = nil
+        roomObserver = nil
         activeCallID = nil
         isInCall = false
         isRinging = false
         ringTimeout?.cancel()
         CallSounds.stopLoop()
         stopTicker()
-    }
-
-    func endCall() {
-        let id = activeCallID
-        let closingRoom = room
-        stopRinging(answered: false)
-        speakerOn = false
-        stopTicker()
-        Task {
-            try? await closingRoom?.localParticipant.setMicrophone(enabled: false)
-            try? await closingRoom?.localParticipant.setCamera(enabled: false)
-            await closingRoom?.disconnect()
-            if let id { await BlindbanditAPI.endCall(id: id) }
-            await self.refreshCallHistory()
-        }
-        room = nil
-        activeCallID = nil
-        isInCall = false
-        isVideoCall = false
-        cameraEnabled = false
-        localVideoTrack = nil
-        remoteVideoTrack = nil
-        callSeconds = 0
-        CallSounds.hangup()
-        statusMessage = "Call ended."
-        UIAccessibility.post(notification: .announcement, argument: statusMessage)
+        participants = []
     }
 
     /// Clears everything held in memory, used on sign-out and account deletion.
     func reset() {
-        if isInCall { endCall() }
+        if isInCall { finishCall(notifyServer: true, announcement: "Call ended.") }
+        incomingCall = nil
         stopPolling()
         callHistory = []
         blockedProfiles = []
@@ -770,6 +1311,7 @@ final class ProductionCommunicationsService: ObservableObject {
         myProfileID = ""
         myHandle = ""
         statusMessage = ""
+        missedGroupCalls = []
         bootstrapped = false
     }
 
@@ -778,12 +1320,8 @@ final class ProductionCommunicationsService: ObservableObject {
         ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                if self.isRinging {
-                    if !(self.room?.remoteParticipants.isEmpty ?? true) { self.stopRinging(answered: true) }
-                } else {
-                    self.callSeconds += 1
-                }
-                self.refreshVideoTracks()
+                if !self.isRinging { self.callSeconds += 1 }
+                self.refreshParticipants()
             }
         }
     }
@@ -791,5 +1329,33 @@ final class ProductionCommunicationsService: ObservableObject {
     private func stopTicker() {
         ticker?.invalidate()
         ticker = nil
+    }
+
+    // MARK: Per-participant actions
+
+    @Published private(set) var locallyMuted: Set<String> = []
+
+    /// Mutes one person's audio on this phone only (they aren't told).
+    func toggleLocalMute(participantID: String) {
+        guard let p = room?.remoteParticipants.values.first(where: { $0.identity?.stringValue == participantID }) else { return }
+        let mute = !locallyMuted.contains(participantID)
+        for pub in p.audioTracks { (pub.track as? RemoteAudioTrack)?.volume = mute ? 0 : 1 }
+        if mute { locallyMuted.insert(participantID) } else { locallyMuted.remove(participantID) }
+        let name = participants.first(where: { $0.id == participantID })?.name ?? "them"
+        UIAccessibility.post(notification: .announcement, argument: mute ? "\(name) muted for you" : "\(name) unmuted for you")
+    }
+
+    /// Admin only. Needs POST /v1/social/calls/{id}/remove (see addendum).
+    func removeFromCall(participantID: String) async {
+        guard let id = activeCallID else { return }
+        do {
+            try await BlindbanditAPI.removeFromCall(id: id, handle: participantID)
+            statusMessage = "Removed from the call."
+        } catch let error as CommunicationsError where error.isMissingRoute {
+            statusMessage = CommunicationsError.serverUpdateMessage
+        } catch {
+            statusMessage = "Couldn't remove them: \(error.localizedDescription)"
+        }
+        UIAccessibility.post(notification: .announcement, argument: statusMessage)
     }
 }

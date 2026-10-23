@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Groups
@@ -48,6 +49,7 @@ fun MoreHubScreen(
     auth: ClerkAuthService,
     onOpenSite: (String) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenCreator: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val base = BuildConfig.WEB_BASE_URL
@@ -68,6 +70,7 @@ fun MoreHubScreen(
         item {
             Group("Your account") {
                 Entry(Icons.Default.Settings, "Settings", onOpenSettings)
+                Entry(Icons.Default.Build, "Creator tools", onOpenCreator)
                 Entry(Icons.Default.AccountCircle, "Profile & account") { onOpenSite("$base/account") }
             }
         }

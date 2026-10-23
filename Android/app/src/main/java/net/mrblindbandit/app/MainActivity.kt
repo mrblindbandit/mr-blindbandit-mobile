@@ -78,6 +78,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.ActivityCompat
@@ -98,19 +99,28 @@ import net.mrblindbandit.app.brand.BlindbanditLogo
 import net.mrblindbandit.app.brand.BrandProgressOverlay
 import net.mrblindbandit.app.brand.SpinningBrandLogo
 import net.mrblindbandit.app.config.AppConfig
-import net.mrblindbandit.app.connect.ConnectTab
+import net.mrblindbandit.app.connect.AppLock
+import net.mrblindbandit.app.connect.AppLockScreen
+import net.mrblindbandit.app.connect.CallsTab
+import net.mrblindbandit.app.connect.CommsDestination
+import net.mrblindbandit.app.connect.MessagesTab
+import net.mrblindbandit.app.connect.UnreadBadge
 import net.mrblindbandit.app.connect.rememberCommunications
+import net.mrblindbandit.app.connect.rememberHaptics
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.material.icons.automirrored.filled.Chat
 import net.mrblindbandit.app.creator.NativeCreatorToolkitScreen
 import net.mrblindbandit.app.settings.SettingsScreen
 import net.mrblindbandit.app.ui.BlindbanditTheme
 import net.mrblindbandit.app.ui.Spacing
 import net.mrblindbandit.app.ui.openInBrowser
 
-class MainActivity : ComponentActivity() {
+class MainActivity : androidx.fragment.app.FragmentActivity() {
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var pendingMediaRequest: PermissionRequest? = null
     private var pendingMediaResources: Array<String> = emptyArray()
     private val deepLinkState = mutableStateOf<String?>(null)
+    val commsDestinationState = mutableStateOf<CommsDestination?>(null)
 
     private val fileChooserLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val callback = filePathCallback ?: return@registerForActivityResult
@@ -138,6 +148,15 @@ class MainActivity : ComponentActivity() {
      */
     private fun resolveDeepLink(intent: Intent?): String? {
         if (intent == null) return null
+        val link = intent.dataString ?: intent.getStringExtra("url") ?: intent.getStringExtra("deep_link") ?: intent.getStringExtra("link")
+        val conversationId = intent.getStringExtra("conversation_id")
+        val callId = intent.getStringExtra("call_id")
+        val isComms = !conversationId.isNullOrBlank() || !callId.isNullOrBlank() ||
+            (link != null && Regex("^(https?://[^/]*mrblindbandit\\.net)?/(mobile/)?(messages|calls|inbox)(/|$|\\?)").containsMatchIn(link)) ||
+            (link?.startsWith("mrblindbandit://") == true && (link.contains("messages") || link.contains("calls")))
+        if (isComms) {
+            CommsDestination.parse(link, conversationId, callId)?.let { commsDestinationState.value = it; return null }
+        }
         val raw = intent.dataString
             ?: intent.getStringExtra("url")
             ?: intent.getStringExtra("deep_link")
@@ -235,8 +254,8 @@ class MainActivity : ComponentActivity() {
 
 enum class AppTab(val label: String, val icon: ImageVector, val description: String) {
     HOME("Home", Icons.Default.Home, "Home"),
-    CREATOR("Create", Icons.Default.Build, "Creator tools"),
-    CONNECT("Connect", Icons.Default.Phone, "Calls and messages"),
+    MESSAGES("Messages", Icons.AutoMirrored.Filled.Chat, "Messages"),
+    CALLS("Calls", Icons.Default.Phone, "Calls"),
     LISTEN("Listen", Icons.Default.Headphones, "Listen to music"),
     MORE("More", Icons.Default.MoreHoriz, "More options"),
 }
@@ -261,6 +280,7 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
     var currentUrl by rememberSaveable { mutableStateOf(BuildConfig.WEB_BASE_URL + (screenshot?.webPath ?: "/")) }
     var showSettings by rememberSaveable { mutableStateOf(screenshot?.settings == true) }
     var showWeb by rememberSaveable { mutableStateOf(screenshot?.webPath != null) }
+    var showCreator by rememberSaveable { mutableStateOf(false) }
     var showChronicle by rememberSaveable { mutableStateOf(screenshot?.chronicle == true) }
     var chronicleArticle by rememberSaveable { mutableStateOf<String?>(screenshot?.articleUrl) }
 
@@ -289,10 +309,30 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
         AuthState.Unknown -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             SpinningBrandLogo(112.dp, prefs.reduceMotion)
         }
-        AuthState.SignedOut -> AuthGatewayScreen(auth, prefs.reduceMotion)
+        AuthState.SignedOut -> Box(Modifier.fillMaxSize().safeDrawingPadding()) { AuthGatewayScreen(auth, prefs.reduceMotion) }
         is AuthState.SignedIn -> {
             val communications = rememberCommunications(auth)
             communications.startWithCameraOff = prefs.startCallsWithCameraOff
+            communications.speakerByDefault = prefs.speakerphoneByDefault
+            val haptics = rememberHaptics { prefs.hapticsEnabled }
+            var locked by remember { mutableStateOf(screenshot == null && communications.local.appLockEnabled && !AppLock.unlockedThisProcess) }
+            var pendingThread by remember { mutableStateOf<String?>(null) }
+            var dialRequest by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+            LaunchedEffect(state.email) { if (screenshot == null) communications.bootstrap() }
+            val destination = activity.commsDestinationState.value
+            LaunchedEffect(destination) {
+                when (destination) {
+                    is CommsDestination.Thread -> { pendingThread = destination.conversationId; tab = AppTab.MESSAGES }
+                    is CommsDestination.Call -> { communications.incomingCallId = destination.callId; tab = AppTab.CALLS }
+                    CommsDestination.Calls -> tab = AppTab.CALLS
+                    CommsDestination.Messages -> tab = AppTab.MESSAGES
+                    null -> Unit
+                }
+                if (destination != null) { showSettings = false; showWeb = false; showChronicle = false; showCreator = false; activity.commsDestinationState.value = null }
+            }
+            if (locked) {
+                AppLockScreen(activity) { AppLock.unlockedThisProcess = true; locked = false }
+            } else {
             LaunchedEffect(state.email) { if (screenshot == null) registerPushToken(context, communications) }
             val openWeb: (String) -> Unit = { currentUrl = it; showWeb = true }
             when {
@@ -302,13 +342,18 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
                     onBack = { showSettings = false },
                     onOpenWeb = { showSettings = false; openWeb(it) },
                     onRequestNotifications = { activity.requestNotificationPermission() },
+                    commsSection = { net.mrblindbandit.app.connect.CommsSettingsSection(communications, activity, haptics) },
                 )
+                showCreator -> {
+                    BackHandler { showCreator = false }
+                    Box(Modifier.fillMaxSize().safeDrawingPadding()) { NativeCreatorToolkitScreen() }
+                }
                 showChronicle && !showWeb -> net.mrblindbandit.app.chronicle.ChronicleScreen(
                     onBack = { showChronicle = false; chronicleArticle = null },
                     initialArticleUrl = chronicleArticle,
                     onOpenWeb = openWeb,
                 )
-                showWeb -> WebScreen(activity, currentUrl, prefs, onClose = { showWeb = false })
+                showWeb -> Box(Modifier.fillMaxSize().safeDrawingPadding()) { WebScreen(activity, currentUrl, prefs, onClose = { showWeb = false }) }
                 else -> {
                     BackHandler(enabled = tab != AppTab.HOME) { tab = AppTab.HOME }
                     Scaffold(bottomBar = {
@@ -316,8 +361,15 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
                             AppTab.entries.forEach { item ->
                                 NavigationBarItem(
                                     selected = tab == item,
-                                    onClick = { tab = item },
-                                    icon = { Icon(item.icon, contentDescription = null) },
+                                    onClick = { haptics.tap(); tab = item },
+                                    icon = {
+                                        if (item == AppTab.MESSAGES) UnreadBadge(communications.unreadBadge) { Icon(item.icon, contentDescription = null) }
+                                        else Icon(item.icon, contentDescription = null)
+                                    },
+                                    modifier = Modifier.semantics {
+                                        val n = communications.unreadBadge
+                                        if (item == AppTab.MESSAGES && n > 0) stateDescription = "$n unread"
+                                    },
                                     label = { Text(item.label) },
                                 )
                             }
@@ -327,25 +379,40 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
                             when (tab) {
                                 AppTab.HOME -> HomeScreen(
                                     displayName = state.displayName,
-                                    onCreator = { tab = AppTab.CREATOR },
-                                    onConnect = { tab = AppTab.CONNECT },
+                                    onCreator = { showCreator = true },
+                                    onConnect = { tab = AppTab.MESSAGES },
                                     onListen = { tab = AppTab.LISTEN },
                                     onWeb = openWeb,
                                     onChronicle = { chronicleArticle = null; showChronicle = true },
                                     onSettings = { showSettings = true },
                                     onEnableNotifications = { activity.requestNotificationPermission() },
                                 )
-                                AppTab.CREATOR -> NativeCreatorToolkitScreen()
-                                AppTab.CONNECT -> ConnectTab(auth, communications, prefs.reduceMotion)
+                                AppTab.MESSAGES -> MessagesTab(
+                                    communications, haptics, signedIn = true,
+                                    pendingThread = pendingThread, onPendingThreadHandled = { pendingThread = null },
+                                    onCall = { h, v -> dialRequest = h to v; tab = AppTab.CALLS },
+                                    onDestination = { d -> activity.commsDestinationState.value = d },
+                                )
+                                AppTab.CALLS -> CallsTab(
+                                    communications, haptics, signedIn = true,
+                                    dialRequest = dialRequest, onDialHandled = { dialRequest = null },
+                                    onMessage = { h -> tab = AppTab.MESSAGES; activity.commsDestinationState.value = null; dialRequest = null; messageHandle(communications, h) { id -> pendingThread = id } },
+                                )
                                 AppTab.LISTEN -> ListenHubScreen(onOpenSite = openWeb, prefs = prefs)
-                                AppTab.MORE -> MoreHubScreen(auth = auth, onOpenSite = openWeb, onOpenSettings = { showSettings = true })
+                                AppTab.MORE -> MoreHubScreen(auth = auth, onOpenSite = openWeb, onOpenSettings = { showSettings = true }, onOpenCreator = { showCreator = true })
                             }
                         }
                     }
                 }
             }
+            }
         }
     }
+}
+
+private fun messageHandle(c: net.mrblindbandit.app.connect.ProductionCommunicationsService, handle: String, open: (String) -> Unit) {
+    val id = c.conversations.firstOrNull { it.peerHandle.equals(handle, ignoreCase = true) }?.id
+    if (id != null) open(id) else net.mrblindbandit.app.connect.Announcer.announce(c.local.context, "No conversation with @$handle yet. Use New message to start one.")
 }
 
 private fun registerPushToken(context: android.content.Context, communications: net.mrblindbandit.app.connect.ProductionCommunicationsService) {

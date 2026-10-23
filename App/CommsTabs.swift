@@ -688,27 +688,16 @@ struct ConversationThreadView: View {
                     }
                 if !mine { Spacer(minLength: 48) }
             }
-            // Status lives under the bubble, never inside it. Like iMessage it's shown under my latest
-            // message; every message still carries its own status in the VoiceOver label.
-            if mine && message.id == latestMineID {
-                Text(status)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .padding(.trailing, 6)
-            } else if !mine && message.id == communications.messages.last?.id {
-                Text(sentLabel)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 6)
-            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel((mine ? "You: \(shown)" : "@\(handle): \(shown)")
+                + (reactions[message.id].map { ". You reacted \(MessageReactions.name($0))" } ?? ""))
+            .accessibilityActions { messageActions(message, shown: shown, mine: mine) }
+            .contextMenu { messageActions(message, shown: shown, mine: mine) }
+            // Status is its own element directly under every message, so VoiceOver lands on it next.
+            MessageStatusCaption(text: mine ? status : sentLabel, mine: mine)
         }
         .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel((mine ? "You: \(shown). \(status)" : "@\(handle): \(shown). \(sentLabel)")
-            + (reactions[message.id].map { ". You reacted \(MessageReactions.name($0))" } ?? ""))
-        .accessibilityHint(mine ? "Sent \(sentLabel)" : "")
-        .accessibilityActions { messageActions(message, shown: shown, mine: mine) }
-        .contextMenu { messageActions(message, shown: shown, mine: mine) }
+        .accessibilityElement(children: .contain)
     }
 
     private func react(_ message: BlindbanditServerMessage, _ emoji: String) {
@@ -1016,12 +1005,73 @@ struct MessagesSettingsView: View {
 
 // MARK: - Message status and typing
 
+/// Launched only by UI tests (-UITestMessageStatus): an outgoing and an incoming row built from the
+/// same pieces the thread uses, so the status element's position and focus can be checked without an account.
+struct MessageStatusUITestView: View {
+    var body: some View {
+        let now = Date().timeIntervalSince1970 * 1000
+        VStack(spacing: 10) {
+            VStack(alignment: .trailing, spacing: 3) {
+                Text("Hello from the test").padding(12)
+                    .background(Brand.gold.opacity(0.35), in: RoundedRectangle(cornerRadius: 16))
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("You: Hello from the test")
+                    .accessibilityIdentifier("outgoing-message")
+                MessageStatusCaption(text: MessageStatus.caption(sent: now - 60_000, delivered: now - 30_000, read: nil, showRead: true), mine: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .accessibilityElement(children: .contain)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Reply").padding(12).background(Color.secondary.opacity(0.16), in: RoundedRectangle(cornerRadius: 16))
+                    .accessibilityElement(children: .ignore).accessibilityLabel("@friend: Reply")
+                MessageStatusCaption(text: MessageStatus.stamp(now), mine: false)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .contain)
+            TypingIndicatorBubble(name: "@friend")
+        }
+        .padding()
+    }
+}
+
+/// The small line under a message ("Delivered 2:34 PM"). A separate VoiceOver element that
+/// updates in place when receipts change.
+struct MessageStatusCaption: View {
+    let text: String
+    let mine: Bool
+    var body: some View {
+        Text(text)
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .padding(mine ? .trailing : .leading, 6)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(text)
+            .accessibilityIdentifier(mine ? "message-status" : "message-time")
+            .accessibilityAddTraits(.updatesFrequently)
+    }
+}
+
 enum MessageStatus {
     /// "Sent", "Delivered", "Read 5:08 AM", "Read Yesterday 9:14 PM", "Read Mon 9:14 PM" or "Read Oct 3, 9:14 PM".
     static func caption(for message: BlindbanditServerMessage, showRead: Bool, now: Date = Date()) -> String {
-        if showRead, let read = message.read_at { return "Read " + stamp(read, now: now) }
-        if message.delivered_at != nil || message.read_at != nil { return "Delivered" }
-        return "Sent"
+        caption(sent: message.created_at, delivered: message.delivered_at, read: message.read_at, showRead: showRead, now: now)
+    }
+
+    /// "Sent 2:33 PM", "Delivered 2:34 PM" or "Read 5:08 AM", in the device's time zone.
+    static func caption(sent: Double, delivered: Double?, read: Double?, showRead: Bool, now: Date = Date()) -> String {
+        if showRead, let read { return "Read " + stamp(read, now: now) }
+        if let at = delivered ?? read { return "Delivered " + stamp(at, now: now) }
+        return "Sent " + stamp(sent, now: now)
+    }
+
+    /// Groups: "Read by Sam, Ana 5:08 AM", "Read by 3 5:08 AM", else delivered/sent.
+    static func groupCaption(for m: BlindbanditGroupMessage, now: Date = Date()) -> String {
+        if m.read_count > 0 || !m.read_by.isEmpty || m.read_at != nil {
+            let who = !m.read_by.isEmpty && m.read_by.count <= 3 ? m.read_by.joined(separator: ", ") : "\(max(m.read_count, m.read_by.count))"
+            let time = m.read_at.map { " " + stamp($0, now: now) } ?? ""
+            return (who == "0" ? "Read" : "Read by \(who)") + time
+        }
+        return caption(sent: m.created_at, delivered: m.delivered_at, read: nil, showRead: false, now: now)
     }
 
     /// Local-time label for a server millisecond timestamp, including the day when it isn't today.
@@ -1073,6 +1123,7 @@ struct TypingIndicatorBubble: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(name) is typing")
+        .accessibilityIdentifier("typing-indicator")
         .task(id: reduceMotion) {
             guard !reduceMotion else { return }
             while !Task.isCancelled {

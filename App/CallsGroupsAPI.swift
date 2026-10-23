@@ -123,20 +123,60 @@ struct BlindbanditGroupMessage: Identifiable, Decodable, Equatable {
     let sender_name: String
     let body: String
     let created_at: Double
+    var delivered_at: Double? = nil
+    var read_at: Double? = nil
+    /// Names or @handles of members who have read it (may be empty when the server only sends a count).
+    var read_by: [String] = []
+    var read_count: Int = 0
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = (try? c.decode(String.self, forKey: .id)) ?? UUID().uuidString
+        delivered_at = LenientTime.decode(c, .delivered_at)
+        read_at = LenientTime.decode(c, .read_at) ?? LenientTime.decode(c, .last_read_at)
+        if let names = try? c.decode([String].self, forKey: .read_by) {
+            read_by = names
+        } else if let people = try? c.decode([ReadByPerson].self, forKey: .read_by) {
+            read_by = people.map(\.label)
+            if read_at == nil { read_at = people.compactMap(\.read_at).max() }
+        }
+        read_count = (try? c.decode(Int.self, forKey: .read_count)) ?? read_by.count
         sender_id = (try? c.decode(String.self, forKey: .sender_id)) ?? (try? c.decode(String.self, forKey: .author_id)) ?? ""
         sender_handle = (try? c.decode(String.self, forKey: .sender_handle)) ?? (try? c.decode(String.self, forKey: .handle)) ?? ""
         let name = (try? c.decode(String.self, forKey: .sender_display_name)) ?? (try? c.decode(String.self, forKey: .sender_name))
             ?? (try? c.decode(String.self, forKey: .display_name))
         sender_name = name ?? (sender_handle.isEmpty ? "Member" : "@\(sender_handle)")
         body = (try? c.decode(String.self, forKey: .body)) ?? ""
-        created_at = (try? c.decode(Double.self, forKey: .created_at)) ?? 0
+        created_at = LenientTime.decode(c, .created_at) ?? LenientTime.decode(c, .sent_at) ?? 0
     }
 
-    enum CodingKeys: String, CodingKey { case id, sender_id, sender_handle, sender_display_name, sender_name, body, created_at, author_id, handle, display_name }
+    struct ReadByPerson: Decodable {
+        let label: String
+        let read_at: Double?
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            let handle = (try? c.decode(String.self, forKey: .handle)) ?? ""
+            label = (try? c.decode(String.self, forKey: .display_name)) ?? (handle.isEmpty ? "Someone" : "@\(handle)")
+            read_at = LenientTime.decode(c, .read_at)
+        }
+        enum CodingKeys: String, CodingKey { case handle, display_name, read_at }
+    }
+
+    enum CodingKeys: String, CodingKey { case id, sender_id, sender_handle, sender_display_name, sender_name, body, created_at, sent_at, author_id, handle, display_name, delivered_at, read_at, last_read_at, read_by, read_count }
+}
+
+/// Server timestamps: epoch milliseconds (number or string), epoch seconds, or ISO 8601.
+enum LenientTime {
+    static func decode<K: CodingKey>(_ c: KeyedDecodingContainer<K>, _ key: K) -> Double? {
+        if let d = try? c.decode(Double.self, forKey: key) { return d < 100_000_000_000 ? d * 1000 : d }
+        guard let s = try? c.decode(String.self, forKey: key), !s.isEmpty else { return nil }
+        if let d = Double(s) { return d < 100_000_000_000 ? d * 1000 : d }
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = iso.date(from: s) { return date.timeIntervalSince1970 * 1000 }
+        iso.formatOptions = [.withInternetDateTime]
+        return iso.date(from: s).map { $0.timeIntervalSince1970 * 1000 }
+    }
 }
 
 /// A ringing call for me, from GET /v1/social/calls/incoming or a push payload.
@@ -252,6 +292,13 @@ extension BlindbanditAPI {
     }
 
     struct TypingPayload: Decodable { let typing_handles: [String]? }
+
+    /// Who is typing in the group right now (GET; empty if the route isn't live).
+    static func groupTyping(id: String) async -> [String] {
+        guard let data = try? await request("v1/social/groups/\(escape(id))/typing"),
+              let payload = try? decode(TypingPayload.self, from: data) else { return [] }
+        return payload.typing_handles ?? []
+    }
 
     static func groupMessages(id: String) async throws -> [BlindbanditGroupMessage] {
         try decode(ItemsPayload<BlindbanditGroupMessage>.self, from: try await request("v1/social/groups/\(escape(id))/messages?limit=100")).items

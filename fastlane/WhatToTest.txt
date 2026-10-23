@@ -1,10 +1,2 @@
-Blindbandit 1.9.0: real phone-style calls, group calls, Groups and People.
+In conversations, swipe past each of your messages to hear its status as a separate item, such as 'Delivered 2:34 PM' or 'Read 5:08 AM'. In groups it says 'Read by' with names or a count. Incoming messages have a time line, and group typing is announced.
 
-Please test:
-- Call someone from a conversation's top bar (Voice or Video). With the app closed or the phone locked, an incoming call should ring like a phone call and show the caller's name, never an ID. Answer, mute, hold and end from the lock screen. The call appears in the Phone app's Recents, and tapping it calls back.
-- Video calls: your own and the other person's video, flip camera, Share screen, Switch to voice, and Switch to video.
-- Groups tab: create a group, chat, then start a group voice or video call. Check the grid, joined/left announcements, Add people, Raise hand, call chat and the audio output picker.
-- People (Groups > People): Message, Call and Video.
-- VoiceOver: Actions on conversations (Mute 15 min to forever, Archive, Delete, Block, Report), on messages (React, Forward, Delete for me, Show time sent and read) and in calls. Use the rotor for Unread messages. A Magic Tap (two-finger double tap) answers or ends a call.
-- Under your last message: Sent, Delivered, then "Read 5:08 AM". The typing dots appear when the other person types.
-- Tap a message notification: it should open that conversation even when the app was closed.

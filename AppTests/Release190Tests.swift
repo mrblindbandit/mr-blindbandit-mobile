@@ -1,4 +1,5 @@
 import XCTest
+import CallKit
 @testable import Blindbandit
 
 @MainActor
@@ -82,5 +83,53 @@ final class PushRouteTests: XCTestCase {
     func testIncomingEmptyItems() throws {
         let d = try JSONDecoder().decode(ItemsPayload<BlindbanditIncomingCall>.self, from: Data(#"{"items":[]}"#.utf8))
         XCTAssertTrue(d.items.isEmpty)
+    }
+
+    func testRecentsHandleMapsBack() {
+        XCTAssertEqual(CallKitManager.recentsHandle("@bbfoundation"), "bbfoundation")
+        XCTAssertEqual(CallKitManager.recentsHandle("bbfoundation"), "bbfoundation")
+    }
+
+    func testEndReasonForRecents() {
+        XCTAssertEqual(CallKitManager.endReason(wasConnected: true), .remoteEnded)
+        XCTAssertEqual(CallKitManager.endReason(wasConnected: false), .unanswered)
+    }
+
+    func testPushRouteShapes() {
+        let c = "ac463c39-06e0-449e-99a5-2056158bbd41"
+        XCTAssertEqual(PushRoute.parse(["conversationId": c]), .conversation(id: c, handle: nil))
+        XCTAssertEqual(PushRoute.parse(["c": c, "sender_handle": "bbfoundation"]), .conversation(id: c, handle: "bbfoundation"))
+        XCTAssertEqual(PushRoute.parse(["thread_id": c]), .conversation(id: c, handle: nil))
+        XCTAssertEqual(PushRoute.parse(["aps": ["thread-id": c, "alert": ["body": "hi"]]]), .conversation(id: c, handle: nil))
+        XCTAssertEqual(PushRoute.parse(["data": ["conversation_id": c]]), .conversation(id: c, handle: nil))
+        XCTAssertEqual(PushRoute.parse(["payload": ["link": "/mobile/messages/?id=\(c)"]]), .conversation(id: c, handle: nil))
+        XCTAssertEqual(PushRoute.parse(["url": "https://mrblindbandit.net/mobile/messages/?c=\(c)"]), .conversation(id: c, handle: nil))
+        XCTAssertEqual(PushRoute.parse(["link": "https://mrblindbandit.net/mobile/groups/?id=g9"]), .group(id: "g9"))
+        XCTAssertEqual(PushRoute.parse(["deep_link": "/mobile/calls/?id=k9"]), .call(id: "k9"))
+        XCTAssertEqual(PushRoute.parse(["data": ["group_id": "g1"]]), .group(id: "g1"))
+        XCTAssertEqual(PushRoute.parse(["data": ["call_id": "k1", "type": "call"]]), .call(id: "k1"))
+        XCTAssertEqual(PushRoute.parse(["handle": "@bbfoundation", "aps": ["alert": "New message"]]), .conversation(id: nil, handle: "bbfoundation"))
+        XCTAssertEqual(PushRoute.parse(["data": "{\"conversation_id\":\"\(c)\"}"]), .conversation(id: c, handle: nil))
+        XCTAssertNil(PushRoute.parse(["aps": ["alert": "hello"]]))
+        XCTAssertFalse(PushRoute.keySummary(["data": ["conversation_id": c]]).contains(c))
+    }
+
+    func testStatusCaptionsIncludeTime() {
+        let now = Date()
+        let ms = now.timeIntervalSince1970 * 1000
+        XCTAssertTrue(MessageStatus.caption(sent: ms, delivered: nil, read: nil, showRead: true, now: now).hasPrefix("Sent "))
+        XCTAssertTrue(MessageStatus.caption(sent: ms, delivered: ms, read: nil, showRead: true, now: now).hasPrefix("Delivered "))
+        XCTAssertTrue(MessageStatus.caption(sent: ms, delivered: ms, read: ms, showRead: true, now: now).hasPrefix("Read "))
+        XCTAssertTrue(MessageStatus.caption(sent: ms, delivered: ms, read: ms, showRead: false, now: now).hasPrefix("Delivered "))
+    }
+
+    func testGroupReadByCaption() throws {
+        let json = #"{"id":"m1","sender_handle":"me","body":"hi","created_at":1700000000000,"read_by":[{"handle":"sam","read_at":1700000060000},{"display_name":"Ana"}]}"#
+        let m = try JSONDecoder().decode(BlindbanditGroupMessage.self, from: Data(json.utf8))
+        XCTAssertEqual(m.read_by, ["@sam", "Ana"])
+        XCTAssertTrue(MessageStatus.groupCaption(for: m).hasPrefix("Read by @sam, Ana "))
+        let counted = try JSONDecoder().decode(BlindbanditGroupMessage.self, from: Data(#"{"id":"m2","body":"x","created_at":"2026-10-23T06:00:00Z","read_count":3}"#.utf8))
+        XCTAssertEqual(MessageStatus.groupCaption(for: counted), "Read by 3")
+        XCTAssertGreaterThan(counted.created_at, 1_700_000_000_000)
     }
 }

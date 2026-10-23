@@ -259,14 +259,14 @@ struct LockedView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                 Button("Unlock") { lock.unlock() }
-                if AppPIN.isSet {
-                    PINEntryView { r in if r != .wrong { lock.unlocked = true } }
-                }
                     .accessibilityLabel("Unlock \(AppConfig.appDisplayName)")
                     .accessibilityHint("Uses Face ID, Touch ID, or your passcode. Only asked when the app first starts.")
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .disabled(lock.busy)
+                if AppPIN.isSet {
+                    PINEntryView { r in if r != .wrong { lock.unlocked = true } }
+                }
                 if lock.busy { ProgressView("Waiting for iPhone authentication") }
                 if !lock.message.isEmpty {
                     Text(lock.message).foregroundStyle(.secondary)

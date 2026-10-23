@@ -81,6 +81,7 @@ struct BlindbanditGroupMember: Identifiable, Decodable, Equatable, Hashable {
     let display_name: String
     let avatar_url: String?
     var role: String
+    var verified: Bool = false
     var id: String { profile_id.isEmpty ? handle : profile_id }
     var isAdmin: Bool { ["owner", "admin"].contains(role) }
 
@@ -90,10 +91,11 @@ struct BlindbanditGroupMember: Identifiable, Decodable, Equatable, Hashable {
         profile_id = (try? c.decode(String.self, forKey: .profile_id)) ?? (try? c.decode(String.self, forKey: .id)) ?? handle
         display_name = (try? c.decode(String.self, forKey: .display_name)) ?? handle
         avatar_url = try? c.decodeIfPresent(String.self, forKey: .avatar_url)
-        role = (try? c.decode(String.self, forKey: .role)) ?? "member"
+        role = ((try? c.decode(String.self, forKey: .role)) ?? "member").lowercased()
+        verified = FlexibleBool.decode(c, .verified) ?? false
     }
 
-    enum CodingKeys: String, CodingKey { case profile_id, id, handle, display_name, avatar_url, role }
+    enum CodingKeys: String, CodingKey { case profile_id, id, handle, display_name, avatar_url, role, verified }
 }
 
 /// Accepts both `{group:{...}, members:[...]}` and a flat group object with `members` inside it.

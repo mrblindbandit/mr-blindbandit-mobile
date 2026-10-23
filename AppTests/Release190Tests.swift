@@ -70,4 +70,17 @@ final class PushRouteTests: XCTestCase {
         let map: [String: Double] = ["a": 0, "b": now.addingTimeInterval(60).timeIntervalSince1970, "c": now.addingTimeInterval(-1).timeIntervalSince1970]
         XCTAssertEqual(LocalComms.activeMutes(map, now: now), ["a", "b"])
     }
+
+    func testGroupDetailNestedWithIntVerified() throws {
+        let json = #"{"group":{"id":"g1","name":"Crew","member_count":2,"my_role":"Admin"},"members":[{"profile_id":"p1","handle":"a","verified":1},{"profile_id":"p2","handle":"b","verified":"0"}]}"#
+        let d = try JSONDecoder().decode(BlindbanditGroupDetail.self, from: Data(json.utf8))
+        XCTAssertEqual(d.members.count, 2)
+        XCTAssertTrue(d.members[0].verified)
+        XCTAssertFalse(d.members[1].verified)
+    }
+
+    func testIncomingEmptyItems() throws {
+        let d = try JSONDecoder().decode(ItemsPayload<BlindbanditIncomingCall>.self, from: Data(#"{"items":[]}"#.utf8))
+        XCTAssertTrue(d.items.isEmpty)
+    }
 }

@@ -1,3 +1,4 @@
+import OSLog
 import Foundation
 import SwiftUI
 import AVFoundation
@@ -208,7 +209,11 @@ final class VoicePlayback: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     func toggle(_ item: Item) async {
         if currentID == item.id, let player {
-            if playing { pause() } else { player.rate = rate; playing = player.play(); startTimer(); announce("Playing") }
+            if playing { pause() } else {
+                activateSession(); player.rate = VoicePlayerModel.validRate(rate); playing = player.play()
+                if !playing { VoiceLog.record("resume", "AVAudioPlayer.play() returned false") }
+                startTimer(); announce(playing ? "Playing" : "Couldn't resume")
+            }
             return
         }
         await play(item)
@@ -223,19 +228,32 @@ final class VoicePlayback: NSObject, ObservableObject, AVAudioPlayerDelegate {
         stop(deactivate: false)
         register(item)
         loadingID = item.id
-        let data = await VoicePlayerModel.load(item.media)
+        let p: AVAudioPlayer
+        do {
+            let data = try await VoicePlayerModel.loadThrowing(item.media)
+            p = try AVAudioPlayer(data: data)
+        } catch {
+            loadingID = nil
+            announce("Couldn't play this voice message. " + VoiceLog.record("play", error)); return
+        }
         loadingID = nil
-        guard let data, let p = try? AVAudioPlayer(data: data) else { announce("Couldn't load this voice message"); return }
-        let s = AVAudioSession.sharedInstance()
-        try? s.setCategory(.playAndRecord, mode: .spokenAudio, options: [.duckOthers, .defaultToSpeaker, .allowBluetoothA2DP, .allowBluetooth])
-        try? s.setActive(true)
+        activateSession()
         UIDevice.current.isProximityMonitoringEnabled = true
         routeForProximity()
-        p.enableRate = true; p.rate = rate; p.delegate = self; p.prepareToPlay()
-        player = p; currentID = item.id; elapsed = 0
+        p.enableRate = true; p.rate = VoicePlayerModel.validRate(rate); p.delegate = self; p.prepareToPlay()
+        player = p; currentID = item.id; elapsed = 0   // retained on the shared singleton for the whole playback
         playing = p.play()
+        if !playing { VoiceLog.record("play", "AVAudioPlayer.play() returned false (audio session busy?)"); announce("Couldn't play this voice message") }
         startTimer()
         markPlayed(item)
+    }
+
+    private func activateSession() {
+        let s = AVAudioSession.sharedInstance()
+        do {
+            try s.setCategory(.playAndRecord, mode: .spokenAudio, options: [.duckOthers, .defaultToSpeaker, .allowBluetoothA2DP, .allowBluetooth])
+            try s.setActive(true)
+        } catch { VoiceLog.record("audio session", error) }
     }
 
     func skip(_ seconds: TimeInterval) {
@@ -246,6 +264,7 @@ final class VoicePlayback: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     func setRate(_ r: Float) {
+        let r = VoicePlayerModel.validRate(r)
         rate = r; player?.rate = r
         UserDefaults.standard.set(r, forKey: "voice.rate")
         announce("Speed \(VoicePlayerModel.rateLabel(r))")
@@ -304,15 +323,54 @@ enum VoicePlayerModel {
     static func rateLabel(_ r: Float) -> String { r == 1 ? "1x" : (r == 1.5 ? "1.5x" : "2x") }
 
     static func load(_ m: E2EEPayload.Media) async -> Data? {
-        if let id = m.attachment_id, let d = try? Data(contentsOf: VoiceSender.cacheDir.appendingPathComponent(id + ".m4a")) { return d }
-        if let s = m.url, let u = URL(string: s), u.isFileURL, let d = try? Data(contentsOf: u) { return d }
-        guard let key = Data(base64Encoded: m.key), let nonceS = m.nonce, let nonce = Data(base64Encoded: nonceS) else { return nil }
+        do { return try await loadThrowing(m) } catch { _ = VoiceLog.record("load", error); return nil }
+    }
+
+    enum LoadError: LocalizedError {
+        case missingKey, noURL, http(Int), decrypt(Error)
+        var errorDescription: String? {
+            switch self {
+            case .missingKey: return "Attachment key or nonce missing or not base64"
+            case .noURL: return "No attachment id or URL"
+            case .http(let c): return "Download failed with HTTP \(c)"
+            case .decrypt(let e): return "Decrypt failed: \(e.localizedDescription)"
+            }
+        }
+    }
+
+    /// Cached plaintext -> local file -> download + E2EE decrypt; every failure is a real, logged error.
+    static func loadThrowing(_ m: E2EEPayload.Media) async throws -> Data {
+        if let id = m.attachment_id, let d = try? Data(contentsOf: VoiceSender.cacheDir.appendingPathComponent(id + ".m4a")), !d.isEmpty { return d }
+        if let s = m.url, let u = URL(string: s), u.isFileURL { return try Data(contentsOf: u) }
+        guard let key = Data(base64Encoded: m.key), let nonceS = m.nonce, let nonce = Data(base64Encoded: nonceS) else { throw LoadError.missingKey }
         var url: URL?
-        if let id = m.attachment_id { url = try? await SecurityAPI.attachmentURL(id: id) } else if let s = m.url { url = URL(string: s) }
-        guard let url, let (blob, _) = try? await URLSession.shared.data(from: url) else { return nil }
-        guard let plain = try? AttachmentCrypto.open(blob, key: key, baseNonce: nonce, plainSize: m.size ?? blob.count, sha256: Data(base64Encoded: m.sha256)) else { return nil }
+        if let id = m.attachment_id { url = try await SecurityAPI.attachmentURL(id: id) } else if let s = m.url { url = URL(string: s) }
+        guard let url else { throw LoadError.noURL }
+        let (blob, resp) = try await URLSession.shared.data(from: url)
+        if let h = resp as? HTTPURLResponse, !(200..<300).contains(h.statusCode) { throw LoadError.http(h.statusCode) }
+        let plain: Data
+        do { plain = try AttachmentCrypto.open(blob, key: key, baseNonce: nonce, plainSize: m.size ?? blob.count, sha256: Data(base64Encoded: m.sha256)) }
+        catch { throw LoadError.decrypt(error) }
         if let id = m.attachment_id, m.view_once != true { try? plain.write(to: VoiceSender.cacheDir.appendingPathComponent(id + ".m4a")) }
         return plain
+    }
+
+    /// AVAudioPlayer accepts 0.5...2; anything else stored (old builds, corrupt defaults) plays at 1x.
+    static func validRate(_ r: Float) -> Float { (0.5...2).contains(r) ? r : 1 }
+}
+
+/// Last real voice-playback error, shown in Settings > AI > Voice message debug log.
+enum VoiceLog {
+    static let log = Logger(subsystem: "net.mrblindbandit.app", category: "voice")
+    nonisolated(unsafe) static var lastError = ""
+    @discardableResult static func record(_ where_: String, _ error: Error) -> String {
+        let text = "\(where_): \(error.localizedDescription) [\(String(describing: error))]"
+        log.error("\(text, privacy: .public)")
+        lastError = text
+        return text
+    }
+    @discardableResult static func record(_ where_: String, _ message: String) -> String {
+        record(where_, NSError(domain: "voice", code: 0, userInfo: [NSLocalizedDescriptionKey: message]))
     }
 }
 

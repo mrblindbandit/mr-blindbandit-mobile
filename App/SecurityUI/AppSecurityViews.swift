@@ -216,6 +216,10 @@ struct AISettingsView: View {
                 Text(MusicLog.lastError.isEmpty ? "No Apple Music errors." : MusicLog.lastError)
                     .font(.footnote).textSelection(.enabled)
             }
+            Section("Voice message debug log") {
+                Text(VoiceLog.lastError.isEmpty ? "No voice message errors." : VoiceLog.lastError)
+                    .font(.footnote).textSelection(.enabled)
+            }
             Section {
                 Toggle("Allow AI web search", isOn: Binding(get: { WebSearch.allowed }, set: { WebSearch.allowed = $0; AIChatStore.shared.resetSession() }))
             } header: { Text("Web search").accessibilityAddTraits(.isHeader) } footer: {

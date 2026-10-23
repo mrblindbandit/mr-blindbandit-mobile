@@ -73,13 +73,16 @@ platform :ios do
         end
       end
     end
+    body = { data: { type: "appGroups", attributes: { identifier: "group.net.mrblindbandit.app", name: "Mr Blindbandit" } } }
+    rc = api.client.provisioning_request_client rescue nil
+    UI.message("CLIENT #{rc.class}")
     begin
-      r = api.client.tunes_request_client.post("v1/appGroups", { data: { type: "appGroups", attributes: { identifier: "group.net.mrblindbandit.app", name: "Mr Blindbandit" } } }) rescue nil
-      r ||= Spaceship::ConnectAPI::Provisioning::Client.instance.post("appGroups", { data: { type: "appGroups", attributes: { identifier: "group.net.mrblindbandit.app", name: "Mr Blindbandit" } } })
-      UI.important("APPGROUP status=#{r.status} body=#{r.body.to_s[0, 300]}")
+      r = rc.post("appGroups", body)
+      UI.important("APPGROUP status=#{r.status} body=#{r.body.to_s[0, 400]}")
     rescue => e
-      UI.error("APPGROUP_FAILED: #{e.message.to_s[0, 300]}")
+      UI.error("APPGROUP_FAILED: #{e.class} #{e.message.to_s[0, 400]}")
     end
+  end
   end
 
 end

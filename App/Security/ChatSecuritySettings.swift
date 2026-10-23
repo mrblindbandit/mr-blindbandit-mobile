@@ -143,7 +143,6 @@ final class ServerFeatures: @unchecked Sendable {
     }
 
     private let lock = NSLock()
-    static let needsUpdateText = "Needs server update"
     private var missing: [String: Date] = [:]
     private let defaults: UserDefaults
     private let ttl: TimeInterval

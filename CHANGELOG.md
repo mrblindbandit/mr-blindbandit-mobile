@@ -7,6 +7,10 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 ---
 
 
+## 2.0.6 (21)
+- Fix: remote participants heard no audio from the phone during screen share. The broadcast share was started with `ScreenShareCaptureOptions(useBroadcastExtension:)` and the default `appAudio: false`, so LiveKit's BroadcastScreenCapturer never enabled the extension's `.audioApp` stream. It now passes `appAudio: true`; app audio is mixed into the microphone track.
+- While sharing, the mic track stays published and mute is applied as mixer mic volume 0, so muting doesn't silence the shared audio. Call audio session adds `.mixWithOthers` so media keeps playing during calls.
+
 ## 2.0.5 (20)
 - Fix: answering a call failed and the caller's side ended right away. The server's "answered on another device" call_end VoIP push also reached the answering iPhone, which tore down the call it was joining (and then reported the failure back to the caller). The app now ignores call_end for a call it is joining.
 - Fix: VoIP call invites only ring when addressed to the signed-in account (callee id/handle checked when present; your own outgoing call never rings you; stale pushes after sign-out are rejected).

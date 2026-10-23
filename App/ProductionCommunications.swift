@@ -1185,7 +1185,13 @@ final class ProductionCommunicationsService: ObservableObject {
     func setMic(enabled: Bool) {
         guard micEnabled != enabled else { return }
         micEnabled = enabled
-        Task { try? await room?.localParticipant.setMicrophone(enabled: enabled) }
+        if screenSharing {
+            // Broadcast app audio is mixed into the mic track, so while sharing keep the track live
+            // and mute only the mic's input in the mixer; otherwise muting would also silence the shared audio.
+            AudioManager.shared.mixer.micVolume = enabled ? 1 : 0
+        } else {
+            Task { try? await room?.localParticipant.setMicrophone(enabled: enabled) }
+        }
         if let id = activeCallID { CallKitManager.shared.requestMute(callID: id, muted: !enabled) }
         AppHaptics.selection()
         UIAccessibility.post(notification: .announcement, argument: enabled ? "Microphone on" : "Muted")
@@ -1264,8 +1270,22 @@ final class ProductionCommunicationsService: ObservableObject {
                 // Whole-iPhone sharing through the Broadcast Upload extension (iOS asks you to Start Broadcast);
                 // turn off "Share whole screen" in Settings to share just this app.
                 let whole = UserDefaults.standard.object(forKey: "screenShare.wholeScreen") as? Bool ?? true
+                // appAudio: true makes LiveKit's BroadcastScreenCapturer pull .audioApp samples from the
+                // extension and mix them into the published microphone track (the only way remote people hear
+                // videos/music playing on the phone). Without it, only video was ever sent.
+                if enable {
+                    // App audio rides on the mic track: make sure it is published even when muted,
+                    // and represent "muted" as mic volume 0 in the mixer.
+                    AudioManager.shared.mixer.micVolume = micEnabled ? 1 : 0
+                    AudioManager.shared.mixer.appVolume = 1
+                    try await room.localParticipant.setMicrophone(enabled: true)
+                }
                 _ = try await room.localParticipant.set(source: .screenShareVideo, enabled: enable,
-                    captureOptions: ScreenShareCaptureOptions(useBroadcastExtension: whole))
+                    captureOptions: ScreenShareCaptureOptions(appAudio: true, useBroadcastExtension: whole))
+                if !enable {
+                    AudioManager.shared.mixer.micVolume = 1
+                    if !micEnabled { try? await room.localParticipant.setMicrophone(enabled: false) }
+                }
                 screenSharing = enable
                 statusMessage = enable
                     ? (whole ? "Choose Mr. BlindBandit, then Start Broadcast. Everyone in the call will see your whole screen." : "Sharing your screen. Everyone in the call sees this app.")

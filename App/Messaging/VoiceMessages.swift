@@ -357,12 +357,16 @@ struct VoiceBubble: View {
         let isPlaying = current && center.playing
         let loading = center.loadingID == item.id
         let unplayed = !mine && !center.played.contains(item.id)
+        let total: Double = max(media.duration ?? 1, 0.1)
+        let progress: Double = current ? min(center.elapsed, total) : 0
+        let timeText: String = current ? VoicePlayback.clock(center.elapsed) + " / " + duration : duration
+        let icon: String = loading ? "hourglass" : (isPlaying ? "pause.circle.fill" : "play.circle.fill")
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 12) {
-                Image(systemName: loading ? "hourglass" : (isPlaying ? "pause.circle.fill" : "play.circle.fill")).font(.largeTitle)
+                Image(systemName: icon).font(.largeTitle)
                 VStack(alignment: .leading, spacing: 2) {
-                    ProgressView(value: current ? min(center.elapsed, media.duration ?? 1) : 0, total: max(media.duration ?? 1, 0.1))
-                    Text(current ? "\(VoicePlayback.clock(center.elapsed)) / \(duration)" : duration).font(.caption)
+                    ProgressView(value: progress, total: total)
+                    Text(timeText).font(.caption)
                 }
                 Text(VoicePlayerModel.rateLabel(center.rate)).font(.caption.bold())
                 if unplayed { Circle().fill(Brand.gold).frame(width: 8, height: 8) }
@@ -376,21 +380,21 @@ struct VoiceBubble: View {
         .background(Color.secondary.opacity(0.14), in: RoundedRectangle(cornerRadius: 16))
         .contentShape(Rectangle())
         .onTapGesture { toggle(once) }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(once ? "Listen-once voice message" : "Voice message") from \(from), \(duration)\(unplayed ? ", unplayed" : "")")
-        .accessibilityValue(current ? "\(isPlaying ? "Playing" : "Paused"), \(VoicePlayback.clock(center.elapsed)) of \(duration), speed \(VoicePlayerModel.rateLabel(center.rate))" : "")
-        .accessibilityHint(isPlaying ? "Double tap to pause" : (once ? "Double tap to play. It can be heard only once." : "Double tap to play"))
-        .accessibilityAddTraits([.isButton, .startsMediaSession])
-        .accessibilityAction { toggle(once) }
-        .accessibilityAction(named: isPlaying ? "Pause" : "Play") { toggle(once) }
-        .accessibilityAction(named: "Speed 1x") { center.setRate(1) }
-        .accessibilityAction(named: "Speed 1.5x") { center.setRate(1.5) }
-        .accessibilityAction(named: "Speed 2x") { center.setRate(2) }
-        .accessibilityAction(named: "Skip back 5 seconds") { if current { center.skip(-5) } }
-        .accessibilityAction(named: "Skip ahead 5 seconds") { if current { center.skip(5) } }
-        .accessibilityAction(named: "Show transcript") {
-            if once { UIAccessibility.post(notification: .announcement, argument: "Listen-once messages don't show a transcript") } else { showTranscript = true }
-        }
+        .modifier(VoiceBubbleAccessibility(label: axLabel(once: once, unplayed: unplayed), value: axValue(current: current, isPlaying: isPlaying),
+                                           hint: isPlaying ? "Double tap to pause" : (once ? "Double tap to play. It can be heard only once." : "Double tap to play"),
+                                           isPlaying: isPlaying, current: current, once: once,
+                                           toggle: { toggle(once) }, transcript: { showTranscript = true }))
+    }
+
+    private func axLabel(once: Bool, unplayed: Bool) -> String {
+        let kind = once ? "Listen-once voice message" : "Voice message"
+        return kind + " from " + from + ", " + duration + (unplayed ? ", unplayed" : "")
+    }
+
+    private func axValue(current: Bool, isPlaying: Bool) -> String {
+        guard current else { return "" }
+        let state = isPlaying ? "Playing" : "Paused"
+        return state + ", " + VoicePlayback.clock(center.elapsed) + " of " + duration + ", speed " + VoicePlayerModel.rateLabel(center.rate)
     }
 
     private func toggle(_ once: Bool) {
@@ -415,5 +419,32 @@ extension VoiceRecorder {
             _ = await VoiceSender.send(file: url, duration: d, handle: handle, chat: chat, comms: comms,
                                        listenOnce: UserDefaults.standard.bool(forKey: "voice.listenOnce"))
         } else { _ = await start() }
+    }
+}
+
+struct VoiceBubbleAccessibility: ViewModifier {
+    let label: String, value: String, hint: String
+    let isPlaying: Bool, current: Bool, once: Bool
+    let toggle: () -> Void, transcript: () -> Void
+    func body(content: Content) -> some View {
+        let c = VoicePlayback.shared
+        return content
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(label)
+            .accessibilityValue(value)
+            .accessibilityHint(hint)
+            .accessibilityAddTraits([.isButton, .startsMediaSession])
+            .accessibilityAction { toggle() }
+            .accessibilityActions {
+                Button(isPlaying ? "Pause" : "Play") { toggle() }
+                Button("Speed 1x") { c.setRate(1) }
+                Button("Speed 1.5x") { c.setRate(1.5) }
+                Button("Speed 2x") { c.setRate(2) }
+                Button("Skip back 5 seconds") { if current { c.skip(-5) } }
+                Button("Skip ahead 5 seconds") { if current { c.skip(5) } }
+                Button("Show transcript") {
+                    if once { UIAccessibility.post(notification: .announcement, argument: "Listen-once messages don't show a transcript") } else { transcript() }
+                }
+            }
     }
 }

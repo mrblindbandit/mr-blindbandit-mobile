@@ -466,6 +466,14 @@ final class ProductionCommunicationsService: ObservableObject {
     @Published private(set) var callGroupID: String?
     @Published private(set) var callGroupName: String?
     @Published private(set) var screenSharing = false
+    /// VoiceOver-readable call encryption state shown on the call screen.
+    @Published private(set) var callEncryptionLabel = ""
+    @Published private(set) var callEncrypted = false
+    private var callKeyProvider: BaseKeyProvider?
+    private var callKeyIndex = 0
+    private var callKeyIsMine = false
+    private var callKeyPeerHandle: String?
+    private var callKeyPoll: Task<Void, Never>?
     @Published private(set) var usingFrontCamera = true
     @Published private(set) var handRaised = false
     @Published private(set) var raisedHands: Set<String> = []
@@ -852,7 +860,11 @@ final class ProductionCommunicationsService: ObservableObject {
             callGroupName = groupName
             callIsIncoming = false
             CallKitManager.shared.startOutgoing(callID: response.id, handle: handle ?? "", displayName: displayName ?? label, video: video, groupID: groupID, memberCount: memberCount)
-            try await connect(response: response, video: video)
+            callKeyPeerHandle = handle
+            let callKey = await sendNewCallKey(callID: response.id, handle: handle, groupID: groupID, index: 0)
+            callKeyIsMine = true
+            try await connect(response: response, video: video, callKey: callKey)
+            if callKey != nil, groupID != nil { startCallKeyPolling(callID: response.id) }
             beginOutgoingRinging()
         } catch {
             if let createdID {
@@ -1042,7 +1054,12 @@ final class ProductionCommunicationsService: ObservableObject {
             incomingCall = nil
             let voiceOnly = UserDefaults.standard.bool(forKey: "callkit.answerVoiceOnly")
             UserDefaults.standard.removeObject(forKey: "callkit.answerVoiceOnly")
-            try await connect(response: response, video: !voiceOnly && ((invite?.isVideo ?? false) || response.kind == "video"))
+            let peer = invite?.from_handle ?? callHistory.first(where: { $0.id == id })?.other?.handle
+            callKeyIsMine = false
+            callKeyPeerHandle = peer
+            let callKey = await awaitCallKey(callID: id, handle: peer, groupID: callGroupID)
+            try await connect(response: response, video: !voiceOnly && ((invite?.isVideo ?? false) || response.kind == "video"), callKey: callKey)
+            if callKey != nil, callGroupID != nil { startCallKeyPolling(callID: id) }
             return true
         } catch {
             incomingCall = nil
@@ -1059,11 +1076,26 @@ final class ProductionCommunicationsService: ObservableObject {
         }
     }
 
-    private func connect(response: BlindbanditCallResponse, video: Bool) async throws {
+    private func connect(response: BlindbanditCallResponse, video: Bool, callKey: CallKeyMessage? = nil) async throws {
         let serverURL = (response.livekit.url?.isEmpty == false ? response.livekit.url : nil) ?? AppConfig.liveKitURL
         guard serverURL.hasPrefix("wss://") else { throw CommunicationsError.liveKitURLMissing }
         let observer = CallRoomObserver(service: self)
-        let newRoom = Room(delegate: observer)
+        let newRoom: Room
+        if let callKey {
+            // LiveKit frame encryption (AES-GCM) for every published track: mic (incl. mixed app audio), camera, screen share.
+            let provider = BaseKeyProvider(isSharedKey: true)
+            provider.setKey(key: callKey.key, index: Int32(callKey.index % 16))
+            callKeyProvider = provider
+            callKeyIndex = callKey.index
+            callEncrypted = true
+            callEncryptionLabel = "End-to-end encrypted"
+            newRoom = Room(delegate: observer, roomOptions: RoomOptions(e2eeOptions: E2EEOptions(keyProvider: provider)))
+        } else {
+            callKeyProvider = nil
+            callEncrypted = false
+            callEncryptionLabel = "Not encrypted: other person needs to update"
+            newRoom = Room(delegate: observer)
+        }
         roomObserver = observer
         activeCallID = response.id
         UserDefaults.standard.set(serverURL, forKey: "livekit.lastURL")
@@ -1436,7 +1468,89 @@ final class ProductionCommunicationsService: ObservableObject {
         UIAccessibility.post(notification: .announcement, argument: statusMessage)
     }
 
+    // MARK: Call E2EE (2.0.6)
+
+    /// Generates a fresh 256-bit frame key and sends it to every participant device inside a p256-v1 E2EE message
+    /// (silent, hidden control payload). Returns nil when any recipient can't do E2EE (old app / no keys).
+    private func sendNewCallKey(callID: String, handle: String?, groupID: String?, index: Int) async -> CallKeyMessage? {
+        let msg = CallKeyMessage(call_id: callID, key: E2EECrypto.b64u(CallKeyStore.newKey()), index: index)
+        let payload = E2EEPayload(t: "call_key", body: CallKeyStore.encode(msg), silent: true)
+        do {
+            if let groupID {
+                guard try await E2EEService.shared.sendGroup(id: groupID, payload: payload) else { return nil }
+            } else if let handle, !handle.isEmpty {
+                guard try await E2EEService.shared.sendDM(handle: handle, payload: payload) != nil else { return nil }
+            } else { return nil }
+        } catch {
+            KeySetupLog.record("Call key delivery failed: \(error.localizedDescription)")
+            return nil
+        }
+        CallKeyStore.shared.set(msg)
+        return msg
+    }
+
+    /// Pulls the caller's key message for up to ~8 s. No key ⇒ the caller is on an old app ⇒ unencrypted fallback.
+    private func awaitCallKey(callID: String, handle: String?, groupID: String?) async -> CallKeyMessage? {
+        for attempt in 0..<8 {
+            if let k = CallKeyStore.shared.keys[callID] { return k }
+            await fetchCallKeyMessages(handle: handle, groupID: groupID)
+            if let k = CallKeyStore.shared.keys[callID] { return k }
+            if attempt < 7 { try? await Task.sleep(nanoseconds: 1_000_000_000) }
+        }
+        return nil
+    }
+
+    private func fetchCallKeyMessages(handle: String?, groupID: String?) async {
+        if let groupID {
+            if let items = try? await BlindbanditAPI.groupMessages(id: groupID) {
+                _ = E2EEService.shared.resolveGroup(items, groupID: groupID)
+            }
+        } else if let handle {
+            let h = handle.lowercased()
+            let convs = (try? await BlindbanditAPI.conversations()) ?? conversations
+            guard let c = convs.first(where: { $0.other?.handle.lowercased() == h }),
+                  let items = try? await BlindbanditAPI.messages(conversationID: c.id) else { return }
+            _ = await E2EEService.shared.resolve(items, conversationID: c.id)
+        }
+    }
+
+    /// Group calls: listen for rotated keys while connected.
+    private func startCallKeyPolling(callID: String) {
+        callKeyPoll?.cancel()
+        CallKeyStore.shared.onKey = { [weak self] m in
+            guard let self, m.call_id == callID, m.index > self.callKeyIndex else { return }
+            self.callKeyIndex = m.index
+            self.callKeyProvider?.setKey(key: m.key, index: Int32(m.index % 16))
+        }
+        callKeyPoll = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                guard let self, self.activeCallID == callID, !self.callKeyIsMine else { continue }
+                await self.fetchCallKeyMessages(handle: nil, groupID: self.callGroupID)
+            }
+        }
+    }
+
+    /// Called when someone joins or leaves a group call: the caller rotates to a fresh key (forward/backward secrecy).
+    func rotateCallKeyIfNeeded() {
+        guard callKeyIsMine, callKeyProvider != nil, let callID = activeCallID, let groupID = callGroupID else { return }
+        let next = callKeyIndex + 1
+        Task { [weak self] in
+            guard let self, let m = await self.sendNewCallKey(callID: callID, handle: nil, groupID: groupID, index: next) else { return }
+            // Give receivers time to fetch it before switching our sending key.
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard self.activeCallID == callID, next > self.callKeyIndex else { return }
+            self.callKeyIndex = next
+            self.callKeyProvider?.setKey(key: m.key, index: Int32(next % 16))
+        }
+    }
+
     private func teardownRoom() {
+        callKeyPoll?.cancel(); callKeyPoll = nil
+        CallKeyStore.shared.onKey = nil
+        if let id = activeCallID { CallKeyStore.shared.clear(id) }
+        callKeyProvider = nil; callKeyIndex = 0; callKeyIsMine = false
+        callEncrypted = false; callEncryptionLabel = ""
         let closingRoom = room
         Task { await closingRoom?.disconnect() }
         room = nil

@@ -138,21 +138,16 @@ struct AppSecurityView: View {
                 Text("Your identity key syncs through iCloud Keychain (end-to-end encrypted by Apple), so signing in on a new iPhone restores it automatically.")
             }
             Section {
-                Toggle("Recovery passphrase", isOn: $recoveryEnabled)
-                if recoveryEnabled {
-                    SecureField("Passphrase (12+ characters)", text: $pass)
-                    Button("Save passphrase backup") { Task { await saveBackup() } }
-                        .disabled(pass.count < 12 || !ServerFeatures.shared.isAvailable(.keyWrap))
-                    if !ServerFeatures.shared.isAvailable(.keyWrap) { Text(ServerFeatures.needsUpdateText) }
-                }
+                NavigationLink { EncryptionPasscodeView() } label: { Label("Encryption passcode", systemImage: "key.fill") }
+                LabeledContent("Key setup", value: KeySetupLog.last)
             } header: { Text("Recovery").accessibilityAddTraits(.isHeader) } footer: {
-                Text("Off by default. Only needed if you don't use iCloud Keychain. If you forget it, nobody can recover your keys.")
+                Text("Your passcode encrypts a backup of your keys on this iPhone; the server only stores ciphertext. Forgetting it means new keys and a new security number.")
             }
             if !status.isEmpty { Section { Text(status) } }
         }
         .navigationTitle("Security")
         .confirmationDialog("Reset keys on this device? Your contacts will see a safety number change.", isPresented: $confirmReset, titleVisibility: .visible) {
-            Button("Reset", role: .destructive) { IdentityStore.shared.resetDevice(); Task { await e2ee.bootstrap(handle: e2ee.myHandle) } }
+            Button("Reset", role: .destructive) { IdentityStore.shared.resetIdentity(); Task { await e2ee.bootstrap(handle: e2ee.myHandle) } }
         }
     }
 
@@ -215,6 +210,9 @@ struct AISettingsView: View {
             Section("Music debug log") {
                 Text(MusicLog.lastError.isEmpty ? "No Apple Music errors." : MusicLog.lastError)
                     .font(.footnote).textSelection(.enabled)
+            }
+            Section("Encryption key setup log") {
+                Text(KeySetupLog.last).font(.footnote).textSelection(.enabled)
             }
             Section("Voice message debug log") {
                 Text(VoiceLog.lastError.isEmpty ? "No voice message errors." : VoiceLog.lastError)

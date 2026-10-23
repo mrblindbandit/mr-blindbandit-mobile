@@ -14,6 +14,8 @@ final class E2EEService: ObservableObject {
     @Published private(set) var keyChanges: Set<String> = []
     @Published private(set) var plaintextPeers: Set<String> = []
     @Published var lastStatus = ""
+    /// Drives the "Create your encryption passcode" onboarding step / existing-user prompt.
+    @Published var needsPasscode = false
 
     var myUserID = ""
     private(set) var myHandle = ""
@@ -36,6 +38,11 @@ final class E2EEService: ObservableObject {
         UserDefaults(suiteName: "group.net.mrblindbandit.app")?.set(myHandle, forKey: "myHandle")
         guard let id = IdentityStore.shared.identity(handle: handle) else { return }
         identity = id
+        // 2.0.6: earlier builds could cache "keys route missing" after the schema rejection; clear it once.
+        if !UserDefaults.standard.bool(forKey: "e2ee.keysRecheck.206") {
+            ServerFeatures.shared.markAvailable(.keys)
+            UserDefaults.standard.set(true, forKey: "e2ee.keysRecheck.206")
+        }
         guard ServerFeatures.shared.isAvailable(.keys) else { return }
         do {
             try await registerIfNeeded(id)
@@ -45,8 +52,27 @@ final class E2EEService: ObservableObject {
                 lastStatus = "Your encryption keys were restored from iCloud Keychain."
                 UIAccessibility.post(notification: .announcement, argument: lastStatus)
             }
+            KeySetupLog.record("Encryption keys registered for this device.")
+            retryAttempt = 0
+            if !EncryptionPasscode.isSet(handle) { needsPasscode = true }
         } catch {
             ready = false
+            KeySetupLog.record("Key registration failed: \(error.localizedDescription)")
+            scheduleRetry(handle: handle)
+        }
+    }
+
+    private var retryAttempt = 0
+    private var retryTask: Task<Void, Never>?
+    /// Retries registration with backoff (5 s … 5 min) until it succeeds; also re-run on every app start / sign-in.
+    private func scheduleRetry(handle: String) {
+        retryTask?.cancel()
+        retryAttempt += 1
+        let delay = min(300.0, 5.0 * pow(2.0, Double(min(retryAttempt, 6))))
+        retryTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled, let self, !self.ready else { return }
+            await self.bootstrap(handle: handle)
         }
     }
 
@@ -68,20 +94,24 @@ final class E2EEService: ObservableObject {
         guard var s = IdentityStore.shared.prekeys() else { return }
         if s.uploaded {
             if let rotated = IdentityStore.shared.rotateSignedPrekeyIfNeeded() {
-                let body = try spkPayload(rotated, id)
+                let body = try KeyWire.signedPrekeyBody(spk: rotated, spkSign: { try E2EECrypto.sign($0, with: id.sign) })
                 try await SecurityAPI.gated(.keys) {
                     try await BlindbanditAPI.request("v1/social/keys/devices/\(ChatRef.escape(id.deviceID))/signed-prekey", method: "PUT", body: body)
                 }
             }
             return
         }
-        let body: [String: Any] = [
-            "device_id": id.deviceID, "platform": "ios", "name": UIDevice.current.name, "suite": E2EECrypto.suite,
-            "identity_sign_pub": E2EECrypto.b64u(id.signPub), "identity_dh_pub": E2EECrypto.b64u(id.dhPub),
-            "signed_prekey": try spkPayload(s, id),
-            "prekeys": opkPayload(s.opks.sorted { $0.key < $1.key }.map { ($0.key, $0.value) })
-        ]
-        try await SecurityAPI.gated(.keys) { try await BlindbanditAPI.request("v1/social/keys/devices", method: "POST", body: body) }
+        // 2.0.6 root-cause fix: the server's route schema is strict (identity_key / signed_prekey / signed_prekey_sig
+        // strings, prekeys: [String]); the old object-shaped body was rejected with 400 every launch, silently.
+        let body = try KeyWire.registerBody(id: id, spk: s, spkSign: { try E2EECrypto.sign($0, with: id.sign) },
+                                            opks: s.opks.sorted { $0.key < $1.key }.map { ($0.key, $0.value) },
+                                            label: UIDevice.current.name)
+        try await SecurityAPI.gated(.keys) { try await BlindbanditAPI.request("v1/social/keys/devices", method: "POST", body: body.body) }
+        if !body.prekeys.isEmpty {
+            try await SecurityAPI.gated(.keys) {
+                try await BlindbanditAPI.request("v1/social/keys/devices/\(ChatRef.escape(id.deviceID))/prekeys", method: "POST", body: ["prekeys": body.prekeys])
+            }
+        }
         s.uploaded = true
         IdentityStore.shared.savePrekeys(s)
     }
@@ -90,7 +120,7 @@ final class E2EEService: ObservableObject {
         let d = try await SecurityAPI.gated(.keys) {
             try await BlindbanditAPI.request("v1/social/keys/devices/\(ChatRef.escape(id.deviceID))/prekeys/count")
         }
-        let count = SecurityAPI.data(d)["count"] as? Int ?? 100
+        let count = KeyWire.count(d) ?? 100
         guard count < 20, var s = IdentityStore.shared.prekeys() else { return }
         var fresh: [(Int, String)] = []
         for _ in 0..<100 {
@@ -98,7 +128,7 @@ final class E2EEService: ObservableObject {
             s.opks[s.nextOPK] = raw; fresh.append((s.nextOPK, raw)); s.nextOPK += 1
         }
         IdentityStore.shared.savePrekeys(s)
-        let body: [String: Any] = ["prekeys": opkPayload(fresh)]
+        let body: [String: Any] = ["prekeys": KeyWire.prekeys(fresh)]
         try await SecurityAPI.gated(.keys) {
             try await BlindbanditAPI.request("v1/social/keys/devices/\(ChatRef.escape(id.deviceID))/prekeys", method: "POST", body: body)
         }
@@ -111,7 +141,7 @@ final class E2EEService: ObservableObject {
         if !force, let c = bundleCache[h], Date().timeIntervalSince(c.at) < 600 { return c.devices }
         let d = try await SecurityAPI.gated(.keys) { try await BlindbanditAPI.request("v1/social/keys/bundles/\(ChatRef.escape(h))") }
         let list = (SecurityAPI.data(d)["devices"] as? [[String: Any]] ?? []).compactMap { obj -> E2EEDeviceBundle? in
-            guard let j = try? JSONSerialization.data(withJSONObject: obj), var b = try? JSONDecoder().decode(E2EEDeviceBundle.self, from: j) else { return nil }
+            guard var b = KeyWire.bundle(obj) else { return nil }
             b.handle = h
             return (try? X3DH.verifyBundle(b)) != nil ? b : nil
         }
@@ -276,6 +306,7 @@ final class E2EEService: ObservableObject {
         let signer = out.senderSignPub
         let handle: String? = nil
         apply(out.payload, signerPub: signer, senderHandle: handle)
+        if out.payload.t == "call_key", let body = out.payload.body { CallKeyStore.shared.receive(body) }
         store.store(out.payload, msgID: env.msg_id, sender: handle, expiresIn: out.payload.expires_in)
         return (out.payload, handle)
     }
@@ -296,7 +327,7 @@ final class E2EEService: ObservableObject {
         }
     }
 
-    static func isControl(_ p: E2EEPayload) -> Bool { ["delete", "vote", "reaction", "receipt", "ai_policy"].contains(p.t) }
+    static func isControl(_ p: E2EEPayload) -> Bool { ["delete", "vote", "reaction", "receipt", "ai_policy", "call_key"].contains(p.t) }
 
     static func display(_ p: E2EEPayload) -> String {
         switch p.t {

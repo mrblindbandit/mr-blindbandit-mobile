@@ -89,6 +89,27 @@ final class IdentityStore {
         return s
     }
 
+    /// Raw synced identity blob for the passcode backup (never leaves the device unencrypted).
+    func exportIdentity() -> Data? { Keychain.get(identityAccount) }
+
+    /// Restores an identity from a decrypted passcode backup; per-device prekeys are regenerated and re-registered.
+    @discardableResult
+    func importIdentity(_ d: Data) -> Bool {
+        guard let s = try? JSONDecoder().decode(SyncedIdentity.self, from: d),
+              (try? P256.Signing.PrivateKey(rawRepresentation: E2EECrypto.unb64u(s.sign))) != nil else { return false }
+        lock.lock(); defer { lock.unlock() }
+        Keychain.setCodable(s, identityAccount, synced: true)
+        Keychain.delete(prekeyAccount)
+        KeychainSessionStorage.shared.wipe()
+        return true
+    }
+
+    /// "Forgot passcode": brand-new identity. Contacts will see "security number changed".
+    func resetIdentity() {
+        Keychain.delete(identityAccount)
+        resetDevice()
+    }
+
     /// Wipes this device's keys (used by "Delete my data" and remote sign-out).
     func resetDevice() {
         Keychain.delete(deviceAccount); Keychain.delete(prekeyAccount)

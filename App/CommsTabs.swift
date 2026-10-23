@@ -571,10 +571,13 @@ struct ConversationThreadView: View {
                     HStack(spacing: 4) {
                         Text(displayName).font(.headline).lineLimit(1)
                         if conversation?.other?.verified == true { VerifiedBadge() }
+                        if E2EEService.shared.isVerified(handle) {
+                            Image(systemName: "checkmark.shield.fill").foregroundStyle(.green).font(.caption)
+                        }
                     }
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(displayName)\(conversation?.other?.verified == true ? ", Verified" : ""), chat settings")
+                .accessibilityLabel("\(displayName)\(conversation?.other?.verified == true ? ", Verified" : "")\(E2EEService.shared.isVerified(handle) ? ", security number verified" : ""), chat settings")
                 .accessibilityHint("Double tap to open chat info and settings")
                 .accessibilityAddTraits(.isButton)
                 .disabled(handle.isEmpty)

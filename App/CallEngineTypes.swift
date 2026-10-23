@@ -69,11 +69,11 @@ final class CallRoomObserver: NSObject, RoomDelegate, @unchecked Sendable {
     }
 
     func room(_ room: Room, participantDidConnect participant: RemoteParticipant) {
-        Task { @MainActor [weak self] in self?.service?.roomChanged() }
+        Task { @MainActor [weak self] in self?.service?.roomChanged(); self?.service?.rotateCallKeyIfNeeded() }
     }
 
     func room(_ room: Room, participantDidDisconnect participant: RemoteParticipant) {
-        Task { @MainActor [weak self] in self?.service?.roomChanged() }
+        Task { @MainActor [weak self] in self?.service?.roomChanged(); self?.service?.rotateCallKeyIfNeeded() }
     }
 
     func room(_ room: Room, didUpdateSpeakingParticipants participants: [Participant]) {

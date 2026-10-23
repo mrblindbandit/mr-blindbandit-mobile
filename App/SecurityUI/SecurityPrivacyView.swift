@@ -260,54 +260,82 @@ final class ScreenCaptureMonitor: ObservableObject {
 
 struct SafetyNumberView: View {
     let handle: String
+    var displayName: String? = nil
     @ObservedObject private var e2ee = E2EEService.shared
     @State private var number: SafetyNumber?
+    @State private var loaded = false
     @State private var scanning = false
     @State private var result = ""
+
+    private var name: String { displayName.flatMap { $0.isEmpty ? nil : $0 } ?? "@\(handle)" }
 
     var body: some View {
         List {
             if let n = number {
                 Section {
-                    Text(n.display).font(.system(.title3, design: .monospaced)).accessibilityHidden(true)
+                    Text(n.display).font(.system(.title3, design: .monospaced))
+                        .accessibilityLabel(SafetyNumberSpeech.paused(n))
+                        .accessibilityHint("Reads all 12 groups of five digits with a pause between groups.")
                     ForEach(Array(n.groups.enumerated()), id: \.offset) { i, _ in
                         Text(n.spokenGroup(i)).accessibilityLabel(n.spokenGroup(i))
                     }
                     if let img = qr(n.qrPayload) {
                         Image(uiImage: img).interpolation(.none).resizable().scaledToFit().frame(maxWidth: 220)
-                            .accessibilityLabel("QR code of your safety number with @\(handle). Ask them to scan it.")
+                            .accessibilityLabel("QR code of your security number with \(name). Ask them to scan it.")
                     }
-                } header: { Text("Safety number with @\(handle)").accessibilityAddTraits(.isHeader) } footer: {
-                    Text("Compare these 60 digits with @\(handle) in person or on a call. VoiceOver reads them in groups of five.")
+                } header: { Text("Security number with \(name)").accessibilityAddTraits(.isHeader) } footer: {
+                    Text("Compare these 60 digits with \(name) in person or on a call. VoiceOver reads them in groups of five.")
                 }
                 Section {
-                    Button("Scan their QR code") { scanning = true }
-                    Button(e2ee.isVerified(handle) ? "Mark as not verified" : "Mark as verified") {
-                        e2ee.setVerified(handle, !e2ee.isVerified(handle))
+                    Toggle(isOn: Binding(get: { e2ee.isVerified(handle) }, set: { on in
+                        e2ee.setVerified(handle, on)
+                        UIAccessibility.post(notification: .announcement, argument: on ? "\(name) marked as verified." : "Verification removed.")
                         AppHaptics.success()
-                    }
+                    })) { Label("Mark as verified", systemImage: "checkmark.shield") }
+                    Button { scanning = true } label: { Label("Scan their QR code", systemImage: "qrcode.viewfinder") }
+                    Button {
+                        UIPasteboard.general.string = n.display
+                        UIAccessibility.post(notification: .announcement, argument: "Security number copied.")
+                    } label: { Label("Copy", systemImage: "doc.on.doc") }
+                    ShareLink(item: "Our Mr. BlindBandit security number: \(n.display)") { Label("Share", systemImage: "square.and.arrow.up") }
                     if !result.isEmpty { Text(result) }
                 }
+            } else if loaded {
+                Section {
+                    if !e2ee.ready {
+                        Text("Your encryption keys are still being set up. The app retries automatically.")
+                        Text(KeySetupLog.last).font(.footnote).foregroundStyle(.secondary)
+                    } else {
+                        Text("\(name) needs to open the latest app to set up encryption.")
+                    }
+                    Button("Check again") { Task { await load(force: true) } }
+                }
             } else {
-                Text("No safety number yet. It appears once @\(handle) has an encrypted device.")
+                ProgressView("Loading security number…")
             }
         }
-        .navigationTitle("Safety number")
-        .task { number = await e2ee.safetyNumber(with: handle) }
+        .navigationTitle("Security number")
+        .task { await load(force: false) }
         .sheet(isPresented: $scanning) {
             QRScannerView { code in
                 scanning = false
                 if let n = number, n.matches(scanned: code) {
                     e2ee.setVerified(handle, true)
-                    result = "Match. @\(handle) is verified."
+                    result = "Match. \(name) is verified."
                     AppHaptics.success()
                 } else {
-                    result = "Doesn't match. Don't trust this chat until you've checked with @\(handle)."
+                    result = "Doesn't match. Don't trust this chat until you've checked with \(name)."
                     AppHaptics.error()
                 }
                 UIAccessibility.post(notification: .announcement, argument: result)
             }
         }
+    }
+
+    private func load(force: Bool) async {
+        if force { _ = try? await e2ee.devices(for: handle, force: true) }
+        number = await e2ee.safetyNumber(with: handle)
+        loaded = true
     }
 
     private func qr(_ s: String) -> UIImage? {
@@ -380,5 +408,32 @@ struct InviteLinksView: View {
             UIAccessibility.post(notification: .announcement, argument: ok ? "Approved" : "Declined")
             await reload()
         }
+    }
+}
+
+
+enum SafetyNumberSpeech {
+    /// "12345, 67890, …" — the commas and periods make VoiceOver pause between groups.
+    static func paused(_ n: SafetyNumber) -> String {
+        n.groups.map { $0.map(String.init).joined(separator: " ") }.joined(separator: ". ")
+    }
+}
+
+/// Per-member security numbers for a group chat.
+struct GroupSafetyNumbersView: View {
+    let members: [(handle: String, name: String)]
+    @ObservedObject private var e2ee = E2EEService.shared
+    var body: some View {
+        List(members, id: \.handle) { m in
+            NavigationLink { SafetyNumberView(handle: m.handle, displayName: m.name) } label: {
+                HStack {
+                    Text(m.name)
+                    if e2ee.isVerified(m.handle) { Image(systemName: "checkmark.shield.fill").foregroundStyle(.green).accessibilityHidden(true) }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(m.name + (e2ee.isVerified(m.handle) ? ", verified" : ", not verified"))
+            }
+        }
+        .navigationTitle("Security numbers")
     }
 }

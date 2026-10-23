@@ -18,6 +18,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        // PushKit must be registered at launch so a VoIP push that woke the app is delivered.
+        CallKitManager.shared.setUp()
         return true
     }
 
@@ -56,39 +58,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let userInfo = response.notification.request.content.userInfo
-        if let rawURL = userInfo["url"] as? String,
-           let url = URL(string: rawURL),
-           ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
-            routePushURL(url)
-        } else if let slug = (userInfo["article_slug"] ?? userInfo["slug"]) as? String, !slug.isEmpty,
-                  let url = URL(string: "mrblindbandit://article/\(slug)") {
-            routePushURL(url)
-        } else if let rawLink = userInfo["deep_link"] as? String,
-                  let url = URL(string: rawLink, relativeTo: URL(string: "https://mrblindbandit.net")) {
-            routePushURL(url)
+        if let route = PushRoute.parse(userInfo) {
+            Task { @MainActor in PendingRouter.shared.pending = route }
         }
         completionHandler()
-    }
-
-    private func routePushURL(_ url: URL) {
-        if let article = ChronicleDeepLink.articleURL(from: url) {
-            NotificationCenter.default.post(name: .chronicleArticleDeepLink, object: article)
-            return
-        }
-        if url.path.hasPrefix("/mobile/calls"),
-           let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
-           let callID = components.queryItems?.first(where: { $0.name == "id" })?.value,
-           !callID.isEmpty {
-            NotificationCenter.default.post(name: .blindbanditCallDeepLinkReceived, object: callID)
-            return
-        }
-        if url.path.hasPrefix("/mobile/messages") {
-            let components = URLComponents(url: url, resolvingAgainstBaseURL: true)
-            let conversationID = components?.queryItems?.first(where: { $0.name == "c" })?.value ?? ""
-            NotificationCenter.default.post(name: .blindbanditMessageDeepLinkReceived, object: conversationID)
-            return
-        }
-        NotificationCenter.default.post(name: .pushDeepLinkReceived, object: url)
     }
 }
 

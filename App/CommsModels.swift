@@ -101,9 +101,78 @@ enum LocalComms {
         set { defaults.set(Array(newValue), forKey: "comms.pinned") }
     }
 
+    /// Conversation id -> mute end time (seconds since 1970). 0 means "until I turn it back on".
+    static var muteUntil: [String: Double] {
+        get {
+            var map = defaults.dictionary(forKey: "comms.muteUntil") as? [String: Double] ?? [:]
+            // Migrate the 1.8 "muted forever" list.
+            if let legacy = defaults.stringArray(forKey: "comms.muted"), !legacy.isEmpty {
+                for id in legacy where map[id] == nil { map[id] = 0 }
+                defaults.removeObject(forKey: "comms.muted")
+                defaults.set(map, forKey: "comms.muteUntil")
+            }
+            return map
+        }
+        set { defaults.set(newValue, forKey: "comms.muteUntil") }
+    }
+
+    /// Conversations muted right now (expired timers are ignored).
     static var muted: Set<String> {
-        get { Set(defaults.stringArray(forKey: "comms.muted") ?? []) }
-        set { defaults.set(Array(newValue), forKey: "comms.muted") }
+        get { activeMutes(muteUntil, now: Date()) }
+        set {
+            var map = muteUntil
+            for id in map.keys where !newValue.contains(id) { map[id] = nil }
+            for id in newValue where map[id] == nil { map[id] = 0 }
+            muteUntil = map
+        }
+    }
+
+    static func activeMutes(_ map: [String: Double], now: Date) -> Set<String> {
+        Set(map.filter { $0.value == 0 || $0.value > now.timeIntervalSince1970 }.keys)
+    }
+
+    static func mute(_ id: String, for duration: TimeInterval?) {
+        var map = muteUntil
+        map[id] = duration.map { Date().addingTimeInterval($0).timeIntervalSince1970 } ?? 0
+        muteUntil = map
+    }
+
+    static func unmute(_ id: String) {
+        var map = muteUntil
+        map[id] = nil
+        muteUntil = map
+    }
+
+    /// Removes expired timers and returns the ids that just expired.
+    static func expireMutes(now: Date = Date()) -> [String] {
+        var map = muteUntil
+        let expired = map.filter { $0.value != 0 && $0.value <= now.timeIntervalSince1970 }.map(\.key)
+        for id in expired { map[id] = nil }
+        if !expired.isEmpty { muteUntil = map }
+        return expired
+    }
+
+    /// Conversation id -> updated_at when archived or deleted for me. It reappears when a newer message arrives.
+    static var archivedAt: [String: Double] {
+        get { defaults.dictionary(forKey: "comms.archivedAt") as? [String: Double] ?? [:] }
+        set { defaults.set(newValue, forKey: "comms.archivedAt") }
+    }
+
+    static var deletedAt: [String: Double] {
+        get { defaults.dictionary(forKey: "comms.deletedAt") as? [String: Double] ?? [:] }
+        set { defaults.set(newValue, forKey: "comms.deletedAt") }
+    }
+
+    /// Message ids hidden on this phone only ("Delete for me").
+    static var hiddenMessages: Set<String> {
+        get { Set(defaults.stringArray(forKey: "comms.hiddenMessages") ?? []) }
+        set { defaults.set(Array(newValue), forKey: "comms.hiddenMessages") }
+    }
+
+    /// Message id -> my reaction emoji, kept on this phone and sent to the server when the route exists.
+    static var reactions: [String: String] {
+        get { defaults.dictionary(forKey: "comms.reactions") as? [String: String] ?? [:] }
+        set { defaults.set(newValue, forKey: "comms.reactions") }
     }
 
     static var favorites: [String] {

@@ -28,4 +28,58 @@ platform :ios do
       changelog: File.exist?(notes_path) ? File.read(notes_path) : nil,
       distribute_external: false, wait_processing_timeout_duration: 2400)
   end
+  desc "Register extension bundle IDs and enable capabilities via the ASC API key (no Apple ID login)"
+  lane :capabilities do
+    app_store_connect_api_key(key_id: ENV.fetch("ASC_KEY_ID"), issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      key_content: ENV.fetch("ASC_KEY_P8"), in_house: false)
+    api = Spaceship::ConnectAPI
+    ids = { "net.mrblindbandit.app" => "Mr Blindbandit",
+            "net.mrblindbandit.app.ScreenShare" => "Mr Blindbandit Screen Share",
+            "net.mrblindbandit.app.NotificationService" => "Mr Blindbandit Notification Service" }
+    s = lambda { |k, v| { key: k, options: [{ key: v }] } }
+    caps = {
+      "net.mrblindbandit.app" => {
+        "APP_GROUPS" => nil, "ASSOCIATED_DOMAINS" => nil, "PUSH_NOTIFICATIONS" => nil,
+        "DATA_PROTECTION" => [s.call("DATA_PROTECTION_PERMISSION_LEVEL", "COMPLETE_PROTECTION")],
+        "SIRIKIT" => nil, "ICLOUD" => [s.call("ICLOUD_VERSION", "XCODE_6")], "WEATHERKIT" => nil,
+        "COMMUNICATION_NOTIFICATIONS" => nil, "USER_MANAGEMENT" => nil, "TIME_SENSITIVE_NOTIFICATIONS" => nil,
+        "GROUP_ACTIVITIES" => nil, "APPLE_ID_AUTH" => [s.call("APPLE_ID_AUTH_APP_CONSENT", "PRIMARY_APP_CONSENT")],
+        "ACCESS_WIFI_INFORMATION" => nil, "MAPS" => nil, "NFC_TAG_READING" => nil, "SENSITIVE_CONTENT_ANALYSIS" => nil,
+        "EXTENDED_VIRTUAL_ADDRESSING" => nil, "INCREASED_MEMORY_LIMIT" => nil },
+      "net.mrblindbandit.app.ScreenShare" => { "APP_GROUPS" => nil },
+      "net.mrblindbandit.app.NotificationService" => { "APP_GROUPS" => nil, "COMMUNICATION_NOTIFICATIONS" => nil }
+    }
+    ids.each do |ident, name|
+      bid = api::BundleId.find(ident)
+      if bid.nil?
+        begin
+          bid = api::BundleId.create(name: name, platform: "IOS", identifier: ident)
+          UI.important("REGISTERED #{ident}")
+        rescue => e
+          UI.error("REGISTER_FAILED #{ident}: #{e.message}"); next
+        end
+      else
+        UI.message("EXISTS #{ident}")
+      end
+      have = (bid.get_capabilities rescue []).map(&:capability_type)
+      UI.message("HAVE #{ident}: #{have.join(',')}")
+      caps[ident].each do |type, settings|
+        if have.include?(type) then UI.message("ALREADY #{ident} #{type}"); next end
+        begin
+          bid.create_capability(type, settings: settings || [])
+          UI.important("ENABLED #{ident} #{type}")
+        rescue => e
+          UI.error("CAP_FAILED #{ident} #{type}: #{e.message.to_s[0, 200]}")
+        end
+      end
+    end
+    begin
+      r = api.client.tunes_request_client.post("v1/appGroups", { data: { type: "appGroups", attributes: { identifier: "group.net.mrblindbandit.app", name: "Mr Blindbandit" } } }) rescue nil
+      r ||= Spaceship::ConnectAPI::Provisioning::Client.instance.post("appGroups", { data: { type: "appGroups", attributes: { identifier: "group.net.mrblindbandit.app", name: "Mr Blindbandit" } } })
+      UI.important("APPGROUP status=#{r.status} body=#{r.body.to_s[0, 300]}")
+    rescue => e
+      UI.error("APPGROUP_FAILED: #{e.message.to_s[0, 300]}")
+    end
+  end
+
 end

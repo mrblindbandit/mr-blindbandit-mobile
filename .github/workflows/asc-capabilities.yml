@@ -1,0 +1,17 @@
+name: ASC capabilities (one-off)
+on:
+  push:
+    branches: [ops/asc-capabilities]
+permissions:
+  contents: read
+jobs:
+  caps:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: fastlane capabilities

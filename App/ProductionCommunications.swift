@@ -50,11 +50,58 @@ struct BlindbanditConversation: Identifiable, Decodable, Equatable {
 struct BlindbanditServerMessage: Identifiable, Decodable, Equatable {
     let id: String
     let sender_id: String
-    let body: String
+    /// Decrypted locally for E2EE rows (the server only ever has an empty body for those).
+    var body: String
     let created_at: Double
     let read_at: Double?
     /// Present once the backend records delivery to the recipient's device. Until then "Delivered" is never shown.
     let delivered_at: Double?
+    // E2EE 2.0 fields (all optional so older servers keep decoding).
+    var e2ee: Bool = false
+    var envelopeJSON: String?
+    var kind: String = "text"
+    var expires_at: Double?
+    var view_once: Bool = false
+    var opened_at: Double?
+    var edited_at: Double?
+    var client_msg_id: String?
+    /// Filled in by E2EEService after decrypting.
+    var decrypted: E2EEPayload?
+    var decryptFailed = false
+
+    init(id: String, sender_id: String, body: String, created_at: Double, read_at: Double? = nil, delivered_at: Double? = nil) {
+        self.id = id; self.sender_id = sender_id; self.body = body; self.created_at = created_at
+        self.read_at = read_at; self.delivered_at = delivered_at
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? c.decode(String.self, forKey: .id)) ?? (try? c.decode(Int.self, forKey: .id)).map(String.init) ?? UUID().uuidString
+        sender_id = (try? c.decode(String.self, forKey: .sender_id)) ?? ""
+        body = (try? c.decode(String.self, forKey: .body)) ?? ""
+        created_at = (try? c.decode(Double.self, forKey: .created_at)) ?? 0
+        read_at = try? c.decode(Double.self, forKey: .read_at)
+        delivered_at = try? c.decode(Double.self, forKey: .delivered_at)
+        e2ee = FlexibleBool.decode(c, .e2ee) ?? false
+        if let s = try? c.decode(String.self, forKey: .envelope) {
+            envelopeJSON = s
+        } else if let env = try? c.decode(E2EEEnvelope.self, forKey: .envelope), let d = try? JSONEncoder().encode(env) {
+            envelopeJSON = String(data: d, encoding: .utf8)
+        }
+        kind = (try? c.decode(String.self, forKey: .kind)) ?? "text"
+        expires_at = try? c.decode(Double.self, forKey: .expires_at)
+        view_once = FlexibleBool.decode(c, .view_once) ?? false
+        opened_at = try? c.decode(Double.self, forKey: .opened_at)
+        edited_at = try? c.decode(Double.self, forKey: .edited_at)
+        client_msg_id = try? c.decode(String.self, forKey: .client_msg_id)
+    }
+
+    var envelope: E2EEEnvelope? { envelopeJSON.flatMap { E2EEEnvelope.from(any: $0) } }
+    var isSystem: Bool { kind == "system" }
+
+    enum CodingKeys: String, CodingKey {
+        case id, sender_id, body, created_at, read_at, delivered_at, e2ee, envelope, kind, expires_at, view_once, opened_at, edited_at, client_msg_id
+    }
 }
 
 struct BlindbanditLiveKitGrant: Decodable {
@@ -113,7 +160,7 @@ enum FlexibleBool {
 struct ItemsPayload<Item: Decodable>: Decodable { let items: [Item] }
 
 struct BlindbanditThreadPayload: Decodable {
-    let items: [BlindbanditServerMessage]
+    var items: [BlindbanditServerMessage]
     let otherTyping: Bool
 
     init(from decoder: Decoder) throws {
@@ -188,6 +235,7 @@ enum BlindbanditAPI {
         request.timeoutInterval = 20
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let device = IdentityStore.shared.deviceID { request.setValue(device, forHTTPHeaderField: "X-BB-Device-Id") }
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -218,7 +266,9 @@ enum BlindbanditAPI {
 
     /// The thread payload also carries `other_typing` (set for six seconds after the other person types).
     static func thread(conversationID: String) async throws -> BlindbanditThreadPayload {
-        try decode(BlindbanditThreadPayload.self, from: try await request("v1/social/messages/\(escape(conversationID))?limit=100"))
+        var payload = try decode(BlindbanditThreadPayload.self, from: try await request("v1/social/messages/\(escape(conversationID))?limit=100"))
+        payload.items = await E2EEService.shared.resolve(payload.items, conversationID: conversationID)
+        return payload
     }
 
     static func sendTyping(conversationID: String) async {
@@ -226,7 +276,8 @@ enum BlindbanditAPI {
     }
 
     static func sendMessage(handle: String, body: String) async throws -> BlindbanditMessageResponse {
-        try decode(BlindbanditMessageResponse.self, from: try await request(
+        if let sent = try await E2EEService.shared.sendDM(handle: handle, payload: E2EEPayload(t: "text", body: body)) { return sent }
+        return try decode(BlindbanditMessageResponse.self, from: try await request(
             "v1/social/messages", method: "POST", body: ["handle": handle, "body": body]
         ))
     }
@@ -426,6 +477,8 @@ final class ProductionCommunicationsService: ObservableObject {
             let profile = try await BlindbanditAPI.currentProfile()
             myProfileID = profile.id
             myHandle = profile.handle
+            E2EEService.shared.myUserID = profile.id
+            Task { await E2EEService.shared.bootstrap(handle: profile.handle) }
             conversations = try await BlindbanditAPI.conversations()
             bootstrapped = true
             statusMessage = ""
@@ -551,6 +604,8 @@ final class ProductionCommunicationsService: ObservableObject {
             Task { @MainActor in
                 guard let self, UIApplication.shared.applicationState == .active else { return }
                 await self.refreshConversations()
+                await E2EEService.shared.pollRelay()
+                await ScheduledSender.flushDue(self)
                 if let id = self.openConversationID { await self.reloadThread(id) }
                 await self.checkIncomingCalls()
             }

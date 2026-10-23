@@ -148,6 +148,11 @@ struct MessagesTabView: View {
                 }
 
                 Section {
+                    // Permanent AI chat: always first, no delete swipe; it can only be cleared from inside.
+                    NavigationLink { AIChatView() } label: { AIChatRow() }
+                        .accessibilityIdentifier("aiChatRow")
+                }
+                Section {
                     if communications.isLoading && communications.conversations.isEmpty {
                         ProgressView("Loading conversations")
                     } else if !communications.loadError.isEmpty && communications.conversations.isEmpty {
@@ -476,6 +481,19 @@ struct ConversationThreadView: View {
     @State private var hidden = LocalComms.hiddenMessages
     @State private var reactions = LocalComms.reactions
     @State private var forwarding: String?
+    @State private var editing: BlindbanditServerMessage?
+    @State private var aiPartial: String?
+    @State private var aiPrivate: [(q: String, a: String)] = []
+    @State private var smartReplies: [String] = []
+    @State private var catchUp: String?
+    @State private var scamWarning: String?
+    @State private var aiConsent = false
+    @State private var pendingAI: AIAssistant.Invocation?
+    @State private var showOriginal: Set<String> = []
+    @StateObject private var capture = ScreenCaptureMonitor()
+    @StateObject private var dictation = LiveDictation()
+    @ObservedObject private var e2ee = E2EEService.shared
+    @ObservedObject private var translator = Translator.shared
     @Namespace private var rotorSpace
     @Environment(\.dismiss) private var dismiss
     @FocusState private var composerFocused: Bool
@@ -487,6 +505,15 @@ struct ConversationThreadView: View {
         return communications.conversation(id: conversationID)
     }
     private var handle: String { conversation?.other?.handle ?? newHandle ?? "" }
+    private var chatRef: ChatRef { .dm(conversationID: conversation?.id ?? conversationID, handle: handle) }
+    private var aiOn: Bool { AISettings.chatAllowed(chatRef.key) }
+    private func displayText(_ m: BlindbanditServerMessage) -> String {
+        if showOriginal.contains(m.id) || m.sender_id == communications.myProfileID { return m.body }
+        return translator.cached(m.id)?.text ?? m.body
+    }
+    private var recentLines: [String] {
+        communications.messages.suffix(30).map { ($0.sender_id == communications.myProfileID ? "Me" : "@\(handle)") + ": " + $0.body }
+    }
 
     private var shownMessages: [BlindbanditServerMessage] {
         let q = search.trimmingCharacters(in: .whitespaces).lowercased()
@@ -551,6 +578,16 @@ struct ConversationThreadView: View {
                 }
             }
 
+            ThreadAIBanners(handle: handle, keyChanged: e2ee.keyChanges.contains(handle.lowercased()),
+                            scamWarning: scamWarning, catchUp: $catchUp, aiPartial: aiPartial, aiPrivate: aiPrivate,
+                            smartReplies: smartReplies) { draft = $0; composerFocused = true }
+            if let e = editing {
+                HStack {
+                    Text("Editing: \(e.body)").font(.caption).lineLimit(1)
+                    Spacer()
+                    Button { editing = nil; draft = "" } label: { Image(systemName: "xmark.circle.fill") }.accessibilityLabel("Cancel edit")
+                }.padding(.horizontal).padding(.top, 6)
+            }
             if let q = quoting {
                 HStack {
                     Text("Replying to: \(q.body)").font(.caption).lineLimit(1)
@@ -569,10 +606,20 @@ struct ConversationThreadView: View {
                     .onChange(of: draft) { _, value in
                         if !value.isEmpty { communications.userTyped(in: conversationID) }
                     }
+                ComposerAIMenu(draft: $draft, dictation: dictation, enabled: aiOn)
                 Button { send() } label: {
                     Image(systemName: "paperplane.fill").frame(width: Brand.minTouch, height: Brand.minTouch)
                 }
-                .accessibilityLabel("Send")
+                .accessibilityLabel(editing == nil ? "Send" : "Save edit")
+                .contextMenu {
+                    Button("Send silently") { send(silent: true) }
+                    Menu("Schedule") {
+                        Button("In 1 hour") { schedule(3600) }
+                        Button("Tonight at 8 PM") { schedule(Self.secondsUntil(hour: 20)) }
+                        Button("Tomorrow at 9 AM") { schedule(Self.secondsUntil(hour: 9)) }
+                    }
+                }
+                .accessibilityAction(named: "Send silently") { send(silent: true) }
                 .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || handle.isEmpty)
             }
             .padding()
@@ -606,6 +653,14 @@ struct ConversationThreadView: View {
                 .disabled(handle.isEmpty || communications.isInCall)
 
                 Menu {
+                    NavigationLink { SecurityPrivacyView(chat: chatRef, title: "@\(handle)") } label: {
+                        Label("Security & Privacy", systemImage: "lock.shield")
+                    }
+                    NavigationLink { SafetyNumberView(handle: handle) } label: { Label("Verify safety number", systemImage: "qrcode") }
+                    if aiOn && AISettings.isOn(.catchUp) {
+                        Button { Task { catchUp = "Summarizing…"; catchUp = await OnDeviceAI.catchUp(chatName: "@\(handle)", lines: recentLines) ?? OnDeviceAI.unavailableReason
+                            UIAccessibility.post(notification: .announcement, argument: catchUp ?? "") } } label: { Label("Catch me up", systemImage: "text.badge.star") }
+                    }
                     Button { toggleFavorite() } label: {
                         Label(LocalComms.favorites.contains(handle) ? "Remove from favorites" : "Add to favorites", systemImage: "star")
                     }
@@ -625,7 +680,13 @@ struct ConversationThreadView: View {
             else if newHandle == nil { await communications.openConversation(id: conversationID) }
         }
         .onChange(of: draft) { _, value in LocalComms.setDraft(value, for: conversationID) }
-        .onDisappear { communications.closeConversation() }
+        .onChange(of: communications.messages) { _, list in Task { await analyzeIncoming(list) } }
+        .onAppear { capture.start(chat: chatRef) }
+        .onDisappear { communications.closeConversation(); capture.stop() }
+        .confirmationDialog("@AI reads the last 30 messages in this chat on this iPhone to answer. Nothing leaves your device except the answer, if you post it.", isPresented: $aiConsent, titleVisibility: .visible) {
+            Button("Allow @AI") { AIAssistant.consentGiven = true; if let r = pendingAI { Task { await runAI(r) } } }
+            Button("Cancel", role: .cancel) { pendingAI = nil }
+        }
         .sheet(isPresented: Binding(get: { forwarding != nil }, set: { if !$0 { forwarding = nil } })) {
             ForwardSheet(text: forwarding ?? "")
         }
@@ -644,6 +705,19 @@ struct ConversationThreadView: View {
         }
     }
 
+    private func unsend(_ message: BlindbanditServerMessage) async {
+        do {
+            try await e2ee.unsend(chat: chatRef, serverID: message.id, envelopeMsgID: message.client_msg_id)
+            hidden.insert(message.id)
+            AppHaptics.success()
+            UIAccessibility.post(notification: .announcement, argument: "Unsent for everyone")
+        } catch {
+            let text = (error as? NeedsServerUpdate) != nil ? "Unsend: " + ServerFeatures.needsUpdateText : error.localizedDescription
+            communications.statusMessage = text
+            UIAccessibility.post(notification: .announcement, argument: text)
+        }
+    }
+
     private func toggleFavorite() {
         var favs = LocalComms.favorites
         if favs.contains(handle) { favs.removeAll { $0 == handle } } else { favs.append(handle) }
@@ -652,8 +726,80 @@ struct ConversationThreadView: View {
         UIAccessibility.post(notification: .announcement, argument: favs.contains(handle) ? "Added to favorites" : "Removed from favorites")
     }
 
-    private func send() {
+    private static func secondsUntil(hour: Int) -> Int {
+        let cal = Calendar.current
+        let next = cal.nextDate(after: Date(), matching: DateComponents(hour: hour, minute: 0), matchingPolicy: .nextTime) ?? Date().addingTimeInterval(3600)
+        return Int(next.timeIntervalSinceNow)
+    }
+
+    private func schedule(_ seconds: Int) {
+        let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { return }
+        draft = ""
+        LocalMessageStore.shared.mutate { $0.scheduled.append(.init(chatKey: chatRef.key, handle: handle, groupID: nil, body: body, sendAt: Date().addingTimeInterval(Double(seconds)).timeIntervalSince1970, silent: false)) }
+        let when = Date().addingTimeInterval(Double(seconds)).formatted(date: .omitted, time: .shortened)
+        UIAccessibility.post(notification: .announcement, argument: "Scheduled for \(when)")
+        AppHaptics.success()
+    }
+
+    private func runAI(_ r: AIAssistant.Invocation) async {
+        pendingAI = nil
+        aiPartial = "AI is thinking…"
+        UIAccessibility.post(notification: .announcement, argument: "AI is thinking")
+        let answer = await AIAssistant.answer(r, context: .init(chatName: "@\(handle)", lines: recentLines, lastPhoto: nil)) { p in aiPartial = p }
+        aiPartial = nil
+        if r.isPrivate {
+            aiPrivate.append((r.question, answer))
+            UIAccessibility.post(notification: .announcement, argument: "AI, only you can see this: \(answer)")
+        } else {
+            let p = E2EEPayload(t: "ai", body: answer, ai_via: e2ee.myHandle)
+            let sent = try? await e2ee.sendDM(handle: handle, payload: p, chatKey: chatRef.key)
+            if sent == nil || sent! == nil { _ = await communications.sendMessage(recipient: handle, body: "🤖 AI (via @\(e2ee.myHandle)): " + answer) }
+            UIAccessibility.post(notification: .announcement, argument: "AI via you: \(answer)")
+            if let c = conversation { await communications.openConversation(c) }
+        }
+    }
+
+    private func analyzeIncoming(_ list: [BlindbanditServerMessage]) async {
+        let theirs = list.filter { $0.sender_id != communications.myProfileID }
+        guard aiOn, let last = theirs.last else { return }
+        if AISettings.isOn(.scamWarnings), !LocalComms.favorites.contains(handle), list.filter({ $0.sender_id == communications.myProfileID }).count < 3 {
+            let v = await ScamDetector.check(theirs.suffix(5).map(\.body).joined(separator: "\n"))
+            scamWarning = v.suspicious ? v.reason : nil
+        }
+        if AISettings.isOn(.translate) {
+            for m in theirs.suffix(20) { _ = await translator.translateIncoming(id: m.id, text: m.body, chatKey: chatRef.key) }
+        }
+        if AISettings.isOn(.smartReplies), list.last?.id == last.id {
+            smartReplies = await OnDeviceAI.smartReplies(lines: Array(recentLines.suffix(10)))
+        } else { smartReplies = [] }
+    }
+
+    private func send(silent: Bool = false) {
         var body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let e = editing {
+            editing = nil
+            draft = ""
+            Task {
+                do { try await e2ee.edit(chat: chatRef, serverID: e.id, newText: body, oldMsgID: e.client_msg_id)
+                    UIAccessibility.post(notification: .announcement, argument: "Edited")
+                    if let c = conversation { await communications.openConversation(c) }
+                } catch { communications.statusMessage = (error as? NeedsServerUpdate) != nil ? "Editing: " + ServerFeatures.needsUpdateText : error.localizedDescription
+                    UIAccessibility.post(notification: .announcement, argument: communications.statusMessage) }
+            }
+            return
+        }
+        if let r = AIAssistant.parse(body) {
+            draft = ""
+            guard aiOn, AIAssistant.allowed(chatKey: chatRef.key) else {
+                UIAccessibility.post(notification: .announcement, argument: "@AI is turned off in this chat"); return
+            }
+            if !r.isPrivate, !AIAssistant.consentGiven { pendingAI = r; aiConsent = true; return }
+            Task { await runAI(r) }
+            return
+        }
+        smartReplies = []
+        _ = silent // silent: delivered with no sound (server push flag in addendum §SILENT)
         if let q = quoting {
             let quoted = q.body.split(separator: "\n").prefix(3).map { "> " + $0 }.joined(separator: "\n")
             body = quoted + "\n" + body
@@ -671,7 +817,10 @@ struct ConversationThreadView: View {
     @ViewBuilder
     private func bubble(_ message: BlindbanditServerMessage) -> some View {
         let mine = message.sender_id == communications.myProfileID
-        let shown = mine ? message.body : ContentFilter.display(message.body, enabled: filterOffensiveLanguage)
+        let shown = mine ? message.body : ContentFilter.display(displayText(message), enabled: filterOffensiveLanguage)
+        let translatedFrom = (!mine && !showOriginal.contains(message.id)) ? translator.cached(message.id)?.source : nil
+        let encrypted = message.decrypted != nil
+        let starred = LocalMessageStore.shared.snapshot.starred.contains(message.id)
         let status = MessageStatus.caption(for: message, showRead: showReadReceipts)
         let sentLabel = MessageStatus.stamp(message.created_at)
         VStack(alignment: mine ? .trailing : .leading, spacing: 3) {
@@ -690,10 +839,18 @@ struct ConversationThreadView: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel((mine ? "You: \(shown)" : "@\(handle): \(shown)")
+                + (translatedFrom.map { ". Translated from \(LanguageID.name($0))" } ?? "")
+                + (message.edited_at != nil ? ". Edited" : "")
+                + (starred ? ". Starred" : "")
+                + (encrypted ? ". Encrypted" : "")
                 + (reactions[message.id].map { ". You reacted \(MessageReactions.name($0))" } ?? ""))
             .accessibilityActions { messageActions(message, shown: shown, mine: mine) }
             .contextMenu { messageActions(message, shown: shown, mine: mine) }
             // Status is its own element directly under every message, so VoiceOver lands on it next.
+            if let lang = translatedFrom {
+                Button("Translated from \(LanguageID.name(lang)). Show original") { showOriginal.insert(message.id) }
+                    .font(.caption2)
+            }
             MessageStatusCaption(text: mine ? status : sentLabel, mine: mine)
         }
         .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
@@ -725,6 +882,34 @@ struct ConversationThreadView: View {
     @ViewBuilder
     private func messageActions(_ message: BlindbanditServerMessage, shown: String, mine: Bool) -> some View {
         Button { quoting = message; composerFocused = true } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
+        if mine {
+            // One tap, no dialog, no time limit (§22.5).
+            Button(role: .destructive) { Task { await unsend(message) } } label: { Label("Unsend", systemImage: "arrow.uturn.backward") }
+            if message.decrypted != nil {
+                Button { editing = message; draft = message.body; composerFocused = true } label: { Label("Edit", systemImage: "pencil") }
+            }
+        }
+        Button { LocalMessageStore.shared.mutate { s in if s.starred.contains(message.id) { s.starred.remove(message.id) } else { s.starred.insert(message.id) } }; AppHaptics.light()
+            UIAccessibility.post(notification: .announcement, argument: LocalMessageStore.shared.snapshot.starred.contains(message.id) ? "Starred" : "Unstarred")
+        } label: { Label("Star", systemImage: "star") }
+        Button { let k = chatRef.key; LocalMessageStore.shared.mutate { s in var l = s.pinned[k] ?? []; if let i = l.firstIndex(of: message.id) { l.remove(at: i) } else { l.append(message.id) }; s.pinned[k] = l }
+            UIAccessibility.post(notification: .announcement, argument: "Pin updated")
+        } label: { Label("Pin", systemImage: "pin") }
+        if !mine && translator.cached(message.id) != nil {
+            Button { if showOriginal.contains(message.id) { showOriginal.remove(message.id) } else { showOriginal.insert(message.id) } } label: {
+                Label(showOriginal.contains(message.id) ? "Show translation" : "Show original", systemImage: "character.bubble")
+            }
+        } else if !mine {
+            Button { Task { if let src = LanguageID.detect(message.body), let r = await translator.translate(message.body, from: src, to: LanguageID.deviceLanguage) { translator.store(r, for: message.id) } } } label: { Label("Translate", systemImage: "character.bubble") }
+        }
+        if AISettings.isOn(.naturalVoices) {
+            Button { NaturalReader.shared.speak(shown) } label: { Label("Read aloud with natural voice", systemImage: "waveform") }
+        }
+        if AISettings.isOn(.actions) {
+            ForEach(ActionDetector.detect(message.body), id: \.label) { a in
+                Button(a.label) { if let u = a.url { UIApplication.shared.open(u) } else if case .date(let d) = a.kind { Task { _ = await ReminderMaker.add(title: message.body, minutes: max(0, Int(d.timeIntervalSinceNow / 60))) } } }
+            }
+        }
         Button { UIPasteboard.general.string = shown; AppHaptics.light() } label: { Label("Copy", systemImage: "doc.on.doc") }
         ShareLink(item: shown) { Label("Share", systemImage: "square.and.arrow.up") }
         ForEach(MessageReactions.all, id: \.emoji) { r in
@@ -997,6 +1182,8 @@ struct MessagesSettingsView: View {
             }
             Section {
                 NavigationLink { BlockedAccountsView() } label: { Label("Blocked accounts", systemImage: "hand.raised") }
+                NavigationLink { AppSecurityView() } label: { Label("Security and encryption", systemImage: "lock.shield") }
+                NavigationLink { AISettingsView() } label: { Label("AI", systemImage: "sparkles") }
             } header: { Text("Safety").accessibilityAddTraits(.isHeader) }
         }
         .navigationTitle("Messages & calls")

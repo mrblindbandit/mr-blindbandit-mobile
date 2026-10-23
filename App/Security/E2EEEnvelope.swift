@@ -84,13 +84,15 @@ struct E2EEPayload: Codable, Equatable {
     var target_msg_id: String?
     var sig: String?
     var pinned: Bool?
+    /// Set on answers produced by @AI on the sender's device: the asker's handle.
+    var ai_via: String?
 
     init(t: String, body: String? = nil, media: Media? = nil, reply_to: String? = nil, sent_at: Int? = nil,
          expires_in: Int? = nil, orig_lang: String? = nil, orig: String? = nil, silent: Bool? = nil, poll: Poll? = nil,
-         vote: [Int]? = nil, target_msg_id: String? = nil, sig: String? = nil, pinned: Bool? = nil) {
+         vote: [Int]? = nil, target_msg_id: String? = nil, sig: String? = nil, pinned: Bool? = nil, ai_via: String? = nil) {
         self.t = t; self.body = body; self.media = media; self.reply_to = reply_to; self.sent_at = sent_at
         self.expires_in = expires_in; self.orig_lang = orig_lang; self.orig = orig; self.silent = silent; self.poll = poll
-        self.vote = vote; self.target_msg_id = target_msg_id; self.sig = sig; self.pinned = pinned
+        self.vote = vote; self.target_msg_id = target_msg_id; self.sig = sig; self.pinned = pinned; self.ai_via = ai_via
     }
 
     /// Canonical JSON: sorted keys, no whitespace, nil fields omitted (matches the reference generator).

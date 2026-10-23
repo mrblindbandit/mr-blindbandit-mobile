@@ -121,8 +121,14 @@ struct BlindbanditGroupMessage: Identifiable, Decodable, Equatable {
     let sender_id: String
     let sender_handle: String
     let sender_name: String
-    let body: String
+    var body: String
     let created_at: Double
+    var e2ee = false
+    var envelopeJSON: String?
+    var kind = "text"
+    var edited_at: Double?
+    var decrypted: E2EEPayload?
+    var envelope: E2EEEnvelope? { envelopeJSON.flatMap { E2EEEnvelope.from(any: $0) } }
     var delivered_at: Double? = nil
     var read_at: Double? = nil
     /// Names or @handles of members who have read it (may be empty when the server only sends a count).
@@ -148,6 +154,11 @@ struct BlindbanditGroupMessage: Identifiable, Decodable, Equatable {
         sender_name = name ?? (sender_handle.isEmpty ? "Member" : "@\(sender_handle)")
         body = (try? c.decode(String.self, forKey: .body)) ?? ""
         created_at = LenientTime.decode(c, .created_at) ?? LenientTime.decode(c, .sent_at) ?? 0
+        e2ee = c.lenientBool(.e2ee) ?? false
+        if let s = try? c.decode(String.self, forKey: .envelope) { envelopeJSON = s }
+        else if let env = try? c.decode(E2EEEnvelope.self, forKey: .envelope), let d = try? JSONEncoder().encode(env) { envelopeJSON = String(data: d, encoding: .utf8) }
+        kind = (try? c.decode(String.self, forKey: .kind)) ?? "text"
+        edited_at = LenientTime.decode(c, .edited_at)
     }
 
     struct ReadByPerson: Decodable {
@@ -162,7 +173,7 @@ struct BlindbanditGroupMessage: Identifiable, Decodable, Equatable {
         enum CodingKeys: String, CodingKey { case handle, display_name, read_at }
     }
 
-    enum CodingKeys: String, CodingKey { case id, sender_id, sender_handle, sender_display_name, sender_name, body, created_at, sent_at, author_id, handle, display_name, delivered_at, read_at, last_read_at, read_by, read_count }
+    enum CodingKeys: String, CodingKey { case id, sender_id, sender_handle, sender_display_name, sender_name, body, created_at, sent_at, author_id, handle, display_name, delivered_at, read_at, last_read_at, read_by, read_count, e2ee, envelope, kind, edited_at }
 }
 
 /// Server timestamps: epoch milliseconds (number or string), epoch seconds, or ISO 8601.
@@ -303,9 +314,11 @@ extension BlindbanditAPI {
     static func groupMessages(id: String) async throws -> [BlindbanditGroupMessage] {
         try decode(ItemsPayload<BlindbanditGroupMessage>.self, from: try await request("v1/social/groups/\(escape(id))/messages?limit=100")).items
             .sorted { $0.created_at < $1.created_at }
+            .resolvedE2EE(groupID: id)
     }
 
     static func sendGroupMessage(id: String, body: String) async throws {
+        if try await E2EEService.shared.sendGroup(id: id, payload: E2EEPayload(t: "text", body: body)) { return }
         try await request("v1/social/groups/\(escape(id))/messages", method: "POST", body: ["body": body])
     }
 
@@ -390,4 +403,9 @@ struct BlindbanditCallDetail: Decodable {
         group_name = try? c.decodeIfPresent(String.self, forKey: .group_name)
     }
     enum CodingKeys: String, CodingKey { case participants, status, group_id, group_name }
+}
+
+
+extension Array where Element == BlindbanditGroupMessage {
+    @MainActor func resolvedE2EE(groupID: String) -> [BlindbanditGroupMessage] { E2EEService.shared.resolveGroup(self, groupID: groupID) }
 }

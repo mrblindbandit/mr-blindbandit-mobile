@@ -6,6 +6,14 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 
 ---
 
+## 2.0.1 (16)
+- Voice messages: press and hold the mic to record (haptic and "Recording"), lift to send ("Sent"), slide left or use the "Cancel recording" action to cancel. Encrypted upload via the attachment path, with a transcript fallback. Listen-once option and 1x, 1.5x and 2x playback.
+- Chat header: the contact or group name opens chat info and settings (VoiceOver: "<Name>, chat settings"). The ⋯ More button is gone; call buttons stay.
+- Composer tools (mic, poll, camera describe, AI, emoji, silent send, schedule, settings) are available as VoiceOver actions on the message field.
+- Blue Verified checkmark on the profile, chat header, chat list, directory, group members and sender names, decoded from the API's `verified` field.
+- The AI chat is a warm, casual friend with encrypted, synced memory. It streams replies to VoiceOver, can speak them, and works hands-free by voice. Foundation Models tools cover chats, drafts, reminders, calendar, contacts, places, translation, photo reading, date math, units, memory and notes, plus @Generable memory digests, content tagging, prewarm, context-window summarizing and fallbacks.
+- Polls, folders with a Face ID hidden folder, notes to self, Face ID chat lock in DMs and groups, silent send that really sets the silent flag, live call captions, smart search, daily digest, describe my camera, a SensitiveContentAnalysis blur, AI in groups (@AI, /ai, catch-me-up), duress PIN and an encrypted message history backup with restore.
+
 ## 2.0.0 (15)
 - End-to-end encryption (p256-v1, CryptoKit) for DMs and groups when the server supports it. Keys sync through iCloud Keychain. Includes safety numbers with QR codes, key-change alerts, padding and signed unsend. Older plaintext chats keep working.
 - Security & Privacy in every chat: clear from server, disappearing timers (30s to 90d), relay-only, one-tap Unsend, screenshot and recording alerts, Face ID chat lock, hidden previews, link-preview blocking, metadata strip, view-once, receipt and typing switches, export or delete my data, and a security log. Any feature the server doesn't support yet shows "Needs server update".

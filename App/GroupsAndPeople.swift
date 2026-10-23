@@ -228,10 +228,20 @@ struct GroupChatView: View {
     @State private var typing: [String] = []
     @State private var lastTypingSent = Date.distantPast
     @State private var showInfo = false
+    @State private var showPoll = false
+    @State private var aiNote: String?
+    @StateObject private var recorder = VoiceRecorder()
 
     private var title: String { group?.name ?? initial?.name ?? "Group" }
+    private var chatRef: ChatRef { .group(id: groupID) }
+    private var recentLines: [String] { messages.suffix(30).map { "\($0.sender_name): \($0.body)" } }
+    private func isVerified(_ handle: String) -> Bool { members.first { $0.handle.lowercased() == handle.lowercased() }?.verified == true }
 
     var body: some View {
+        ChatLockGate(chatKey: chatRef.key) { groupBody }
+    }
+
+    private var groupBody: some View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 List {
@@ -242,12 +252,18 @@ struct GroupChatView: View {
                         let mine = m.sender_handle.lowercased() == communications.myHandle.lowercased()
                         VStack(alignment: mine ? .trailing : .leading, spacing: 2) {
                             VStack(alignment: mine ? .trailing : .leading, spacing: 2) {
-                                if !mine { Text(m.sender_name).font(.caption.bold()) }
+                                if !mine { HStack(spacing: 3) { Text(m.sender_name).font(.caption.bold()); if isVerified(m.sender_handle) { VerifiedBadge() } } }
+                                if let media = m.decrypted?.media, media.mime.hasPrefix("audio") {
+                                    VoiceBubble(media: media, from: mine ? "You" : m.sender_name, msgID: m.id)
+                                } else if let poll = m.decrypted?.poll {
+                                    PollCard(poll: poll, msgID: m.id, chat: chatRef, handle: "", me: communications.myHandle)
+                                } else {
                                 Text(m.body).padding(10)
                                     .background(mine ? Brand.gold.opacity(0.35) : Color.secondary.opacity(0.15), in: RoundedRectangle(cornerRadius: 14))
+                                }
                             }
-                            .accessibilityElement(children: .ignore)
-                            .accessibilityLabel("\(mine ? "You" : m.sender_name): \(m.body)")
+                            .accessibilityElement(children: m.decrypted?.poll != nil || m.decrypted?.media != nil ? .contain : .ignore)
+                            .accessibilityLabel("\(mine ? "You" : m.sender_name)\(isVerified(m.sender_handle) && !mine ? ", Verified" : ""): \(m.body)")
                             .accessibilityActions {
                                 Button("Copy") { UIPasteboard.general.string = m.body }
                                 Button("Read aloud") { MessageReader.shared.speak(m.body) }
@@ -271,10 +287,29 @@ struct GroupChatView: View {
                 .listStyle(.plain)
                 .onChange(of: messages.count) { _, _ in if let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) } }
             }
+            if let n = aiNote {
+                HStack(alignment: .top) {
+                    Text(n).font(.callout)
+                    Spacer()
+                    Button { aiNote = nil } label: { Image(systemName: "xmark.circle.fill") }.accessibilityLabel("Dismiss AI note")
+                }.padding(.horizontal)
+            }
             HStack {
                 TextField("Message \(title)", text: $draft, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .onChange(of: draft) { _, _ in pingTyping() }
+                    .accessibilityActions {
+                        Button(recorder.isRecording ? "Send voice message" : "Record voice message") {
+                            Task { await recorder.toggleSend(handle: "", chat: chatRef, comms: communications); await refresh() }
+                        }
+                        Button("Create poll") { showPoll = true }
+                        Button("Catch me up") { Task { await catchUp() } }
+                        Button("Ask AI in this group") { draft = "@AI " + draft }
+                        Button("Ask AI privately") { draft = "/ai " + draft }
+                        Button("Insert emoji") { draft += "🙂" }
+                        Button("Group settings") { showInfo = true }
+                    }
+                VoiceMicButton(handle: "", chat: chatRef, recorder: recorder)
                 Button { Task { await send() } } label: { Image(systemName: "arrow.up.circle.fill").font(.title) }
                     .accessibilityLabel("Send")
                     .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -289,12 +324,28 @@ struct GroupChatView: View {
                     .accessibilityLabel("Video call \(title)")
                 Button { call(video: false) } label: { Image(systemName: "phone") }
                     .accessibilityLabel("Voice call \(title)")
-                Button { showInfo = true } label: { Image(systemName: "info.circle") }
-                    .accessibilityLabel("Group info and members")
+            }
+            ToolbarItem(placement: .principal) {
+                Button { showInfo = true } label: { Text(title).font(.headline).lineLimit(1) }
+                    .accessibilityLabel("\(title), chat settings")
+                    .accessibilityHint("Double tap to open chat info and settings")
             }
         }
+        .sheet(isPresented: $showPoll) { PollComposerSheet(chat: chatRef, handle: "") }
         .sheet(isPresented: $showInfo) {
-            GroupInfoView(groupID: groupID, group: $group, members: $members)
+            NavigationStack {
+                GroupInfoView(groupID: groupID, group: $group, members: $members)
+                    .toolbar {
+                        ToolbarItem(placement: .bottomBar) {
+                            Menu("Folders, lock and more") {
+                                FolderAssignMenu(chatKey: chatRef.key)
+                                Button(ChatLock.isLocked(chatRef.key) ? "Unlock chat (remove Face ID)" : "Lock chat with Face ID") { ChatLock.set(chatRef.key, !ChatLock.isLocked(chatRef.key)) }
+                                Button("Create poll") { showInfo = false; showPoll = true }
+                                Button("Catch me up") { showInfo = false; Task { await catchUp() } }
+                            }
+                        }
+                    }
+            }
         }
         .task { await poll() }
     }
@@ -309,10 +360,34 @@ struct GroupChatView: View {
         Task { updateTyping(await BlindbanditAPI.sendGroupTyping(id: groupID)) }
     }
 
+    private func catchUp() async {
+        aiNote = "Summarizing…"
+        aiNote = await OnDeviceAI.catchUp(chatName: title, lines: recentLines) ?? OnDeviceAI.unavailableReason
+        UIAccessibility.post(notification: .announcement, argument: aiNote ?? "")
+    }
+
     private func send() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         draft = ""
+        if let r = AIAssistant.parse(text) {
+            guard AIAssistant.allowed(chatKey: chatRef.key) else { UIAccessibility.post(notification: .announcement, argument: "@AI is turned off in this chat"); return }
+            aiNote = "AI is thinking…"
+            let answer = await AIAssistant.answer(r, context: .init(chatName: title, lines: recentLines, lastPhoto: nil)) { p in aiNote = p }
+            if r.isPrivate {
+                aiNote = "Only you can see this: " + answer
+                UIAccessibility.post(notification: .announcement, argument: "AI, only you can see this: \(answer)")
+            } else {
+                aiNote = nil
+                let p = E2EEPayload(t: "ai", body: answer, ai_via: communications.myHandle)
+                if (try? await E2EEService.shared.sendGroup(id: groupID, payload: p)) != true {
+                    try? await BlindbanditAPI.sendGroupMessage(id: groupID, body: "🤖 AI (via @\(communications.myHandle)): " + answer)
+                }
+                UIAccessibility.post(notification: .announcement, argument: "AI via you: \(answer)")
+                await refresh()
+            }
+            return
+        }
         do {
             try await BlindbanditAPI.sendGroupMessage(id: groupID, body: text)
             UIAccessibility.post(notification: .announcement, argument: "Sent")
@@ -396,7 +471,7 @@ struct GroupInfoView: View {
                     ForEach(members) { m in
                         HStack {
                             VStack(alignment: .leading) {
-                                Text(m.display_name)
+                                HStack(spacing: 3) { Text(m.display_name); if m.verified { VerifiedBadge() } }
                                 Text("@\(m.handle)").font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
@@ -480,7 +555,7 @@ struct PeopleDirectoryView: View {
             ForEach(people) { p in
                 HStack {
                     VStack(alignment: .leading) {
-                        Text(p.display_name).font(.headline)
+                        HStack(spacing: 3) { Text(p.display_name).font(.headline); if p.verified == true { VerifiedBadge() } }
                         Text("@\(p.handle)").font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()

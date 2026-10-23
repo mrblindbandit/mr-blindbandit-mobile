@@ -101,10 +101,18 @@ struct MessagesTabView: View {
     @State private var reporting: BlindbanditConversation?
     @State private var confirmDelete: BlindbanditConversation?
     @State private var confirmBlock: BlindbanditConversation?
+    @ObservedObject private var folders = ChatFolders.shared
+    @State private var folderID: String = "all"
 
     private var visibleConversations: [BlindbanditConversation] {
         let q = search.trimmingCharacters(in: .whitespaces).lowercased()
         let filtered = communications.conversations.filter { c in
+            if AppPIN.decoyActive { return false }
+            let key = "dm:\(c.id)"
+            if let f = folders.folders.first(where: { $0.id == folderID }) {
+                if !f.chatKeys.contains(key) { return false }
+                if f.hidden && !folders.hiddenUnlocked { return false }
+            } else if folders.isHidden(key) { return false }
             if let at = deletedAt[c.id], c.updated_at <= at { return false }
             if let at = archivedAt[c.id], c.updated_at <= at { return showArchived }
             if showArchived { return false }
@@ -151,6 +159,20 @@ struct MessagesTabView: View {
                     // Permanent AI chat: always first, no delete swipe; it can only be cleared from inside.
                     NavigationLink { AIChatView() } label: { AIChatRow() }
                         .accessibilityIdentifier("aiChatRow")
+                    if !AppPIN.decoyActive {
+                        NavigationLink { NotesToSelfView() } label: { NotesToSelfRow() }
+                    }
+                    Picker("Folder", selection: $folderID) {
+                        Text("All chats").tag("all")
+                        ForEach(folders.folders) { f in Text(f.name).tag(f.id) }
+                    }
+                    .onChange(of: folderID) { _, id in
+                        if folders.folders.first(where: { $0.id == id })?.hidden == true, !folders.hiddenUnlocked {
+                            Task { await folders.unlockHidden(); if !folders.hiddenUnlocked { folderID = "all" } }
+                        }
+                    }
+                    NavigationLink { SmartSearchView() } label: { Label("Smart search", systemImage: "sparkle.magnifyingglass") }
+                    NavigationLink { DigestView() } label: { Label("Today's digest", systemImage: "newspaper") }
                 }
                 Section {
                     if communications.isLoading && communications.conversations.isEmpty {
@@ -390,7 +412,7 @@ struct MessagesTabView: View {
                     if pinned.contains(conversation.id) { Image(systemName: "pin.fill").font(.caption).accessibilityHidden(true) }
                     Text(name).font(unread ? .headline : .body)
                     if conversation.other?.verified == true {
-                        Image(systemName: "checkmark.seal.fill").foregroundStyle(Brand.goldDeep).accessibilityHidden(true)
+                        VerifiedBadge().accessibilityHidden(true)
                     }
                     if muted.contains(conversation.id) { Image(systemName: "bell.slash").font(.caption).accessibilityHidden(true) }
                     Spacer()
@@ -492,6 +514,10 @@ struct ConversationThreadView: View {
     @State private var showOriginal: Set<String> = []
     @StateObject private var capture = ScreenCaptureMonitor()
     @StateObject private var dictation = LiveDictation()
+    @StateObject private var recorder = VoiceRecorder()
+    @State private var showInfo = false
+    @State private var showPoll = false
+    @State private var showCamera = false
     @ObservedObject private var e2ee = E2EEService.shared
     @ObservedObject private var translator = Translator.shared
     @Namespace private var rotorSpace
@@ -523,6 +549,12 @@ struct ConversationThreadView: View {
     }
 
     var body: some View {
+        ChatLockGate(chatKey: chatRef.key) { threadBody }
+    }
+
+    private var displayName: String { conversation?.other?.display_name ?? (handle.isEmpty ? "Conversation" : "@\(handle)") }
+
+    private var threadBody: some View {
         VStack(spacing: 0) {
             messageList
 
@@ -533,6 +565,20 @@ struct ConversationThreadView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             // Video and voice call sit right in the top bar (not in a menu), like Messages and WhatsApp.
+            // The name in the header is the chat settings button (no separate More button).
+            ToolbarItem(placement: .principal) {
+                Button { showInfo = true } label: {
+                    HStack(spacing: 4) {
+                        Text(displayName).font(.headline).lineLimit(1)
+                        if conversation?.other?.verified == true { VerifiedBadge() }
+                    }
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(displayName)\(conversation?.other?.verified == true ? ", Verified" : ""), chat settings")
+                .accessibilityHint("Double tap to open chat info and settings")
+                .accessibilityAddTraits(.isButton)
+                .disabled(handle.isEmpty)
+            }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button {
                     Task {
@@ -555,12 +601,30 @@ struct ConversationThreadView: View {
                 .accessibilityHint("Starts a voice call right away")
                 .disabled(handle.isEmpty || communications.isInCall)
 
-                Menu {
-                    moreMenuItems
-                } label: { Image(systemName: "ellipsis.circle") }
-                .accessibilityLabel("More options")
-                .disabled(handle.isEmpty)
             }
+        }
+        .navigationDestination(isPresented: $showInfo) {
+            List {
+                Section {
+                    HStack { Text(displayName).font(.title3.bold()); if conversation?.other?.verified == true { VerifiedBadge() } }
+                        .accessibilityElement(children: .combine).accessibilityAddTraits(.isHeader)
+                    if !handle.isEmpty { Text("@\(handle)").foregroundStyle(.secondary) }
+                }
+                Section("Chat") { moreMenuItems }
+                Section("Folders") { FolderAssignMenu(chatKey: chatRef.key) }
+                Section("Lock") {
+                    Toggle("Lock this chat with Face ID", isOn: Binding(get: { ChatLock.isLocked(chatRef.key) }, set: { ChatLock.set(chatRef.key, $0) }))
+                }
+                Section("Create") { Button { showInfo = false; showPoll = true } label: { Label("Create poll", systemImage: "chart.bar") } }
+            }
+            .navigationTitle("Chat info")
+        }
+        .sheet(isPresented: $showPoll) { PollComposerSheet(chat: chatRef, handle: handle) }
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraPicker { img in
+                Task { let d = await AIToolbox.describe(img); draft = draft.isEmpty ? "" : draft
+                    UIAccessibility.post(notification: .announcement, argument: d) }
+            }.ignoresSafeArea()
         }
         .task(id: conversation?.id ?? conversationID) {
             draft = LocalComms.draft(for: conversationID)
@@ -707,7 +771,22 @@ struct ConversationThreadView: View {
                 .onChange(of: draft) { _, value in
                     if !value.isEmpty { communications.userTyped(in: conversationID) }
                 }
+                .accessibilityActions {
+                    Button(recorder.isRecording ? "Send voice message" : "Record voice message") {
+                        Task { await recorder.toggleSend(handle: handle, chat: chatRef, comms: communications) }
+                    }
+                    Button("Create poll") { showPoll = true }
+                    Button("Describe camera") { showCamera = true }
+                    Button("Ask AI in this chat") { draft = "@AI " + draft }
+                    Button("Ask AI privately") { draft = "/ai " + draft }
+                    Button("Insert emoji") { draft += "🙂" }
+                    Button(dictation.isListening ? "Stop dictation" : "Dictate") { Task { if dictation.isListening { dictation.stop(); draft = dictation.text } else { await dictation.start() } } }
+                    Button("Send silently") { send(silent: true) }
+                    Button("Schedule for 1 hour") { schedule(3600) }
+                    Button("Chat settings") { showInfo = true }
+                }
             ComposerAIMenu(draft: $draft, dictation: dictation, enabled: aiOn)
+            VoiceMicButton(handle: handle, chat: chatRef, recorder: recorder)
             Button { send() } label: {
                 Image(systemName: "paperplane.fill").frame(width: Brand.minTouch, height: Brand.minTouch)
             }
@@ -821,7 +900,6 @@ struct ConversationThreadView: View {
             return
         }
         smartReplies = []
-        _ = silent // silent: delivered with no sound (server push flag in addendum §SILENT)
         if let q = quoting {
             let quoted = q.body.split(separator: "\n").prefix(3).map { "> " + $0 }.joined(separator: "\n")
             body = quoted + "\n" + body
@@ -829,7 +907,8 @@ struct ConversationThreadView: View {
         draft = ""
         quoting = nil
         LocalComms.setDraft("", for: conversationID)
-        Task { _ = await communications.sendMessage(recipient: handle, body: body) }
+        Task { _ = await communications.sendMessage(recipient: handle, body: body, silent: silent)
+            if silent { UIAccessibility.post(notification: .announcement, argument: "Sent silently") } }
     }
 
     private var latestMineID: String? {
@@ -848,6 +927,11 @@ struct ConversationThreadView: View {
         VStack(alignment: mine ? .trailing : .leading, spacing: 3) {
             HStack {
                 if mine { Spacer(minLength: 48) }
+                if let media = message.decrypted?.media, media.mime.hasPrefix("audio") {
+                    VoiceBubble(media: media, from: mine ? "You" : "@\(handle)", msgID: message.id)
+                } else if let poll = message.decrypted?.poll {
+                    PollCard(poll: poll, msgID: message.client_msg_id ?? message.id, chat: chatRef, handle: handle, me: e2ee.myHandle)
+                } else {
                 Text(shown)
                     .padding(12)
                     .background(mine ? Brand.gold.opacity(0.35) : Color.secondary.opacity(0.16), in: RoundedRectangle(cornerRadius: 16))
@@ -857,6 +941,7 @@ struct ConversationThreadView: View {
                             Text(r).font(.caption).padding(3).background(.regularMaterial, in: Capsule()).offset(y: 10)
                         }
                     }
+                }
                 if !mine { Spacer(minLength: 48) }
             }
             .accessibilityElement(children: .ignore)

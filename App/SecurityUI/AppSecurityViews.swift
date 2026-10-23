@@ -123,6 +123,9 @@ struct AppSecurityView: View {
             } header: { Text("App lock").accessibilityAddTraits(.isHeader) }
             Section {
                 NavigationLink { DevicesSessionsView() } label: { Label("Devices and sessions", systemImage: "iphone.and.arrow.forward") }
+                NavigationLink { AppPINSettingsView() } label: { Label("PIN and duress PIN", systemImage: "number.square") }
+                NavigationLink { HistoryBackupView() } label: { Label("Message history backup", systemImage: "clock.arrow.circlepath") }
+                NavigationLink { FoldersManagerView() } label: { Label("Chat folders and hidden chats", systemImage: "folder") }
                 LabeledContent("This device", value: IdentityStore.shared.deviceID ?? "Not registered")
                 LabeledContent("Encryption", value: e2ee.ready ? "On, keys in iCloud Keychain" : (ServerFeatures.shared.isAvailable(.keys) ? "Setting up" : ServerFeatures.needsUpdateText))
                 Button("Reset encryption keys on this device", role: .destructive) { confirmReset = true }

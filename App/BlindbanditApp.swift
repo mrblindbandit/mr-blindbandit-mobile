@@ -52,6 +52,7 @@ final class DeviceLock: ObservableObject {
                 self.busy = false
                 self.context = nil
                 self.unlocked = success
+                if success { AppPIN.decoyActive = false }
                 if success {
                     self.configured = true
                     UserDefaults.standard.set(true, forKey: "lockConfigured")
@@ -263,6 +264,9 @@ struct LockedView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .disabled(lock.busy)
+                if AppPIN.isSet {
+                    PINEntryView { r in if r != .wrong { lock.unlocked = true } }
+                }
                 if lock.busy { ProgressView("Waiting for iPhone authentication") }
                 if !lock.message.isEmpty {
                     Text(lock.message).foregroundStyle(.secondary)

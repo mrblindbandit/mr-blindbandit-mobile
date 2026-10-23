@@ -231,7 +231,8 @@ enum SecurityAPI {
 
     static func revokeInviteLink(groupID: String, token: String) async throws {
         try await gated(.inviteLinks) {
-            try await BlindbanditAPI.request("v1/social/groups/\(ChatRef.escape(groupID))/invite-links/\(ChatRef.escape(token))", method: "DELETE")
+            do { try await BlindbanditAPI.request("v1/social/groups/\(ChatRef.escape(groupID))/invite-links/\(ChatRef.escape(token))", method: "DELETE") }
+            catch { throw NeedsServerUpdate(feature: .inviteLinks) } // revoke route not live yet (404/405)
         }
     }
 
@@ -251,7 +252,11 @@ enum SecurityAPI {
 
     static func answerJoinRequest(groupID: String, requestID: String, approve: Bool) async throws {
         try await gated(.joinRequests) {
-            try await BlindbanditAPI.request("v1/social/groups/\(ChatRef.escape(groupID))/join-requests/\(ChatRef.escape(requestID))", method: "POST", body: ["approve": approve])
+            do {
+                try await BlindbanditAPI.request("v1/join-requests/\(ChatRef.escape(requestID))", method: "POST", body: ["approve": approve, "status": approve ? "approved" : "declined"])
+            } catch {
+                try await BlindbanditAPI.request("v1/social/groups/\(ChatRef.escape(groupID))/join-requests/\(ChatRef.escape(requestID))", method: "POST", body: ["approve": approve])
+            }
         }
     }
 

@@ -225,7 +225,10 @@ struct ProfileView: View {
                     BlindbanditLogoImage(size: 56).accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 4) {
                         if case .signedIn(let name, let email) = auth.state {
-                            Text(name.isEmpty ? "Blindbandit member" : name).font(.headline)
+                            HStack(spacing: 4) {
+                                Text(name.isEmpty ? "Blindbandit member" : name).font(.headline)
+                                if communications.myVerified { VerifiedBadge() }
+                            }
                             Text(email).font(.subheadline).foregroundStyle(.secondary)
                         }
                     }

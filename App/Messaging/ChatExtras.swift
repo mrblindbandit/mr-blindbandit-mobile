@@ -262,24 +262,28 @@ struct FoldersManagerView: View {
 /// Optional app PIN. Entering the duress PIN instead opens an empty decoy app: no chats, no AI history, no notes.
 @MainActor
 enum AppPIN {
-    static var isSet: Bool { Keychain.get("pin.real.v1") != nil }
-    static var duressSet: Bool { Keychain.get("pin.duress.v1") != nil }
+    // Hashes live in the keychain; if the keychain is unavailable (simulator test host) they fall back to defaults.
+    private static func load(_ k: String) -> Data? { Keychain.get(k) ?? UserDefaults.standard.data(forKey: k) }
+    private static func save(_ d: Data, _ k: String) { if !Keychain.set(d, account: k) { UserDefaults.standard.set(d, forKey: k) } }
+    private static func remove(_ k: String) { Keychain.delete(k); UserDefaults.standard.removeObject(forKey: k) }
+    static var isSet: Bool { load("pin.real.v1") != nil }
+    static var duressSet: Bool { load("pin.duress.v1") != nil }
     static var decoyActive: Bool {
         get { UserDefaults.standard.bool(forKey: "pin.decoyActive") }
         set { UserDefaults.standard.set(newValue, forKey: "pin.decoyActive") }
     }
     private static func hash(_ pin: String) -> Data {
-        let salt = Keychain.get("pin.salt.v1") ?? { let s = E2EECrypto.random(16); _ = Keychain.set(s, account: "pin.salt.v1"); return s }()
+        let salt = load("pin.salt.v1") ?? { let s = E2EECrypto.random(16); save(s, "pin.salt.v1"); return s }()
         return Data(SHA256.hash(data: salt + Data(pin.utf8)))
     }
-    static func set(real: String) { _ = Keychain.set(hash(real), account: "pin.real.v1") }
-    static func set(duress: String) { _ = Keychain.set(hash(duress), account: "pin.duress.v1") }
-    static func clear() { Keychain.delete("pin.real.v1"); Keychain.delete("pin.duress.v1"); decoyActive = false }
+    static func set(real: String) { save(hash(real), "pin.real.v1") }
+    static func set(duress: String) { save(hash(duress), "pin.duress.v1") }
+    static func clear() { remove("pin.real.v1"); remove("pin.duress.v1"); decoyActive = false }
     enum Result { case real, duress, wrong }
     static func check(_ pin: String) -> Result {
         let h = hash(pin)
-        if let r = Keychain.get("pin.real.v1"), r == h { decoyActive = false; return .real }
-        if let d = Keychain.get("pin.duress.v1"), d == h { decoyActive = true; return .duress }
+        if let r = load("pin.real.v1"), r == h { decoyActive = false; return .real }
+        if let d = load("pin.duress.v1"), d == h { decoyActive = true; return .duress }
         return .wrong
     }
 }

@@ -7,6 +7,9 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 ---
 
 
+## 2.0.4 (19)
+- Fix: AI chat refused "play X on Apple Music". Music commands are now parsed deterministically and drive MusicKit directly; the instructions tell the model to always use the appleMusic tool; authorization denied/restricted gives spoken guidance; real MusicKit errors are logged (os_log + Settings > AI > Music debug log).
+
 ## 2.0.3 (iOS build 18) - 2026-10-23
 - Apple Music in the AI chat: MusicKit tool (play, pause, next, previous, queue, search, library shuffle, now playing) through ApplicationMusicPlayer; accessible Now Playing bar; 30-second previews without a subscription; NSAppleMusicUsageDescription.
 - AI web search tool through GET /v1/ai/search (Clerk auth), cited links open in SFSafariViewController, "Needs server update" on 404, "Allow AI web search" toggle (default on).

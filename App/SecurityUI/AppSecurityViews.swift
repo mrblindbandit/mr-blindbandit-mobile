@@ -212,6 +212,10 @@ struct AISettingsView: View {
             } footer: { Text("Every AI feature runs on this iPhone. Your messages are never sent to a server for AI.") }
             AIStyleSection()
             CloudAISection()
+            Section("Music debug log") {
+                Text(MusicLog.lastError.isEmpty ? "No Apple Music errors." : MusicLog.lastError)
+                    .font(.footnote).textSelection(.enabled)
+            }
             Section {
                 Toggle("Allow AI web search", isOn: Binding(get: { WebSearch.allowed }, set: { WebSearch.allowed = $0; AIChatStore.shared.resetSession() }))
             } header: { Text("Web search").accessibilityAddTraits(.isHeader) } footer: {

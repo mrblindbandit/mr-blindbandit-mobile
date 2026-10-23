@@ -83,6 +83,4 @@ platform :ios do
       UI.error("APPGROUP_FAILED: #{e.class} #{e.message.to_s[0, 400]}")
     end
   end
-  end
-
 end

@@ -200,6 +200,7 @@ struct ActiveCallScreen: View {
             Button("Switch to video") { upgrade() }
         }
         Button(communications.screenSharing ? "Stop sharing screen" : "Share screen") { communications.toggleScreenShare() }
+        Button(communications.captionsOn ? "Turn off live captions" : "Turn on live captions") { communications.toggleCaptions() }
         Button("Add people") { showAdd = true }
         Button(communications.handRaised ? "Lower hand" : "Raise hand") { communications.toggleHand() }
         Button("Open call chat") { showChat = true }

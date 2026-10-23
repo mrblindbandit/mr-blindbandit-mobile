@@ -55,14 +55,16 @@ targets:
         INFOPLIST_KEY_NSMicrophoneUsageDescription: Mr. BlindBandit Mobile uses the microphone for calls, voice messages, dictation and recordings you start in the creator tools.
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: Mr. BlindBandit Mobile turns voice messages and dictation into text on this iPhone. Audio is never sent to a server.
         INFOPLIST_KEY_NSRemindersFullAccessUsageDescription: Mr. BlindBandit Mobile adds reminders you ask the AI chat or a message action to create.
+        INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription: Mr. BlindBandit Mobile lets the AI chat check your calendar when you ask what is coming up. Nothing leaves your iPhone.
+        INFOPLIST_KEY_NSContactsUsageDescription: Mr. BlindBandit Mobile lets the AI chat look up a contact when you ask, on this iPhone only.
         INFOPLIST_KEY_NSUserNotificationsUsageDescription: Mr. BlindBandit Mobile sends notifications for incoming calls and new messages. You can turn them off in Settings.
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_UIRequiresFullScreen: YES
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         INFOPLIST_KEY_UIBackgroundModes: [audio, remote-notification, voip]
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        MARKETING_VERSION: '2.0.0'
-        CURRENT_PROJECT_VERSION: '15'
+        MARKETING_VERSION: '2.0.1'
+        CURRENT_PROJECT_VERSION: '16'
     dependencies:
       - package: LiveKitClient
         product: LiveKit

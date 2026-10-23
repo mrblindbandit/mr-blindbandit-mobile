@@ -52,6 +52,7 @@ final class DeviceLock: ObservableObject {
                 self.busy = false
                 self.context = nil
                 self.unlocked = success
+                if success { AppPIN.decoyActive = false }
                 if success {
                     self.configured = true
                     UserDefaults.standard.set(true, forKey: "lockConfigured")
@@ -258,6 +259,9 @@ struct LockedView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                 Button("Unlock") { lock.unlock() }
+                if AppPIN.isSet {
+                    PINEntryView { r in if r != .wrong { lock.unlocked = true } }
+                }
                     .accessibilityLabel("Unlock \(AppConfig.appDisplayName)")
                     .accessibilityHint("Uses Face ID, Touch ID, or your passcode. Only asked when the app first starts.")
                     .buttonStyle(.borderedProminent)

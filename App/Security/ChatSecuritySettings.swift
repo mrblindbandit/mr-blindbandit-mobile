@@ -140,6 +140,7 @@ final class ServerFeatures: @unchecked Sendable {
     enum Feature: String, CaseIterable {
         case keys, settings, clearServer, unsend, viewOnce, securityEvents, export, deleteMine, relay, attachments
         case sessions, inviteLinks, joinRequests, edit, envelopeFetch, keyWrap, reportEvidence
+        case folders, polls, scheduled, historyBackup, stars, aiBackup
     }
 
     private let lock = NSLock()

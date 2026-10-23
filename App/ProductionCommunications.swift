@@ -11,6 +11,21 @@ struct BlindbanditSocialProfile: Decodable {
     let id: String
     let handle: String
     let display_name: String
+    /// Real API field: SQLite 1/0 or true/false.
+    var verified: Bool? = nil
+
+    init(id: String, handle: String, display_name: String, verified: Bool? = nil) {
+        self.id = id; self.handle = handle; self.display_name = display_name; self.verified = verified
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        handle = try c.decode(String.self, forKey: .handle)
+        display_name = (try? c.decode(String.self, forKey: .display_name)) ?? handle
+        verified = FlexibleBool.decode(c, .verified)
+    }
+    enum CodingKeys: String, CodingKey { case id, handle, display_name, verified }
 }
 
 struct BlindbanditConversation: Identifiable, Decodable, Equatable {
@@ -275,10 +290,12 @@ enum BlindbanditAPI {
         _ = try? await request("v1/social/messages/\(escape(conversationID))/typing", method: "POST", body: ["typing": true])
     }
 
-    static func sendMessage(handle: String, body: String) async throws -> BlindbanditMessageResponse {
-        if let sent = try await E2EEService.shared.sendDM(handle: handle, payload: E2EEPayload(t: "text", body: body)) { return sent }
+    static func sendMessage(handle: String, body: String, silent: Bool = false) async throws -> BlindbanditMessageResponse {
+        if let sent = try await E2EEService.shared.sendDM(handle: handle, payload: E2EEPayload(t: "text", body: body, silent: silent ? true : nil)) { return sent }
+        var fields: [String: Any] = ["handle": handle, "body": body]
+        if silent { fields["silent"] = true }
         return try decode(BlindbanditMessageResponse.self, from: try await request(
-            "v1/social/messages", method: "POST", body: ["handle": handle, "body": body]
+            "v1/social/messages", method: "POST", body: fields
         ))
     }
 
@@ -416,6 +433,7 @@ final class ProductionCommunicationsService: ObservableObject {
     @Published private(set) var conversations: [BlindbanditConversation] = []
     @Published private(set) var messages: [BlindbanditServerMessage] = []
     @Published private(set) var myProfileID = ""
+    @Published private(set) var myVerified = false
     @Published private(set) var myHandle = ""
     @Published private(set) var isLoading = false
     @Published private(set) var isInCall = false
@@ -477,7 +495,9 @@ final class ProductionCommunicationsService: ObservableObject {
             let profile = try await BlindbanditAPI.currentProfile()
             myProfileID = profile.id
             myHandle = profile.handle
+            myVerified = profile.verified == true
             E2EEService.shared.myUserID = profile.id
+            Task { await HistoryBackup.restoreIfNeeded() }
             Task { await E2EEService.shared.bootstrap(handle: profile.handle) }
             conversations = try await BlindbanditAPI.conversations()
             bootstrapped = true
@@ -677,7 +697,7 @@ final class ProductionCommunicationsService: ObservableObject {
         conversations.first { $0.id == id }
     }
 
-    func sendMessage(recipient: String, body: String) async -> String? {
+    func sendMessage(recipient: String, body: String, silent: Bool = false) async -> String? {
         let handle = BlindbanditHandle.normalize(recipient)
         let text = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !handle.isEmpty, !text.isEmpty else {
@@ -685,7 +705,7 @@ final class ProductionCommunicationsService: ObservableObject {
             return nil
         }
         do {
-            let response = try await BlindbanditAPI.sendMessage(handle: handle, body: String(text.prefix(4000)))
+            let response = try await BlindbanditAPI.sendMessage(handle: handle, body: String(text.prefix(4000)), silent: silent)
             CallSounds.messageSent()
             statusMessage = "Message sent to @\(handle)."
             UIAccessibility.post(notification: .announcement, argument: statusMessage)
@@ -1389,6 +1409,14 @@ final class ProductionCommunicationsService: ObservableObject {
     // MARK: Per-participant actions
 
     @Published private(set) var locallyMuted: Set<String> = []
+    @Published var lastCaption = ""
+    @Published private(set) var captionsOn = false
+
+    func toggleCaptions() {
+        captionsOn.toggle()
+        let tracks = room?.remoteParticipants.values.flatMap { $0.audioTracks.compactMap { $0.track as? RemoteAudioTrack } } ?? []
+        setCaptions(captionsOn, tracks: tracks)
+    }
 
     /// Mutes one person's audio on this phone only (they aren't told).
     func toggleLocalMute(participantID: String) {

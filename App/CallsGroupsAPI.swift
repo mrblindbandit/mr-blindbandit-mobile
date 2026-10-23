@@ -33,7 +33,7 @@ struct BlindbanditPerson: Identifiable, Decodable, Equatable, Hashable {
 
     var accessibilitySummary: String {
         var parts = ["\(display_name), @\(handle)"]
-        if verified { parts.append("verified") }
+        if verified { parts.append("Verified") }
         if is_artist { parts.append("artist") }
         if let bio, !bio.isEmpty { parts.append(bio) }
         return parts.joined(separator: ", ")

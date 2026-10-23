@@ -70,11 +70,13 @@ enum AIAssistant {
         let ctx = consentGiven ? context.lines.suffix(30).joined(separator: "\n") : ""
         switch intent(inv.question) {
         case .summarize:
+            if let s = await CloudAI.summarize(chatName: context.chatName, lines: context.lines) { return s }
             return await OnDeviceAI.catchUp(chatName: context.chatName, lines: context.lines) ?? "Nothing to summarize yet."
         case .translate(let target):
             let text = inv.question.replacingOccurrences(of: #"(?i)^translate( this| to \w+| into \w+)?:?"#, with: "", options: .regularExpression)
                 .trimmingCharacters(in: .whitespaces)
             let src = text.isEmpty ? (context.lines.last ?? "") : text
+            if ["ceb", "tl", "fil"].contains(target.lowercased()), let c = await CloudAI.translate(src, target: target == "fil" ? "tl" : target) { return c }
             return await Translator.shared.translateOutgoing(src, to: target) ?? src
         case .reply:
             let r = await OnDeviceAI.smartReplies(lines: context.lines)
@@ -92,13 +94,14 @@ enum AIAssistant {
         case .find, .general:
             break
         }
-        return await stream(prompt: (ctx.isEmpty ? "" : "Recent chat:\n\(ctx)\n\n") + "Question: \(inv.question)", lines: context.lines, onPartial: onPartial)
+        let persona = inv.isPrivate ? AIPersona.forPrivate.prompt() : AIPersona.professional.prompt()
+        return await stream(persona: persona, prompt: (ctx.isEmpty ? "" : "Recent chat:\n\(ctx)\n\n") + "Question: \(inv.question)", lines: context.lines, onPartial: onPartial)
     }
 
-    private static func stream(prompt: String, lines: [String], onPartial: @escaping @MainActor (String) -> Void) async -> String {
+    private static func stream(persona: String, prompt: String, lines: [String], onPartial: @escaping @MainActor (String) -> Void) async -> String {
         #if canImport(FoundationModels)
         if #available(iOS 26, *) {
-            let session = LanguageModelSession(tools: [FindInChatTool(lines: lines)], instructions: instructions)
+            let session = LanguageModelSession(tools: [FindInChatTool(lines: lines)], instructions: persona + " You are @AI inside a group or private chat. Answer the latest question using the chat context when relevant. Keep answers under 120 words.")
             var last = ""
             do {
                 for try await snapshot in session.streamResponse(to: prompt) {

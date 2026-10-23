@@ -188,6 +188,7 @@ struct BlindbanditApp: App {
             .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
             .tint(highContrast ? Color.primary : Brand.gold)
             .task { await SharePlayCalls.listen(communications) }
+            .task { communications.loadCachedConversations(); AIChatStore.shared.prewarm() }
             .task {
                 auth.configure()
                 UIApplication.shared.isIdleTimerDisabled = keepScreenAwake

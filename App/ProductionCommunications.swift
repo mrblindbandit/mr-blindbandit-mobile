@@ -272,7 +272,10 @@ enum BlindbanditAPI {
     }
 
     static func conversations() async throws -> [BlindbanditConversation] {
-        try decode(ItemsPayload<BlindbanditConversation>.self, from: try await request("v1/social/messages?limit=100")).items
+        let d = try await request("v1/social/messages?limit=100")
+        let items = try decode(ItemsPayload<BlindbanditConversation>.self, from: d).items
+        await ChatCache.saveList(d)
+        return items
     }
 
     static func messages(conversationID: String) async throws -> [BlindbanditServerMessage] {
@@ -495,6 +498,7 @@ final class ProductionCommunicationsService: ObservableObject {
             let profile = try await BlindbanditAPI.currentProfile()
             myProfileID = profile.id
             myHandle = profile.handle
+            AIPersona.serverHandle = profile.handle
             myVerified = profile.verified == true
             E2EEService.shared.myUserID = profile.id
             Task { await HistoryBackup.restoreIfNeeded(); await AIChatBackup.restoreIfNeeded() }
@@ -511,11 +515,36 @@ final class ProductionCommunicationsService: ObservableObject {
         }
     }
 
+    /// Renders the inbox instantly from the on-device cache, then refreshes from the server.
+    func loadCachedConversations() {
+        guard conversations.isEmpty, let d = ChatCache.loadList(),
+              let items = try? BlindbanditAPI.decode(ItemsPayload<BlindbanditConversation>.self, from: d).items else { return }
+        conversations = items
+    }
+
+    private var prefetched = false
+    /// Prefetches the latest 50 messages of the top chats so opening them is instant.
+    private func prefetchThreads() {
+        guard !prefetched else { return }
+        prefetched = true
+        let ids = conversations.prefix(8).map(\.id)
+        Task { [weak self] in
+            for id in ids where ChatCache.get(id) == nil {
+                if let p = try? await BlindbanditAPI.thread(conversationID: id) {
+                    ChatCache.put(id, p.items.sorted { $0.created_at < $1.created_at })
+                }
+                _ = self
+            }
+        }
+    }
+
     func refreshConversations() async {
+        loadCachedConversations()
         do {
             let fresh = try await BlindbanditAPI.conversations()
             announceNewIncoming(old: conversations, new: fresh)
             conversations = fresh
+            prefetchThreads()
             loadError = ""
         } catch {
             loadError = error.localizedDescription
@@ -553,6 +582,7 @@ final class ProductionCommunicationsService: ObservableObject {
             let before = old.first { $0.id == conversation.id }?.last_message?.created_at ?? 0
             if (conversation.last_message?.created_at ?? 0) > before, !LocalComms.muted.contains(conversation.id) {
                 CallSounds.inboundNotification()
+                AppHaptics.light()
                 let who = conversation.other.map { "@\($0.handle)" } ?? "someone"
                 UIAccessibility.post(notification: .announcement, argument: "New message from \(who)")
             }
@@ -561,6 +591,7 @@ final class ProductionCommunicationsService: ObservableObject {
 
     func openConversation(_ conversation: BlindbanditConversation) async {
         openConversationID = conversation.id
+        if let cached = ChatCache.get(conversation.id) { messages = cached }
         await reloadThread(conversation.id)
         markLocallyRead(conversation)
         try? await BlindbanditAPI.markRead(conversationID: conversation.id)
@@ -604,7 +635,10 @@ final class ProductionCommunicationsService: ObservableObject {
                 }
             }
             let hadIncoming = fresh.count > messages.count && fresh.last?.sender_id != myProfileID && !messages.isEmpty
-            if fresh != messages { messages = fresh }
+            let optimistic = messages.filter { m in m.id.hasPrefix("local-") && !fresh.contains(where: { f in f.sender_id == myProfileID && f.body == m.body }) }
+            let merged = fresh + optimistic
+            if merged != messages { messages = merged }
+            ChatCache.put(id, fresh)
             if hadIncoming, let current = self.conversation(id: id) {
                 CallSounds.inboundNotification()
                 markLocallyRead(current)
@@ -704,6 +738,15 @@ final class ProductionCommunicationsService: ObservableObject {
             statusMessage = "Enter a Blindbandit username and a message."
             return nil
         }
+        // Optimistic: show the message right away with "Sending…"; the next thread load replaces it with the real one.
+        var localID: String?
+        if let open = openConversationID, conversation(id: open)?.other?.handle.lowercased() == handle.lowercased() {
+            let m = BlindbanditServerMessage(id: "local-" + UUID().uuidString, sender_id: myProfileID, body: String(text.prefix(4000)),
+                                             created_at: Date().timeIntervalSince1970)
+            localID = m.id
+            messages.append(m)
+        }
+        AppHaptics.light()
         do {
             let response = try await BlindbanditAPI.sendMessage(handle: handle, body: String(text.prefix(4000)), silent: silent)
             CallSounds.messageSent()
@@ -720,6 +763,7 @@ final class ProductionCommunicationsService: ObservableObject {
             AppHaptics.warning()
             return nil
         } catch {
+            if let localID { messages.removeAll { $0.id == localID } }
             statusMessage = error.localizedDescription
             AppHaptics.error()
             return nil
@@ -1016,6 +1060,7 @@ final class ProductionCommunicationsService: ObservableObject {
         let newRoom = Room(delegate: observer)
         roomObserver = observer
         activeCallID = response.id
+        UserDefaults.standard.set(serverURL, forKey: "livekit.lastURL")
         try await newRoom.connect(url: serverURL, token: response.livekit.token)
         room = newRoom
         isVideoCall = video
@@ -1381,6 +1426,8 @@ final class ProductionCommunicationsService: ObservableObject {
 
     /// Clears everything held in memory, used on sign-out and account deletion.
     func reset() {
+        AIPersona.serverHandle = ""
+        ChatCache.clear()
         if isInCall { finishCall(notifyServer: true, announcement: "Call ended.") }
         incomingCall = nil
         stopPolling()

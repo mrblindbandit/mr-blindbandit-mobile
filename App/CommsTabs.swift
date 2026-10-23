@@ -597,6 +597,7 @@ struct ConversationThreadView: View {
                         await communications.startCall(recipient: handle, video: false)
                     }
                 } label: { Image(systemName: "phone.fill") }
+                .onAppear { CallWarmup.preconnect() }
                 .accessibilityLabel("Voice call @\(handle)")
                 .accessibilityHint("Starts a voice call right away")
                 .disabled(handle.isEmpty || communications.isInCall)
@@ -768,6 +769,7 @@ struct ConversationThreadView: View {
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(1...5)
                 .focused($composerFocused)
+                .onChange(of: composerFocused) { _, f in if f { AIChatStore.shared.prewarm() } }
                 .onChange(of: draft) { _, value in
                     if !value.isEmpty { communications.userTyped(in: conversationID) }
                 }
@@ -1020,6 +1022,12 @@ struct ConversationThreadView: View {
             }
         }
         Button { UIPasteboard.general.string = shown; AppHaptics.light() } label: { Label("Copy", systemImage: "doc.on.doc") }
+        if let link = LinkFinder.links(in: shown).first {
+            Button {
+                Task { let v = CloudAI.isOn(.linkCheck) ? await CloudAI.checkLink(link) : ScamHeuristic.verdict(link)
+                    communications.statusMessage = v; UIAccessibility.post(notification: .announcement, argument: v) }
+            } label: { Label("Check link safety", systemImage: "checkmark.shield") }
+        }
         ShareLink(item: shown) { Label("Share", systemImage: "square.and.arrow.up") }
         ForEach(MessageReactions.all, id: \.emoji) { r in
             Button { react(message, r.emoji) } label: {
@@ -1350,7 +1358,8 @@ struct MessageStatusCaption: View {
 enum MessageStatus {
     /// "Sent", "Delivered", "Read 5:08 AM", "Read Yesterday 9:14 PM", "Read Mon 9:14 PM" or "Read Oct 3, 9:14 PM".
     static func caption(for message: BlindbanditServerMessage, showRead: Bool, now: Date = Date()) -> String {
-        caption(sent: message.created_at, delivered: message.delivered_at, read: message.read_at, showRead: showRead, now: now)
+        if message.id.hasPrefix("local-") { return "Sending…" }
+        return caption(sent: message.created_at, delivered: message.delivered_at, read: message.read_at, showRead: showRead, now: now)
     }
 
     /// "Sent 2:33 PM", "Delivered 2:34 PM" or "Read 5:08 AM", in the device's time zone.

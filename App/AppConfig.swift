@@ -6,7 +6,7 @@ enum AppConfig {
     /// "BlindBandit" (CFBundleDisplayName) because iOS truncates labels longer than about 12 characters.
     static let appDisplayName = "Mr. BlindBandit Mobile"
     static let homeScreenName = "BlindBandit"
-    static let marketingVersion = "2.0.3"
+    static let marketingVersion = "2.0.4"
     static let webBaseURL = URL(string: "https://mrblindbandit.net")!
     static let apiBaseURL = URL(string: "https://api.mrblindbandit.net")!
     static let defaultLiveKitRoom = "mrblindbandit"

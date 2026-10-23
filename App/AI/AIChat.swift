@@ -121,6 +121,15 @@ final class AIChatStore: ObservableObject {
         append(Line(fromAI: false, text: question))
         thinking = true
         UIAccessibility.post(notification: .announcement, argument: "AI is thinking")
+        if let intent = MusicIntent.parse(question) {
+            // Deterministic path: drive MusicKit directly; the model can't refuse it.
+            let said = await MusicController.shared.handle(action: intent.action, query: intent.query, kind: intent.kind)
+            thinking = false
+            append(Line(fromAI: true, text: said))
+            UIAccessibility.post(notification: .announcement, argument: said)
+            commit()
+            return
+        }
         let reply = Line(fromAI: true, text: "")
         lines.append(reply)
         var final = ""

@@ -32,7 +32,7 @@ enum AIPersona: String, CaseIterable {
     The user is blind and uses VoiceOver, so answers are read aloud: no markdown, no bullet symbols, no emoji spam, no tables; \
     say lists as plain sentences. Be genuinely useful: answer questions, help write and rewrite, summarize chats, translate \
     (including Cebuano/Bisaya and Tagalog), set reminders, look up the calendar, contacts, places and weather, do date and unit math, \
-    explain photos, draft messages, play Apple Music, and search the web. Use the tools whenever they help instead of guessing. \
+    explain photos, draft messages, and search the web. You CAN play music: for any request to play, pause, skip, queue or find a song, album, artist or playlist, always call the appleMusic tool; never say you can't play music. Use the tools whenever they help instead of guessing. \
     Never invent message content; if a search finds nothing, say so. Drafted messages are never sent until the user taps Send. \
     When you use web search, cite each fact with its full https link right after it so the user can open it. \
     When the user shares a lasting personal fact or preference, call the remember tool.
@@ -149,10 +149,18 @@ final class MusicController: ObservableObject {
 
     var visible: Bool { !title.isEmpty }
 
-    func authorize() async -> Bool {
-        let s = MusicAuthorization.currentStatus == .authorized ? .authorized : await MusicAuthorization.request()
-        return s == .authorized
+    /// nil when authorized, otherwise a clear spoken explanation.
+    func authorizationProblem() async -> String? {
+        var s = MusicAuthorization.currentStatus
+        if s == .notDetermined { s = await MusicAuthorization.request() }
+        switch s {
+        case .authorized: return nil
+        case .denied: return "Apple Music access is turned off for Mr. BlindBandit. Turn it on in the Settings app, Mr. BlindBandit, Media and Apple Music."
+        case .restricted: return "Apple Music is restricted on this iPhone by Screen Time or a device profile."
+        default: return "Apple Music access hasn't been allowed yet."
+        }
     }
+    func authorize() async -> Bool { await authorizationProblem() == nil }
 
     func canPlayFull() async -> Bool {
         (try? await MusicSubscription.current.canPlayCatalogContent) ?? false
@@ -177,13 +185,15 @@ final class MusicController: ObservableObject {
         var req = MusicCatalogSearchRequest(term: term, types: [Song.self, Album.self, Artist.self, Playlist.self])
         req.limit = 8
         _ = kind
-        return try? await req.response()
+        do { lastSearchError = nil; return try await req.response() }
+        catch { lastSearchError = MusicLog.record("Apple Music search", error); return nil }
     }
+    private(set) var lastSearchError: String?
 
     /// Plays the best match. kind: song, album, artist, playlist or any.
     func play(_ term: String, kind: String) async -> String {
-        guard await authorize() else { return "I need Apple Music access. Allow it in Settings, Mr. BlindBandit." }
-        guard let r = await search(term, kind: kind) else { return "Apple Music search failed." }
+        if let problem = await authorizationProblem() { return problem }
+        guard let r = await search(term, kind: kind) else { return "Apple Music search failed. \(lastSearchError ?? "")" }
         let full = await canPlayFull()
         var songs: [Song] = []
         var label = ""
@@ -209,14 +219,16 @@ final class MusicController: ObservableObject {
     private func start(_ label: String) async -> String {
         stopPreview()
         do { try await player.play(); watch(); refresh(); return "Playing \(label)." }
-        catch { return "Couldn't play: \(error.localizedDescription)" }
+        catch { return "Couldn't play: " + MusicLog.record("Apple Music play \(label)", error) }
     }
 
     func playLibrary(shuffle: Bool) async -> String {
-        guard await authorize() else { return "I need Apple Music access. Allow it in Settings, Mr. BlindBandit." }
+        if let problem = await authorizationProblem() { return problem }
         var req = MusicLibraryRequest<Song>()
         req.limit = 200
-        guard let items = try? await req.response().items, !items.isEmpty else { return "Your library looks empty." }
+        let items: MusicItemCollection<Song>
+        do { items = try await req.response().items } catch { return "Couldn't read your library: " + MusicLog.record("Apple Music library", error) }
+        guard !items.isEmpty else { return "Your library looks empty." }
         player.queue = ApplicationMusicPlayer.Queue(for: Array(items))
         player.state.shuffleMode = shuffle ? .songs : .off
         return await start(shuffle ? "your library on shuffle" : "your library")

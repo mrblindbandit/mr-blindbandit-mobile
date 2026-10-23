@@ -8,6 +8,7 @@ enum CallSounds {
     enum Ringtone: String, CaseIterable, Identifiable {
         /// 2.0.6 default: the owner's Mr. BlindBandit ringtone (ringtone_mrblindbandit.caf, 29.5 s IMA4).
         case mrBlindBandit = "ringtone_mrblindbandit"
+        case mrBlindBanditClassic = "ringtone_mrblindbandit_classic"
         case `default` = "ringtone"
         case gold = "ringtone_gold"
         case pulse = "ringtone_pulse"
@@ -29,7 +30,8 @@ enum CallSounds {
         var title: String {
             switch self {
             case .mrBlindBandit: return "Mr. BlindBandit (Default)"
-            case .default: return "Classic"
+            case .mrBlindBanditClassic: return "Mr. BlindBandit Classic"
+            case .default: return "Original"
             case .gold: return "Gold"
             case .pulse: return "Pulse"
             case .chime: return "Chime"

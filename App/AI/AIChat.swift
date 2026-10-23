@@ -43,6 +43,8 @@ final class AIChatStore: ObservableObject {
     }
 
     func append(_ l: Line) { lines.append(l); save() }
+    /// Used by AIChatBackup.restore.
+    func replaceAll(lines new: [Line], memory mem: Memory) { lines = new; memory = mem; resetSession(); save() }
     func update(_ id: String, text: String) { if let i = lines.firstIndex(where: { $0.id == id }) { lines[i].text = text } }
     func commit() { save() }
     func clear() {

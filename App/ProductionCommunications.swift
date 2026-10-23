@@ -497,7 +497,7 @@ final class ProductionCommunicationsService: ObservableObject {
             myHandle = profile.handle
             myVerified = profile.verified == true
             E2EEService.shared.myUserID = profile.id
-            Task { await HistoryBackup.restoreIfNeeded() }
+            Task { await HistoryBackup.restoreIfNeeded(); await AIChatBackup.restoreIfNeeded() }
             Task { await E2EEService.shared.bootstrap(handle: profile.handle) }
             conversations = try await BlindbanditAPI.conversations()
             bootstrapped = true

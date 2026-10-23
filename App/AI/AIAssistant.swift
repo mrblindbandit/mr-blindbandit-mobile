@@ -24,7 +24,7 @@ enum AIAssistant {
 
     // Per-chat switch and the group-admin policy (an encrypted "ai_policy" control every member's app honours).
     static func allowed(chatKey: String) -> Bool {
-        !(UserDefaults.standard.stringArray(forKey: "ai.mention.off") ?? []).contains(chatKey)
+        !(UserDefaults.standard.stringArray(forKey: "ai.mention.off") ?? []).contains(chatKey) && (ChatSettingsCache.get(chatKey)?.allow_ai ?? true)
     }
     static func setAllowed(_ on: Bool, chatKey: String) {
         var s = Set(UserDefaults.standard.stringArray(forKey: "ai.mention.off") ?? [])

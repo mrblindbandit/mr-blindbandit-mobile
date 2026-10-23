@@ -90,6 +90,11 @@ enum SecurityAPI {
                 ServerFeatures.shared.markMissing(feature)
                 throw NeedsServerUpdate(feature: feature)
             }
+            // 405 Method Not Allowed: the path exists but this verb isn't deployed yet (e.g. unpin, invite revoke).
+            if case .server(let msg) = error, msg.contains("HTTP 405") {
+                ServerFeatures.shared.markMissing(feature)
+                throw NeedsServerUpdate(feature: feature)
+            }
             throw error
         }
     }
@@ -222,6 +227,18 @@ enum SecurityAPI {
     }
 
     // MARK: Groups
+    /// Server pin sync. Pins always apply on this iPhone first; a missing route (404/405, unpin isn't live yet) is not an error.
+    /// Returns false when the server didn't take it.
+    @discardableResult
+    static func syncPin(_ chat: ChatRef, messageID: String, pinned: Bool) async -> Bool {
+        do {
+            try await gated(.pins) {
+                _ = try await BlindbanditAPI.request("\(chat.basePath)/messages/\(ChatRef.escape(messageID))/pin", method: pinned ? "POST" : "DELETE", body: pinned ? [:] : nil)
+            }
+            return true
+        } catch { return false }
+    }
+
     static func createInviteLink(groupID: String) async throws -> String {
         try await gated(.inviteLinks) {
             let obj = data(try await BlindbanditAPI.request("v1/social/groups/\(ChatRef.escape(groupID))/invite-links", method: "POST", body: [:]))
@@ -231,8 +248,7 @@ enum SecurityAPI {
 
     static func revokeInviteLink(groupID: String, token: String) async throws {
         try await gated(.inviteLinks) {
-            do { try await BlindbanditAPI.request("v1/social/groups/\(ChatRef.escape(groupID))/invite-links/\(ChatRef.escape(token))", method: "DELETE") }
-            catch { throw NeedsServerUpdate(feature: .inviteLinks) } // revoke route not live yet (404/405)
+            try await BlindbanditAPI.request("v1/social/groups/\(ChatRef.escape(groupID))/invite-links/\(ChatRef.escape(token))", method: "DELETE")
         }
     }
 

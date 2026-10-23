@@ -37,7 +37,9 @@ enum AISettings {
     static func isOn(_ f: Feature) -> Bool { UserDefaults.standard.object(forKey: "ai.\(f.rawValue)") as? Bool ?? true }
     static func set(_ f: Feature, _ on: Bool) { UserDefaults.standard.set(on, forKey: "ai.\(f.rawValue)") }
     /// Per-chat master switch (Chat info > Security & Privacy > On-device AI).
-    static func chatAllowed(_ chatKey: String) -> Bool { !(UserDefaults.standard.stringArray(forKey: "ai.offChats") ?? []).contains(chatKey) }
+    static func chatAllowed(_ chatKey: String) -> Bool {
+        !(UserDefaults.standard.stringArray(forKey: "ai.offChats") ?? []).contains(chatKey) && (ChatSettingsCache.get(chatKey)?.allow_ai ?? true)
+    }
     static func setChat(_ chatKey: String, _ on: Bool) {
         var s = Set(UserDefaults.standard.stringArray(forKey: "ai.offChats") ?? [])
         if on { s.remove(chatKey) } else { s.insert(chatKey) }

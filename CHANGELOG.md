@@ -6,6 +6,20 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 
 ---
 
+## [1.8.0 Android] — 2026-10-23
+
+### Added
+- Messages and Calls tabs (Create moved to More > Creator tools), unread badge from the server's unread count.
+- Messages: pull to refresh, error state with Retry, 5-second live thread refresh, mark read on open, mark unread, TalkBack announcements for new messages, Sent/Delivered/Read receipts, typing indicator, read-receipt setting synced with the server, new message by @username, offline send queue, drafts, pin, mute, search, reply with quote, copy, share, read aloud with speed, notification center with Mark all read.
+- Calls: dial by @username, 45-second ring timeout, failed calls always ended on the server, mute/speaker/camera/end controls, call history with All/Missed filter and Call back, favourites, report a call.
+- Report users, messages and calls; block and unblock with a Blocked accounts list.
+- Optional biometric/screen-lock app lock (asks on cold launch only).
+- Push notifications open the right conversation or call.
+
+### Changed
+- Edge-to-edge: removed the deprecated status bar theme attribute, activity 1.10.1 `enableEdgeToEdge()`, and inset padding on full-screen views.
+- R8 optimisation stays on (`proguard-android-optimize.txt`, minify and resource shrinking); mapping uploaded with the release.
+
 ## [1.8.0 iOS] — 2026-10-23
 
 ### Fixed

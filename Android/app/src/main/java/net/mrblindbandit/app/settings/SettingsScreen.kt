@@ -85,6 +85,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onOpenWeb: (String) -> Unit,
     onRequestNotifications: () -> Unit,
+    commsSection: @Composable () -> Unit = {},
 ) {
     var page by remember { mutableStateOf(SettingsPage.ROOT) }
     androidx.activity.compose.BackHandler { if (page == SettingsPage.LICENSES) page = SettingsPage.ROOT else onBack() }
@@ -102,7 +103,7 @@ fun SettingsScreen(
         },
     ) { inner ->
         when (page) {
-            SettingsPage.ROOT -> SettingsRoot(prefs, auth, onOpenWeb, onRequestNotifications, onLicenses = { page = SettingsPage.LICENSES }, modifier = Modifier.padding(inner))
+            SettingsPage.ROOT -> SettingsRoot(prefs, auth, onOpenWeb, onRequestNotifications, onLicenses = { page = SettingsPage.LICENSES }, commsSection = commsSection, modifier = Modifier.padding(inner))
             SettingsPage.LICENSES -> LicensesList(Modifier.padding(inner))
         }
     }
@@ -115,6 +116,7 @@ private fun SettingsRoot(
     onOpenWeb: (String) -> Unit,
     onRequestNotifications: () -> Unit,
     onLicenses: () -> Unit,
+    commsSection: @Composable () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -227,6 +229,8 @@ private fun SettingsRoot(
                 }
             }
         }
+
+        item { commsSection() }
 
         item {
             var filterOn by remember { mutableStateOf(ContentFilter.isEnabled(context)) }

@@ -17,8 +17,9 @@ object StoreScreenshotMode {
         return when (intent.getStringExtra("screen")) {
             "chronicle", "news" -> Request(AppTab.HOME, false, chronicle = true)
             "article" -> Request(AppTab.HOME, false, chronicle = true, articleUrl = "https://mrblindbandit.net/publications/the-hidden-cost-of-proving-you-are-human-online/")
-            "create" -> Request(AppTab.CREATOR, false)
-            "connect" -> Request(AppTab.CONNECT, false)
+            "create" -> Request(AppTab.MORE, false)
+            "connect", "messages" -> Request(AppTab.MESSAGES, false)
+            "calls" -> Request(AppTab.CALLS, false)
             "listen" -> Request(AppTab.LISTEN, false)
             "more" -> Request(AppTab.MORE, false)
             "settings", "accessibility" -> Request(AppTab.HOME, true)

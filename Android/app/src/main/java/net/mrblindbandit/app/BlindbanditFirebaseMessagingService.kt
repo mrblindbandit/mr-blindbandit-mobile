@@ -37,6 +37,8 @@ class BlindbanditFirebaseMessagingService : FirebaseMessagingService() {
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             if (link != null && UrlPolicy.isFirstParty(link)) data = Uri.parse(link)
+            message.data["conversation_id"]?.takeIf { it.isNotBlank() }?.let { putExtra("conversation_id", it) }
+            message.data["call_id"]?.takeIf { it.isNotBlank() }?.let { putExtra("call_id", it) }
         }
         val pending = PendingIntent.getActivity(this, title.hashCode(), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val notification = NotificationCompat.Builder(this, if (isCall) CHANNEL_CALLS else CHANNEL_MESSAGES)

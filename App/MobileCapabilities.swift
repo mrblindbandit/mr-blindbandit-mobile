@@ -1,3 +1,4 @@
+import os
 import SwiftUI
 import UIKit
 import UserNotifications
@@ -11,6 +12,8 @@ extension Notification.Name {
     static let blindbanditCallDeepLinkReceived = Notification.Name("blindbanditCallDeepLinkReceived")
     static let blindbanditMessageDeepLinkReceived = Notification.Name("blindbanditMessageDeepLinkReceived")
 }
+
+private let pushLog = Logger(subsystem: "net.mrblindbandit.app", category: "push")
 
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(
@@ -58,7 +61,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let userInfo = response.notification.request.content.userInfo
-        if let route = PushRoute.parse(userInfo) {
+        let route = PushRoute.parse(userInfo)
+        pushLog.notice("Notification tapped. keys=\(PushRoute.keySummary(userInfo), privacy: .public) routed=\(route != nil, privacy: .public)")
+        if let route {
+            // Works for warm and cold launch: PendingRouter holds it until signed in and unlocked.
             Task { @MainActor in PendingRouter.shared.pending = route }
         }
         completionHandler()

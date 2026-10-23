@@ -275,6 +275,8 @@ struct MainTabs: View {
     @EnvironmentObject private var router: TabRouter
     @EnvironmentObject private var push: PushNotifications
     @EnvironmentObject private var communications: ProductionCommunicationsService
+    @EnvironmentObject private var lock: DeviceLock
+    @Environment(\.scenePhase) private var routePhase
     @State private var routedURL: RoutedURL?
     @State private var deepLinkedArticle: DeepLinkedArticle?
 
@@ -325,10 +327,10 @@ struct MainTabs: View {
         }
         // Tapped notifications. PendingRouter keeps the route through cold launch, sign-in and
         // Face ID; this view only exists once the app is unlocked, so the thread opens right after.
-        .onReceive(PendingRouter.shared.$pending.compactMap { $0 }) { _ in
-            guard let route = PendingRouter.shared.consume() else { return }
-            open(route)
-        }
+        .onReceive(PendingRouter.shared.$pending.compactMap { $0 }) { _ in routePendingIfReady() }
+        .onAppear { routePendingIfReady() }
+        .onChange(of: routePhase) { _, _ in routePendingIfReady() }
+        .onChange(of: lock.unlocked) { _, _ in routePendingIfReady() }
         .onAppear { CallKitManager.shared.attach(communications) }
         .onContinueUserActivity("INStartCallIntent") { activity in
             CallKitManager.shared.handle(userActivity: activity)
@@ -376,6 +378,19 @@ struct MainTabs: View {
                         }
                     }
             }
+        }
+    }
+
+    /// Navigates to a tapped notification only once the app is active and unlocked, so the Face ID
+    /// lock (which rebuilds the tabs) can't wipe it. Until then the route stays in PendingRouter.
+    private func routePendingIfReady() {
+        Task { @MainActor in
+            // Let the tab view finish building (cold launch, just unlocked) before navigating.
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard routePhase == .active, lock.unlocked || !lock.isRequired,
+                  PendingRouter.shared.pending != nil,
+                  let route = PendingRouter.shared.consume() else { return }
+            open(route)
         }
     }
 

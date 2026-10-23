@@ -1,2 +1,2 @@
-1.9.0 (14): Blind Bandit calls now appear in the iPhone Phone app's Recents, whether incoming, outgoing, answered, missed or declined. Each entry shows the caller's name (or @handle) and is marked as audio or video. Tap an entry in Recents to call back.
+Tapping a message notification now opens that conversation, whether the app was closed, in the background or behind Face ID.
 

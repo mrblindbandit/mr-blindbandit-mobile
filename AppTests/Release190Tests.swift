@@ -94,4 +94,23 @@ final class PushRouteTests: XCTestCase {
         XCTAssertEqual(CallKitManager.endReason(wasConnected: true), .remoteEnded)
         XCTAssertEqual(CallKitManager.endReason(wasConnected: false), .unanswered)
     }
+
+    func testPushRouteShapes() {
+        let c = "ac463c39-06e0-449e-99a5-2056158bbd41"
+        XCTAssertEqual(PushRoute.parse(["conversationId": c]), .conversation(id: c, handle: nil))
+        XCTAssertEqual(PushRoute.parse(["c": c, "sender_handle": "bbfoundation"]), .conversation(id: c, handle: "bbfoundation"))
+        XCTAssertEqual(PushRoute.parse(["thread_id": c]), .conversation(id: c, handle: nil))
+        XCTAssertEqual(PushRoute.parse(["aps": ["thread-id": c, "alert": ["body": "hi"]]]), .conversation(id: c, handle: nil))
+        XCTAssertEqual(PushRoute.parse(["data": ["conversation_id": c]]), .conversation(id: c, handle: nil))
+        XCTAssertEqual(PushRoute.parse(["payload": ["link": "/mobile/messages/?id=\(c)"]]), .conversation(id: c, handle: nil))
+        XCTAssertEqual(PushRoute.parse(["url": "https://mrblindbandit.net/mobile/messages/?c=\(c)"]), .conversation(id: c, handle: nil))
+        XCTAssertEqual(PushRoute.parse(["link": "https://mrblindbandit.net/mobile/groups/?id=g9"]), .group(id: "g9"))
+        XCTAssertEqual(PushRoute.parse(["deep_link": "/mobile/calls/?id=k9"]), .call(id: "k9"))
+        XCTAssertEqual(PushRoute.parse(["data": ["group_id": "g1"]]), .group(id: "g1"))
+        XCTAssertEqual(PushRoute.parse(["data": ["call_id": "k1", "type": "call"]]), .call(id: "k1"))
+        XCTAssertEqual(PushRoute.parse(["handle": "@bbfoundation", "aps": ["alert": "New message"]]), .conversation(id: nil, handle: "bbfoundation"))
+        XCTAssertEqual(PushRoute.parse(["data": "{\"conversation_id\":\"\(c)\"}"]), .conversation(id: c, handle: nil))
+        XCTAssertNil(PushRoute.parse(["aps": ["alert": "hello"]]))
+        XCTAssertFalse(PushRoute.keySummary(["data": ["conversation_id": c]]).contains(c))
+    }
 }

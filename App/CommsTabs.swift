@@ -1022,6 +1022,12 @@ struct ConversationThreadView: View {
             }
         }
         Button { UIPasteboard.general.string = shown; AppHaptics.light() } label: { Label("Copy", systemImage: "doc.on.doc") }
+        if let link = LinkFinder.links(in: shown).first {
+            Button {
+                Task { let v = CloudAI.isOn(.linkCheck) ? await CloudAI.checkLink(link) : ScamHeuristic.verdict(link)
+                    communications.statusMessage = v; UIAccessibility.post(notification: .announcement, argument: v) }
+            } label: { Label("Check link safety", systemImage: "checkmark.shield") }
+        }
         ShareLink(item: shown) { Label("Share", systemImage: "square.and.arrow.up") }
         ForEach(MessageReactions.all, id: \.emoji) { r in
             Button { react(message, r.emoji) } label: {

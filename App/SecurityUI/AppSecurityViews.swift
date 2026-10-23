@@ -211,6 +211,7 @@ struct AISettingsView: View {
                       systemImage: OnDeviceAI.isAvailable ? "checkmark.seal" : "info.circle")
             } footer: { Text("Every AI feature runs on this iPhone. Your messages are never sent to a server for AI.") }
             AIStyleSection()
+            CloudAISection()
             Section {
                 Toggle("Allow AI web search", isOn: Binding(get: { WebSearch.allowed }, set: { WebSearch.allowed = $0; AIChatStore.shared.resetSession() }))
             } header: { Text("Web search").accessibilityAddTraits(.isHeader) } footer: {

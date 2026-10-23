@@ -70,11 +70,13 @@ enum AIAssistant {
         let ctx = consentGiven ? context.lines.suffix(30).joined(separator: "\n") : ""
         switch intent(inv.question) {
         case .summarize:
+            if let s = await CloudAI.summarize(chatName: context.chatName, lines: context.lines) { return s }
             return await OnDeviceAI.catchUp(chatName: context.chatName, lines: context.lines) ?? "Nothing to summarize yet."
         case .translate(let target):
             let text = inv.question.replacingOccurrences(of: #"(?i)^translate( this| to \w+| into \w+)?:?"#, with: "", options: .regularExpression)
                 .trimmingCharacters(in: .whitespaces)
             let src = text.isEmpty ? (context.lines.last ?? "") : text
+            if ["ceb", "tl", "fil"].contains(target.lowercased()), let c = await CloudAI.translate(src, target: target == "fil" ? "tl" : target) { return c }
             return await Translator.shared.translateOutgoing(src, to: target) ?? src
         case .reply:
             let r = await OnDeviceAI.smartReplies(lines: context.lines)

@@ -324,6 +324,7 @@ struct VoiceBubble: View {
     @ObservedObject private var center = VoicePlayback.shared
     @State private var opened = false
     @State private var showTranscript = false
+    @State private var cloudTranscript: String?
 
     private var mine: Bool { from == "You" }
     private var item: VoicePlayback.Item { .init(id: msgID.isEmpty ? (media.attachment_id ?? UUID().uuidString) : msgID, media: media, from: from, mine: mine) }
@@ -346,7 +347,7 @@ struct VoiceBubble: View {
         .onAppear { if !gone { center.register(item) } }
         .sheet(isPresented: $showTranscript) {
             NavigationStack {
-                ScrollView { Text(media.transcript ?? "No transcript for this voice message.").padding().frame(maxWidth: .infinity, alignment: .leading) }
+                ScrollView { Text(cloudTranscript ?? media.transcript ?? "No transcript for this voice message.").padding().frame(maxWidth: .infinity, alignment: .leading) }
                     .navigationTitle("Transcript")
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showTranscript = false } } }
             }
@@ -383,7 +384,19 @@ struct VoiceBubble: View {
         .modifier(VoiceBubbleAccessibility(label: axLabel(once: once, unplayed: unplayed), value: axValue(current: current, isPlaying: isPlaying),
                                            hint: isPlaying ? "Double tap to pause" : (once ? "Double tap to play. It can be heard only once." : "Double tap to play"),
                                            isPlaying: isPlaying, current: current, once: once,
-                                           toggle: { toggle(once) }, transcript: { showTranscript = true }))
+                                           toggle: { toggle(once) }, transcript: { openTranscript() }))
+    }
+
+    /// Uses the on-device transcript; when there isn't one (or it's a long note) and Cloud AI Whisper is on,
+    /// transcribes on the server only because the user asked for this message's transcript.
+    private func openTranscript() {
+        let long = (media.duration ?? 0) > 60
+        guard CloudAI.isOn(.transcribe), cloudTranscript == nil, (media.transcript ?? "").isEmpty || long else { showTranscript = true; return }
+        UIAccessibility.post(notification: .announcement, argument: "Transcribing with Cloud AI")
+        Task {
+            if let d = await VoicePlayerModel.load(media), case .ok(let t) = await CloudAI.transcribe(d) { cloudTranscript = t }
+            showTranscript = true
+        }
     }
 
     private func axLabel(once: Bool, unplayed: Bool) -> String {

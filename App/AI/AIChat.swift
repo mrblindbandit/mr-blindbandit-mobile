@@ -23,6 +23,8 @@ final class AIChatStore: ObservableObject {
     @Published private(set) var memory = Memory()
     @Published var pendingSends: [PendingSend] = []
     @Published var thinking = false
+    /// Set by "Ask the bigger AI" for the next question.
+    var forceCloud = false
     @Published var lastPhoto: UIImage?
     private let account = "aichat.v1"
     private let memoryAccount = "aichat.memory.v1"
@@ -156,6 +158,13 @@ final class AIChatStore: ObservableObject {
             }
         }
         #endif
+        if CloudAI.shouldEscalate(final) || forceCloud {
+            let history = lines.dropLast(2).suffix(10).map { ($0.fromAI ? "AI: " : "") + $0.text }
+            let r = await CloudAI.chat(question, history: history, persona: AIPersona.forPrivate.prompt())
+            if case .ok(let text) = r { final = text; lastSpoken = 0 }
+            else if forceCloud, let n = CloudAI.note(r) { final = n + (final.isEmpty ? "" : " " + final) }
+        }
+        forceCloud = false
         if final.isEmpty {
             let history = lines.dropLast().suffix(16).map { ($0.fromAI ? "AI: " : "Me: ") + $0.text }
             final = await AIFallback.answer(question, history: history, corpus: corpus, photo: lastPhoto)
@@ -579,6 +588,7 @@ struct AIChatView: View {
     @State private var showMemory = false
     @State private var silenceTask: Task<Void, Never>?
     @State private var webPage: IdentifiedURL?
+    @State private var imagePrompt: IdentifiedPrompt?
     @AppStorage("ai.speakReplies") private var speakReplies = false
     @AppStorage("ai.handsFree") private var handsFree = false
 
@@ -631,6 +641,8 @@ struct AIChatView: View {
                         Button(dictation.isListening ? "Stop dictation and send" : "Dictate") { toggleListening() }
                         Button(speakReplies ? "Stop speaking replies" : "Speak replies") { speakReplies.toggle() }
                         Button("Clear AI chat") { confirmClear = true }
+                        if CloudAI.isOn(.chat) { Button("Ask the bigger AI") { askBigger() } }
+                        if CloudAI.isOn(.image) { Button("Make an image") { makeImage() } }
                     }
                 PhotosPicker(selection: $photoItem, matching: .images) {
                     Image(systemName: "photo").frame(width: Brand.minTouch, height: Brand.minTouch)
@@ -651,12 +663,15 @@ struct AIChatView: View {
         }
         .safeAreaInset(edge: .top, spacing: 0) { NowPlayingBar() }
         .sheet(item: $webPage) { SafariView(url: $0.url).ignoresSafeArea() }
+        .sheet(item: $imagePrompt) { CloudImageSheet(prompt: $0.text) }
         .navigationTitle("AI")
         .toolbar {
             Menu {
                 Toggle("Speak replies", isOn: $speakReplies)
                 Toggle("Hands-free conversation", isOn: $handsFree)
                 Button("What AI remembers") { showMemory = true }
+                if CloudAI.isOn(.chat) { Button("Ask the bigger AI") { askBigger() } }
+                if CloudAI.isOn(.image) { Button("Make an image") { makeImage() } }
                 Button("Clear AI chat", role: .destructive) { confirmClear = true }
             } label: { Image(systemName: "gearshape") }.accessibilityLabel("AI chat settings")
         }
@@ -729,6 +744,21 @@ struct AIChatView: View {
         }
         .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
         .accessibilityElement(children: .contain)
+    }
+
+    private func askBigger() {
+        guard !draft.trimmingCharacters(in: .whitespaces).isEmpty else {
+            UIAccessibility.post(notification: .announcement, argument: "Type your question first"); return
+        }
+        store.forceCloud = true
+        send()
+    }
+
+    private func makeImage() {
+        let p = draft.trimmingCharacters(in: .whitespaces)
+        guard !p.isEmpty else { UIAccessibility.post(notification: .announcement, argument: "Describe the image first"); return }
+        draft = ""
+        imagePrompt = IdentifiedPrompt(text: p)
     }
 
     private func toggleListening() {
@@ -804,3 +834,5 @@ struct AIAvatar: View {
             .accessibilityHidden(true)
     }
 }
+
+struct IdentifiedPrompt: Identifiable { let id = UUID(); let text: String }

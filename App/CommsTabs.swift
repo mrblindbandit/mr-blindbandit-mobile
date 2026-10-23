@@ -524,106 +524,9 @@ struct ConversationThreadView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 10) {
-                        if communications.messages.isEmpty && !communications.loadError.isEmpty {
-                            CommsErrorView(message: communications.loadError) {
-                                if let c = conversation { await communications.openConversation(c) }
-                            }
-                        }
-                        ForEach(shownMessages) { message in
-                            bubble(message).id(message.id)
-                                .accessibilityRotorEntry(id: message.id, in: rotorSpace)
-                        }
-                        if communications.otherTyping && search.isEmpty {
-                            TypingIndicatorBubble(name: handle.isEmpty ? "Someone" : "@\(handle)")
-                                .id("typing-indicator")
-                                .transition(.opacity)
-                        }
-                    }
-                    .padding()
-                }
-                .onChange(of: communications.otherTyping) { _, typing in
-                    if typing, search.isEmpty { withAnimation { proxy.scrollTo("typing-indicator", anchor: .bottom) } }
-                }
-                .onChange(of: communications.messages) { old, list in
-                    if let last = list.last, search.isEmpty { proxy.scrollTo(last.id, anchor: .bottom) }
-                    let me = communications.myProfileID
-                    for mineNow in list where mineNow.sender_id == me {
-                        guard let mineBefore = old.first(where: { $0.id == mineNow.id }),
-                              MessageStatus.caption(for: mineBefore, showRead: showReadReceipts) != MessageStatus.caption(for: mineNow, showRead: showReadReceipts)
-                        else { continue }
-                        let label = MessageStatus.caption(for: mineNow, showRead: showReadReceipts)
-                        let isLatest = mineNow.id == list.last(where: { $0.sender_id == me })?.id
-                        UIAccessibility.post(notification: .announcement, argument: isLatest ? "Your last message: \(label)" : "Your message \"\(mineNow.body.prefix(40))\": \(label)")
-                        if label.hasPrefix("Read") { AppHaptics.soft() }
-                    }
-                }
-            }
-            .refreshable { if let c = conversation { await communications.openConversation(c) } }
-            .accessibilityRotor("Unread messages") {
-                ForEach(shownMessages.filter { $0.sender_id != communications.myProfileID && $0.created_at > (unreadSince ?? .infinity) }) { m in
-                    AccessibilityRotorEntry(Text(m.body), id: m.id, in: rotorSpace)
-                }
-            }
-            .accessibilityRotor("Messages from @\(handle.isEmpty ? "them" : handle)") {
-                ForEach(shownMessages.filter { $0.sender_id != communications.myProfileID }) { m in
-                    AccessibilityRotorEntry(Text(m.body), id: m.id, in: rotorSpace)
-                }
-            }
-            .accessibilityRotor("My messages") {
-                ForEach(shownMessages.filter { $0.sender_id == communications.myProfileID }) { m in
-                    AccessibilityRotorEntry(Text(m.body), id: m.id, in: rotorSpace)
-                }
-            }
+            messageList
 
-            ThreadAIBanners(handle: handle, keyChanged: e2ee.keyChanges.contains(handle.lowercased()),
-                            scamWarning: scamWarning, catchUp: $catchUp, aiPartial: aiPartial, aiPrivate: aiPrivate,
-                            smartReplies: smartReplies) { draft = $0; composerFocused = true }
-            if let e = editing {
-                HStack {
-                    Text("Editing: \(e.body)").font(.caption).lineLimit(1)
-                    Spacer()
-                    Button { editing = nil; draft = "" } label: { Image(systemName: "xmark.circle.fill") }.accessibilityLabel("Cancel edit")
-                }.padding(.horizontal).padding(.top, 6)
-            }
-            if let q = quoting {
-                HStack {
-                    Text("Replying to: \(q.body)").font(.caption).lineLimit(1)
-                    Spacer()
-                    Button { quoting = nil } label: { Image(systemName: "xmark.circle.fill") }
-                        .accessibilityLabel("Cancel reply")
-                }
-                .padding(.horizontal)
-                .padding(.top, 6)
-            }
-            HStack(spacing: 8) {
-                TextField("Message @\(handle)", text: $draft, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(1...5)
-                    .focused($composerFocused)
-                    .onChange(of: draft) { _, value in
-                        if !value.isEmpty { communications.userTyped(in: conversationID) }
-                    }
-                ComposerAIMenu(draft: $draft, dictation: dictation, enabled: aiOn)
-                Button { send() } label: {
-                    Image(systemName: "paperplane.fill").frame(width: Brand.minTouch, height: Brand.minTouch)
-                }
-                .accessibilityLabel(editing == nil ? "Send" : "Save edit")
-                .contextMenu {
-                    Button("Send silently") { send(silent: true) }
-                    Menu("Schedule") {
-                        Button("In 1 hour") { schedule(3600) }
-                        Button("Tonight at 8 PM") { schedule(Self.secondsUntil(hour: 20)) }
-                        Button("Tomorrow at 9 AM") { schedule(Self.secondsUntil(hour: 9)) }
-                    }
-                }
-                .accessibilityAction(named: "Send silently") { send(silent: true) }
-                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || handle.isEmpty)
-            }
-            .padding()
-            .background(.bar)
+            composerArea
         }
         .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search this conversation")
         .navigationTitle(conversation?.other?.display_name ?? "Conversation")
@@ -653,21 +556,7 @@ struct ConversationThreadView: View {
                 .disabled(handle.isEmpty || communications.isInCall)
 
                 Menu {
-                    NavigationLink { SecurityPrivacyView(chat: chatRef, title: "@\(handle)") } label: {
-                        Label("Security & Privacy", systemImage: "lock.shield")
-                    }
-                    NavigationLink { SafetyNumberView(handle: handle) } label: { Label("Verify safety number", systemImage: "qrcode") }
-                    if aiOn && AISettings.isOn(.catchUp) {
-                        Button { Task { catchUp = "Summarizing…"; catchUp = await OnDeviceAI.catchUp(chatName: "@\(handle)", lines: recentLines) ?? OnDeviceAI.unavailableReason
-                            UIAccessibility.post(notification: .announcement, argument: catchUp ?? "") } } label: { Label("Catch me up", systemImage: "text.badge.star") }
-                    }
-                    Button { toggleFavorite() } label: {
-                        Label(LocalComms.favorites.contains(handle) ? "Remove from favorites" : "Add to favorites", systemImage: "star")
-                    }
-                    Button {
-                        reportTarget = ReportTarget(type: "profile", id: handle, title: "@\(handle)")
-                    } label: { Label("Report @\(handle)", systemImage: "exclamationmark.bubble") }
-                    Button(role: .destructive) { confirmBlock = true } label: { Label("Block @\(handle)", systemImage: "hand.raised") }
+                    moreMenuItems
                 } label: { Image(systemName: "ellipsis.circle") }
                 .accessibilityLabel("More options")
                 .disabled(handle.isEmpty)
@@ -703,6 +592,139 @@ struct ConversationThreadView: View {
         } message: {
             Text("They will no longer be able to message or call you. You can unblock them in Settings > Blocked accounts.")
         }
+    }
+
+    private func bubbleLabel(_ message: BlindbanditServerMessage, shown: String, mine: Bool, translatedFrom: String?, starred: Bool, encrypted: Bool) -> String {
+        var parts: [String] = [mine ? "You: \(shown)" : "@\(handle): \(shown)"]
+        if let t = translatedFrom { parts.append("Translated from \(LanguageID.name(t))") }
+        if message.edited_at != nil { parts.append("Edited") }
+        if starred { parts.append("Starred") }
+        if encrypted { parts.append("Encrypted") }
+        if let r = reactions[message.id] { parts.append("You reacted \(MessageReactions.name(r))") }
+        return parts.joined(separator: ". ")
+    }
+
+    @ViewBuilder private var moreMenuItems: some View {
+        NavigationLink { SecurityPrivacyView(chat: chatRef, title: "@\(handle)") } label: {
+            Label("Security & Privacy", systemImage: "lock.shield")
+        }
+        NavigationLink { SafetyNumberView(handle: handle) } label: { Label("Verify safety number", systemImage: "qrcode") }
+        if aiOn && AISettings.isOn(.catchUp) {
+            Button { Task { catchUp = "Summarizing…"; catchUp = await OnDeviceAI.catchUp(chatName: "@\(handle)", lines: recentLines) ?? OnDeviceAI.unavailableReason
+                UIAccessibility.post(notification: .announcement, argument: catchUp ?? "") } } label: { Label("Catch me up", systemImage: "text.badge.star") }
+        }
+        Button { toggleFavorite() } label: {
+            Label(LocalComms.favorites.contains(handle) ? "Remove from favorites" : "Add to favorites", systemImage: "star")
+        }
+        Button {
+            reportTarget = ReportTarget(type: "profile", id: handle, title: "@\(handle)")
+        } label: { Label("Report @\(handle)", systemImage: "exclamationmark.bubble") }
+        Button(role: .destructive) { confirmBlock = true } label: { Label("Block @\(handle)", systemImage: "hand.raised") }
+    }
+
+    @ViewBuilder private var messageList: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 10) {
+                    if communications.messages.isEmpty && !communications.loadError.isEmpty {
+                        CommsErrorView(message: communications.loadError) {
+                            if let c = conversation { await communications.openConversation(c) }
+                        }
+                    }
+                    ForEach(shownMessages) { message in
+                        bubble(message).id(message.id)
+                            .accessibilityRotorEntry(id: message.id, in: rotorSpace)
+                    }
+                    if communications.otherTyping && search.isEmpty {
+                        TypingIndicatorBubble(name: handle.isEmpty ? "Someone" : "@\(handle)")
+                            .id("typing-indicator")
+                            .transition(.opacity)
+                    }
+                }
+                .padding()
+            }
+            .onChange(of: communications.otherTyping) { _, typing in
+                if typing, search.isEmpty { withAnimation { proxy.scrollTo("typing-indicator", anchor: .bottom) } }
+            }
+            .onChange(of: communications.messages) { old, list in
+                if let last = list.last, search.isEmpty { proxy.scrollTo(last.id, anchor: .bottom) }
+                let me = communications.myProfileID
+                for mineNow in list where mineNow.sender_id == me {
+                    guard let mineBefore = old.first(where: { $0.id == mineNow.id }),
+                          MessageStatus.caption(for: mineBefore, showRead: showReadReceipts) != MessageStatus.caption(for: mineNow, showRead: showReadReceipts)
+                    else { continue }
+                    let label = MessageStatus.caption(for: mineNow, showRead: showReadReceipts)
+                    let isLatest = mineNow.id == list.last(where: { $0.sender_id == me })?.id
+                    UIAccessibility.post(notification: .announcement, argument: isLatest ? "Your last message: \(label)" : "Your message \"\(mineNow.body.prefix(40))\": \(label)")
+                    if label.hasPrefix("Read") { AppHaptics.soft() }
+                }
+            }
+        }
+        .refreshable { if let c = conversation { await communications.openConversation(c) } }
+        .accessibilityRotor("Unread messages") {
+            ForEach(shownMessages.filter { $0.sender_id != communications.myProfileID && $0.created_at > (unreadSince ?? .infinity) }) { m in
+                AccessibilityRotorEntry(Text(m.body), id: m.id, in: rotorSpace)
+            }
+        }
+        .accessibilityRotor("Messages from @\(handle.isEmpty ? "them" : handle)") {
+            ForEach(shownMessages.filter { $0.sender_id != communications.myProfileID }) { m in
+                AccessibilityRotorEntry(Text(m.body), id: m.id, in: rotorSpace)
+            }
+        }
+        .accessibilityRotor("My messages") {
+            ForEach(shownMessages.filter { $0.sender_id == communications.myProfileID }) { m in
+                AccessibilityRotorEntry(Text(m.body), id: m.id, in: rotorSpace)
+            }
+        }
+    }
+
+    @ViewBuilder private var composerArea: some View {
+        ThreadAIBanners(handle: handle, keyChanged: e2ee.keyChanges.contains(handle.lowercased()),
+                        scamWarning: scamWarning, catchUp: $catchUp, aiPartial: aiPartial, aiPrivate: aiPrivate,
+                        smartReplies: smartReplies) { draft = $0; composerFocused = true }
+        if let e = editing {
+            HStack {
+                Text("Editing: \(e.body)").font(.caption).lineLimit(1)
+                Spacer()
+                Button { editing = nil; draft = "" } label: { Image(systemName: "xmark.circle.fill") }.accessibilityLabel("Cancel edit")
+            }.padding(.horizontal).padding(.top, 6)
+        }
+        if let q = quoting {
+            HStack {
+                Text("Replying to: \(q.body)").font(.caption).lineLimit(1)
+                Spacer()
+                Button { quoting = nil } label: { Image(systemName: "xmark.circle.fill") }
+                    .accessibilityLabel("Cancel reply")
+            }
+            .padding(.horizontal)
+            .padding(.top, 6)
+        }
+        HStack(spacing: 8) {
+            TextField("Message @\(handle)", text: $draft, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .lineLimit(1...5)
+                .focused($composerFocused)
+                .onChange(of: draft) { _, value in
+                    if !value.isEmpty { communications.userTyped(in: conversationID) }
+                }
+            ComposerAIMenu(draft: $draft, dictation: dictation, enabled: aiOn)
+            Button { send() } label: {
+                Image(systemName: "paperplane.fill").frame(width: Brand.minTouch, height: Brand.minTouch)
+            }
+            .accessibilityLabel(editing == nil ? "Send" : "Save edit")
+            .contextMenu {
+                Button("Send silently") { send(silent: true) }
+                Menu("Schedule") {
+                    Button("In 1 hour") { schedule(3600) }
+                    Button("Tonight at 8 PM") { schedule(Self.secondsUntil(hour: 20)) }
+                    Button("Tomorrow at 9 AM") { schedule(Self.secondsUntil(hour: 9)) }
+                }
+            }
+            .accessibilityAction(named: "Send silently") { send(silent: true) }
+            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || handle.isEmpty)
+        }
+        .padding()
+        .background(.bar)
     }
 
     private func unsend(_ message: BlindbanditServerMessage) async {
@@ -838,12 +860,7 @@ struct ConversationThreadView: View {
                 if !mine { Spacer(minLength: 48) }
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel((mine ? "You: \(shown)" : "@\(handle): \(shown)")
-                + (translatedFrom.map { ". Translated from \(LanguageID.name($0))" } ?? "")
-                + (message.edited_at != nil ? ". Edited" : "")
-                + (starred ? ". Starred" : "")
-                + (encrypted ? ". Encrypted" : "")
-                + (reactions[message.id].map { ". You reacted \(MessageReactions.name($0))" } ?? ""))
+            .accessibilityLabel(bubbleLabel(message, shown: shown, mine: mine, translatedFrom: translatedFrom, starred: starred, encrypted: encrypted))
             .accessibilityActions { messageActions(message, shown: shown, mine: mine) }
             .contextMenu { messageActions(message, shown: shown, mine: mine) }
             // Status is its own element directly under every message, so VoiceOver lands on it next.

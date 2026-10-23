@@ -92,13 +92,14 @@ enum AIAssistant {
         case .find, .general:
             break
         }
-        return await stream(prompt: (ctx.isEmpty ? "" : "Recent chat:\n\(ctx)\n\n") + "Question: \(inv.question)", lines: context.lines, onPartial: onPartial)
+        let persona = inv.isPrivate ? AIPersona.forPrivate.prompt() : AIPersona.professional.prompt()
+        return await stream(persona: persona, prompt: (ctx.isEmpty ? "" : "Recent chat:\n\(ctx)\n\n") + "Question: \(inv.question)", lines: context.lines, onPartial: onPartial)
     }
 
-    private static func stream(prompt: String, lines: [String], onPartial: @escaping @MainActor (String) -> Void) async -> String {
+    private static func stream(persona: String, prompt: String, lines: [String], onPartial: @escaping @MainActor (String) -> Void) async -> String {
         #if canImport(FoundationModels)
         if #available(iOS 26, *) {
-            let session = LanguageModelSession(tools: [FindInChatTool(lines: lines)], instructions: instructions)
+            let session = LanguageModelSession(tools: [FindInChatTool(lines: lines)], instructions: persona + " You are @AI inside a group or private chat. Answer the latest question using the chat context when relevant. Keep answers under 120 words.")
             var last = ""
             do {
                 for try await snapshot in session.streamResponse(to: prompt) {

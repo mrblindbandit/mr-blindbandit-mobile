@@ -210,6 +210,12 @@ struct AISettingsView: View {
                 Label(OnDeviceAI.isAvailable ? "Apple Intelligence is ready on this iPhone" : OnDeviceAI.unavailableReason,
                       systemImage: OnDeviceAI.isAvailable ? "checkmark.seal" : "info.circle")
             } footer: { Text("Every AI feature runs on this iPhone. Your messages are never sent to a server for AI.") }
+            AIStyleSection()
+            Section {
+                Toggle("Allow AI web search", isOn: Binding(get: { WebSearch.allowed }, set: { WebSearch.allowed = $0; AIChatStore.shared.resetSession() }))
+            } header: { Text("Web search").accessibilityAddTraits(.isHeader) } footer: {
+                Text("When the AI needs current information it sends only a short search query through mrblindbandit.net. Your chats and messages are never sent.")
+            }
             Section {
                 ForEach(AISettings.Feature.allCases, id: \.self) { f in
                     Toggle(f.title, isOn: Binding(get: { _ = refresh; return AISettings.isOn(f) }, set: { AISettings.set(f, $0); refresh += 1 }))

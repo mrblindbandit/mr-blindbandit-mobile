@@ -38,6 +38,7 @@ targets:
         # CallKit: incoming calls arrive as PushKit VoIP pushes; Recents/Siri redial via INStartCallIntent.
         UIBackgroundModes: [audio, remote-notification, voip]
         NSUserActivityTypes: [INStartCallIntent, INSendMessageIntent]
+        NSAppleMusicUsageDescription: The AI can play, search and queue Apple Music and your library inside Mr. BlindBandit when you ask it to.
         BBKeychainGroup: $(AppIdentifierPrefix)net.mrblindbandit.shared
         RTCAppGroupIdentifier: group.net.mrblindbandit.app
         RTCScreenSharingExtension: net.mrblindbandit.app.ScreenShare
@@ -66,8 +67,8 @@ targets:
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         INFOPLIST_KEY_UIBackgroundModes: [audio, remote-notification, voip]
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        MARKETING_VERSION: '2.0.2'
-        CURRENT_PROJECT_VERSION: '17'
+        MARKETING_VERSION: '2.0.3'
+        CURRENT_PROJECT_VERSION: '18'
     dependencies:
       - package: LiveKitClient
         product: LiveKit
@@ -96,8 +97,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.mrblindbandit.app.ScreenShare
         CODE_SIGN_ENTITLEMENTS: ScreenShare/ScreenShare.entitlements
-        MARKETING_VERSION: '2.0.2'
-        CURRENT_PROJECT_VERSION: '17'
+        MARKETING_VERSION: '2.0.3'
+        CURRENT_PROJECT_VERSION: '18'
         TARGETED_DEVICE_FAMILY: '1'
         APPLICATION_EXTENSION_API_ONLY: YES
     dependencies:
@@ -128,8 +129,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.mrblindbandit.app.NotificationService
         CODE_SIGN_ENTITLEMENTS: NotificationService/NotificationService.entitlements
-        MARKETING_VERSION: '2.0.2'
-        CURRENT_PROJECT_VERSION: '17'
+        MARKETING_VERSION: '2.0.3'
+        CURRENT_PROJECT_VERSION: '18'
         TARGETED_DEVICE_FAMILY: '1'
   BlindbanditTests:
     type: bundle.unit-test

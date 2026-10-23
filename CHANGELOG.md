@@ -7,6 +7,13 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 ---
 
 
+## 2.0.3 (iOS build 18) - 2026-10-23
+- Apple Music in the AI chat: MusicKit tool (play, pause, next, previous, queue, search, library shuffle, now playing) through ApplicationMusicPlayer; accessible Now Playing bar; 30-second previews without a subscription; NSAppleMusicUsageDescription.
+- AI web search tool through GET /v1/ai/search (Clerk auth), cited links open in SFSafariViewController, "Needs server update" on 404, "Allow AI web search" toggle (default on).
+- Owner-only AI Style (Hood/Professional) plus Unfiltered, gated by the server-reported handle; public @AI always Professional; everyone else Professional.
+- Responsiveness: AI prewarm at launch and on composer focus, optimistic send with "Sending…", cached inbox plus last 50 messages of the top 8 chats, send/receive haptics, LiveKit host preconnect when the call button shows.
+- Fixed fastlane/WhatToTest.txt (2.0.2 and 2.0.3 notes).
+
 ## 2.0.2 (iOS build 17) - 2026-10-23
 - AI chat backup and restore via `v1/backups/ai-chat`; backups accept `{ciphertext, metadata, updated_at}` and `{v, blob}`.
 - Chat settings: flat server fields (`no_store`, `allow_ai`, `screenshot_alerts`, `allow_view_once`, `admins_only_post`, `require_approval`, `my`) decoded and patched; Allow AI switch enforced; Mute notification sound.

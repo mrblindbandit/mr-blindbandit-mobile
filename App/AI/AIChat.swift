@@ -79,7 +79,7 @@ final class AIChatStore: ObservableObject {
     """
 
     func instructions() -> String {
-        var s = Self.personality + " Today is \(Date().formatted(date: .complete, time: .shortened))."
+        var s = AIPersona.forPrivate.prompt() + " Today is \(Date().formatted(date: .complete, time: .shortened))."
         if !memory.facts.isEmpty { s += " Things you remember about the user: " + memory.facts.joined(separator: "; ") + "." }
         if !memory.summary.isEmpty { s += " Summary of your earlier conversations: " + memory.summary }
         return s
@@ -406,7 +406,7 @@ enum AIMemoryDigest {
 extension AIToolbox {
     static func all() -> [any Tool] {
         [SearchMyChatsTool(), ReadChatTool(), DraftMessageTool(), ReminderTool(), CalendarTool(), ContactsTool(), PlacesTool(),
-         TranslateTool(), DescribePhotoTool(), DateMathTool(), UnitConvertTool(), RememberTool(), NoteToSelfTool(), WeatherTool()]
+         TranslateTool(), DescribePhotoTool(), DateMathTool(), UnitConvertTool(), RememberTool(), NoteToSelfTool(), WeatherTool(), MusicTool()] + (WebSearch.allowed ? [WebSearchTool()] : [])
     }
 }
 
@@ -578,6 +578,7 @@ struct AIChatView: View {
     @State private var photoItem: PhotosPickerItem?
     @State private var showMemory = false
     @State private var silenceTask: Task<Void, Never>?
+    @State private var webPage: IdentifiedURL?
     @AppStorage("ai.speakReplies") private var speakReplies = false
     @AppStorage("ai.handsFree") private var handsFree = false
 
@@ -648,6 +649,8 @@ struct AIChatView: View {
             .padding(.horizontal)
             .padding(.vertical, 8)
         }
+        .safeAreaInset(edge: .top, spacing: 0) { NowPlayingBar() }
+        .sheet(item: $webPage) { SafariView(url: $0.url).ignoresSafeArea() }
         .navigationTitle("AI")
         .toolbar {
             Menu {
@@ -704,10 +707,23 @@ struct AIChatView: View {
             .accessibilityActions {
                 Button("Read aloud") { AIVoice.shared.say(line.text) }
                 Button("Copy") { UIPasteboard.general.string = line.text }
+                ForEach(LinkFinder.links(in: line.text), id: \.self) { u in
+                    Button("Open link \(u.host() ?? u.absoluteString)") { webPage = IdentifiedURL(url: u) }
+                }
             }
             .contextMenu {
                 Button("Read aloud") { AIVoice.shared.say(line.text) }
                 Button("Copy") { UIPasteboard.general.string = line.text }
+            }
+            if !mine {
+                ForEach(LinkFinder.links(in: line.text), id: \.self) { u in
+                    Button { webPage = IdentifiedURL(url: u) } label: {
+                        Label(u.host() ?? u.absoluteString, systemImage: "safari").font(.caption)
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityLabel("Open link \(u.host() ?? u.absoluteString)")
+                    .padding(.leading, 36)
+                }
             }
             MessageStatusCaption(text: status, mine: mine)
         }

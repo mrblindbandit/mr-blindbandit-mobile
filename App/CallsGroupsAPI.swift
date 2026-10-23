@@ -57,8 +57,10 @@ struct BlindbanditGroup: Identifiable, Decodable, Equatable, Hashable {
         id = (try? c.decode(String.self, forKey: .id)) ?? UUID().uuidString
         name = (try? c.decode(String.self, forKey: .name)) ?? (try? c.decode(String.self, forKey: .title)) ?? "Group"
         avatar_url = try? c.decodeIfPresent(String.self, forKey: .avatar_url)
-        member_count = (try? c.decode(Int.self, forKey: .member_count)) ?? 0
-        my_role = (try? c.decode(String.self, forKey: .my_role)) ?? (try? c.decode(String.self, forKey: .role)) ?? "member"
+        let memberList = try? c.decode([BlindbanditGroupMember].self, forKey: .members)
+        member_count = (try? c.decode(Int.self, forKey: .member_count)) ?? (try? c.decode(Int.self, forKey: .members_count)) ?? memberList?.count ?? 0
+        let role = (try? c.decode(String.self, forKey: .my_role)) ?? (try? c.decode(String.self, forKey: .role)) ?? "member"
+        my_role = role.isEmpty ? "member" : role.lowercased()
         updated_at = (try? c.decode(Double.self, forKey: .updated_at)) ?? (try? c.decode(Double.self, forKey: .created_at)) ?? 0
         if let last = try? c.decode(LastMessage.self, forKey: .last_message) {
             last_message_body = last.body
@@ -70,7 +72,7 @@ struct BlindbanditGroup: Identifiable, Decodable, Equatable, Hashable {
     }
 
     struct LastMessage: Decodable { let body: String; let created_at: Double? }
-    enum CodingKeys: String, CodingKey { case id, name, title, avatar_url, member_count, my_role, role, updated_at, created_at, last_message }
+    enum CodingKeys: String, CodingKey { case id, name, title, avatar_url, member_count, members_count, members, my_role, role, updated_at, created_at, last_message }
 }
 
 struct BlindbanditGroupMember: Identifiable, Decodable, Equatable, Hashable {
@@ -94,9 +96,22 @@ struct BlindbanditGroupMember: Identifiable, Decodable, Equatable, Hashable {
     enum CodingKeys: String, CodingKey { case profile_id, id, handle, display_name, avatar_url, role }
 }
 
+/// Accepts both `{group:{...}, members:[...]}` and a flat group object with `members` inside it.
 struct BlindbanditGroupDetail: Decodable {
     let group: BlindbanditGroup
     let members: [BlindbanditGroupMember]
+
+    enum CodingKeys: String, CodingKey { case group, members }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let nested = try? c.decode(BlindbanditGroup.self, forKey: .group) {
+            group = nested
+        } else {
+            group = try BlindbanditGroup(from: decoder)
+        }
+        members = (try? c.decode([BlindbanditGroupMember].self, forKey: .members)) ?? []
+    }
 }
 
 struct BlindbanditGroupMessage: Identifiable, Decodable, Equatable {
@@ -110,15 +125,16 @@ struct BlindbanditGroupMessage: Identifiable, Decodable, Equatable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = (try? c.decode(String.self, forKey: .id)) ?? UUID().uuidString
-        sender_id = (try? c.decode(String.self, forKey: .sender_id)) ?? ""
-        sender_handle = (try? c.decode(String.self, forKey: .sender_handle)) ?? ""
+        sender_id = (try? c.decode(String.self, forKey: .sender_id)) ?? (try? c.decode(String.self, forKey: .author_id)) ?? ""
+        sender_handle = (try? c.decode(String.self, forKey: .sender_handle)) ?? (try? c.decode(String.self, forKey: .handle)) ?? ""
         let name = (try? c.decode(String.self, forKey: .sender_display_name)) ?? (try? c.decode(String.self, forKey: .sender_name))
+            ?? (try? c.decode(String.self, forKey: .display_name))
         sender_name = name ?? (sender_handle.isEmpty ? "Member" : "@\(sender_handle)")
         body = (try? c.decode(String.self, forKey: .body)) ?? ""
         created_at = (try? c.decode(Double.self, forKey: .created_at)) ?? 0
     }
 
-    enum CodingKeys: String, CodingKey { case id, sender_id, sender_handle, sender_display_name, sender_name, body, created_at }
+    enum CodingKeys: String, CodingKey { case id, sender_id, sender_handle, sender_display_name, sender_name, body, created_at, author_id, handle, display_name }
 }
 
 /// A ringing call for me, from GET /v1/social/calls/incoming or a push payload.
@@ -272,6 +288,11 @@ extension BlindbanditAPI {
                                method: "POST", body: ["emoji": emoji.map { $0 as Any } ?? NSNull()])
     }
 
+    /// POST /v1/social/messages/{conversation id}/unread.
+    static func markConversationUnread(id: String) async throws {
+        try await request("v1/social/messages/\(escape(id))/unread", method: "POST", body: [:])
+    }
+
     static func declineCall(id: String) async {
         do {
             try await request("v1/social/calls/\(escape(id))/decline", method: "POST", body: [:])
@@ -285,9 +306,10 @@ extension BlindbanditAPI {
     static func incomingCalls() async throws -> [BlindbanditIncomingCall] {
         do {
             return try decode(ItemsPayload<BlindbanditIncomingCall>.self, from: try await request("v1/social/calls/incoming")).items
-        } catch let error as CommunicationsError where error.isMissingRoute {
+        } catch CommunicationsError.notFound(_) {
+            // A 404 here means the route isn't live yet (or nothing is ringing): treat it as no incoming calls.
             let now = Date().timeIntervalSince1970 * 1000
-            return try await callHistory()
+            return ((try? await callHistory()) ?? [])
                 .filter { $0.isIncoming && $0.status == "ringing" && now - $0.created_at < 45_000 }
                 .map {
                     BlindbanditIncomingCall(

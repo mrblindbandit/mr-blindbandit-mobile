@@ -470,6 +470,8 @@ final class ProductionCommunicationsService: ObservableObject {
     func markUnread(_ conversation: BlindbanditConversation) {
         lastReadStamp[conversation.id] = 0
         LocalComms.lastRead = lastReadStamp
+        let id = conversation.id
+        Task { try? await BlindbanditAPI.markConversationUnread(id: id) }
     }
 
     private func announceNewIncoming(old: [BlindbanditConversation], new: [BlindbanditConversation]) {

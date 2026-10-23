@@ -571,10 +571,13 @@ struct ConversationThreadView: View {
                     HStack(spacing: 4) {
                         Text(displayName).font(.headline).lineLimit(1)
                         if conversation?.other?.verified == true { VerifiedBadge() }
+                        if E2EEService.shared.isVerified(handle) {
+                            Image(systemName: "checkmark.shield.fill").foregroundStyle(.green).font(.caption)
+                        }
                     }
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(displayName)\(conversation?.other?.verified == true ? ", Verified" : ""), chat settings")
+                .accessibilityLabel("\(displayName)\(conversation?.other?.verified == true ? ", Verified" : "")\(E2EEService.shared.isVerified(handle) ? ", security number verified" : ""), chat settings")
                 .accessibilityHint("Double tap to open chat info and settings")
                 .accessibilityAddTraits(.isButton)
                 .disabled(handle.isEmpty)
@@ -946,7 +949,9 @@ struct ConversationThreadView: View {
                 }
                 if !mine { Spacer(minLength: 48) }
             }
-            .accessibilityElement(children: .ignore)
+            // Voice bubbles are their own VoiceOver button (double tap = play/pause); ignoring children
+            // here made the row swallow them so double tap did nothing.
+            .accessibilityElement(children: MessageRowAccessibility.children(isVoice: message.decrypted?.media?.mime.hasPrefix("audio") == true))
             .accessibilityLabel(bubbleLabel(message, shown: shown, mine: mine, translatedFrom: translatedFrom, starred: starred, encrypted: encrypted))
             .accessibilityActions { messageActions(message, shown: shown, mine: mine) }
             .contextMenu { messageActions(message, shown: shown, mine: mine) }
@@ -1486,4 +1491,10 @@ struct ForwardSheet: View {
             }
         }
     }
+}
+
+
+enum MessageRowAccessibility {
+    static func children(isVoice: Bool) -> AccessibilityChildBehavior { isVoice ? .contain : .ignore }
+    static func exposesChildren(isVoice: Bool) -> Bool { isVoice }
 }

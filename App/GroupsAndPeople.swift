@@ -467,6 +467,11 @@ struct GroupInfoView: View {
                             .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }
+                Section {
+                    NavigationLink {
+                        GroupSafetyNumbersView(members: members.map { (handle: $0.handle, name: $0.display_name) })
+                    } label: { Label("Security numbers for each member", systemImage: "checkmark.shield") }
+                }
                 Section("\(members.count) members") {
                     ForEach(members) { m in
                         HStack {

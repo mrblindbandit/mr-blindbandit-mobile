@@ -315,7 +315,16 @@ enum BlindbanditAPI {
     }
 
     static func endCall(id: String) async {
-        _ = try? await request("v1/social/calls/\(escape(id))/end", method: "POST", body: [:])
+        await EndedCalls.endReliably(id)
+    }
+
+    /// One /end attempt. 404/409/410 mean the server already considers it over: success.
+    static func endCallChecked(id: String) async -> Bool {
+        do { _ = try await request("v1/social/calls/\(escape(id))/end", method: "POST", body: [:]); return true }
+        catch {
+            let text = "\(error)"
+            return text.contains("404") || text.contains("409") || text.contains("410")
+        }
     }
 
     static func markRead(conversationID: String) async throws {
@@ -466,6 +475,14 @@ final class ProductionCommunicationsService: ObservableObject {
     @Published private(set) var callGroupID: String?
     @Published private(set) var callGroupName: String?
     @Published private(set) var screenSharing = false
+    /// VoiceOver-readable call encryption state shown on the call screen.
+    @Published private(set) var callEncryptionLabel = ""
+    @Published private(set) var callEncrypted = false
+    private var callKeyProvider: BaseKeyProvider?
+    private var callKeyIndex = 0
+    private var callKeyIsMine = false
+    private var callKeyPeerHandle: String?
+    private var callKeyPoll: Task<Void, Never>?
     @Published private(set) var usingFrontCamera = true
     @Published private(set) var handRaised = false
     @Published private(set) var raisedHands: Set<String> = []
@@ -835,29 +852,54 @@ final class ProductionCommunicationsService: ObservableObject {
             UIAccessibility.post(notification: .announcement, argument: statusMessage)
             return
         }
+        // 2.0.6: show CallKit's outgoing UI instantly (before any network work) under a local ID,
+        // then rebind it to the server call ID.
+        CallTiming.start("outgoing call to \(label)")
+        let localID = "local-" + UUID().uuidString
+        CallKitManager.shared.startOutgoing(callID: localID, handle: handle ?? "", displayName: displayName ?? label, video: video, groupID: groupID, memberCount: memberCount)
+        CallTiming.step("CallKit start requested")
         CallSounds.callInitiated()
         statusMessage = "Calling \(label)…"
         UIAccessibility.post(notification: .announcement, argument: statusMessage)
+        callPeerName = label
+        callGroupID = groupID
+        callGroupName = groupName
+        callIsIncoming = false
         var createdID: String?
         do {
-            let response: BlindbanditCallResponse
-            if let groupID {
-                response = try await BlindbanditAPI.startGroupCall(groupID: groupID, video: video)
-            } else {
-                response = try await BlindbanditAPI.startCall(handle: handle ?? "", video: video)
-            }
+            // Server call creation returns the LiveKit token in the same round trip (no separate token fetch).
+            async let created: BlindbanditCallResponse = groupID != nil
+                ? BlindbanditAPI.startGroupCall(groupID: groupID!, video: video)
+                : BlindbanditAPI.startCall(handle: handle ?? "", video: video)
+            let response = try await created
+            CallTiming.step("server call created + token")
             createdID = response.id
-            callPeerName = label
-            callGroupID = groupID
-            callGroupName = groupName
-            callIsIncoming = false
-            CallKitManager.shared.startOutgoing(callID: response.id, handle: handle ?? "", displayName: displayName ?? label, video: video, groupID: groupID, memberCount: memberCount)
-            try await connect(response: response, video: video)
+            CallKitManager.shared.rebind(from: localID, to: response.id)
+            if EndedCalls.contains(localID) {
+                // User hung up while we were creating the call.
+                await BlindbanditAPI.endCall(id: response.id)
+                CallKitManager.shared.reportEnded(callID: response.id, reason: nil)
+                return
+            }
+            callKeyPeerHandle = handle
+            // The call key is generated locally; delivery and LiveKit connect run in parallel.
+            let msg = CallKeyMessage(call_id: response.id, key: E2EECrypto.b64u(CallKeyStore.newKey()), index: 0)
+            async let delivered = sendCallKey(msg, handle: handle, groupID: groupID)
+            try await connect(response: response, video: video, callKey: msg)
+            CallTiming.step("LiveKit connected")
+            let callKey: CallKeyMessage? = await delivered ? msg : nil
+            CallTiming.step("call key delivered=\(callKey != nil)")
+            if callKey == nil { markCallUnencrypted() }
+            callKeyIsMine = true
+            if callKey != nil, groupID != nil { startCallKeyPolling(callID: response.id) }
             beginOutgoingRinging()
         } catch {
+            CallTiming.step("failed: \(error.localizedDescription)")
             if let createdID {
-                await BlindbanditAPI.endCall(id: createdID)
                 CallKitManager.shared.reportEnded(callID: createdID, reason: .failed)
+                await BlindbanditAPI.endCall(id: createdID)
+            } else {
+                CallKitManager.shared.reportEnded(callID: localID, reason: .failed)
             }
             teardownRoom()
             CallSounds.busyOrFailed()
@@ -933,6 +975,10 @@ final class ProductionCommunicationsService: ObservableObject {
 
     /// Called for every ringing call we learn about (VoIP push, FCM-style polling, push tap).
     func receiveIncoming(_ call: BlindbanditIncomingCall) {
+        if EndedCalls.shouldIgnore(id: call.id, createdAtMs: call.created_at) {
+            CallTiming.log("ignored invite for ended/stale call \(call.id)")
+            return
+        }
         guard activeCallID != call.id, !isInCall || incomingCall == nil else { return }
         if isInCall {
             // Already busy: let CallKit show call waiting; we don't steal the screen.
@@ -959,6 +1005,7 @@ final class ProductionCommunicationsService: ObservableObject {
     /// The caller hung up, someone answered on another device, or the server sent call_end.
     func remoteEnded(callID: String) {
         if joiningCallID == callID { return } // our own "answered elsewhere" echo
+        if activeCallID != callID || callGroupID == nil { EndedCalls.mark(callID) }
         if incomingCall?.id == callID {
             let missed = incomingCall
             incomingCall = nil
@@ -999,6 +1046,7 @@ final class ProductionCommunicationsService: ObservableObject {
 
     /// CallKit decline (or fallback). Never leaves the server row ringing.
     func performDecline(id: String) {
+        EndedCalls.mark(id)
         if incomingCall?.id == id { incomingCall = nil }
         CallSounds.stopLoop()
         Task {
@@ -1042,7 +1090,12 @@ final class ProductionCommunicationsService: ObservableObject {
             incomingCall = nil
             let voiceOnly = UserDefaults.standard.bool(forKey: "callkit.answerVoiceOnly")
             UserDefaults.standard.removeObject(forKey: "callkit.answerVoiceOnly")
-            try await connect(response: response, video: !voiceOnly && ((invite?.isVideo ?? false) || response.kind == "video"))
+            let peer = invite?.from_handle ?? callHistory.first(where: { $0.id == id })?.other?.handle
+            callKeyIsMine = false
+            callKeyPeerHandle = peer
+            let callKey = await awaitCallKey(callID: id, handle: peer, groupID: callGroupID)
+            try await connect(response: response, video: !voiceOnly && ((invite?.isVideo ?? false) || response.kind == "video"), callKey: callKey)
+            if callKey != nil, callGroupID != nil { startCallKeyPolling(callID: id) }
             return true
         } catch {
             incomingCall = nil
@@ -1059,11 +1112,26 @@ final class ProductionCommunicationsService: ObservableObject {
         }
     }
 
-    private func connect(response: BlindbanditCallResponse, video: Bool) async throws {
+    private func connect(response: BlindbanditCallResponse, video: Bool, callKey: CallKeyMessage? = nil) async throws {
         let serverURL = (response.livekit.url?.isEmpty == false ? response.livekit.url : nil) ?? AppConfig.liveKitURL
         guard serverURL.hasPrefix("wss://") else { throw CommunicationsError.liveKitURLMissing }
         let observer = CallRoomObserver(service: self)
-        let newRoom = Room(delegate: observer)
+        let newRoom: Room
+        if let callKey {
+            // LiveKit frame encryption (AES-GCM) for every published track: mic (incl. mixed app audio), camera, screen share.
+            let provider = BaseKeyProvider(isSharedKey: true)
+            provider.setKey(key: callKey.key, index: Int32(callKey.index % 16))
+            callKeyProvider = provider
+            callKeyIndex = callKey.index
+            callEncrypted = true
+            callEncryptionLabel = "End-to-end encrypted"
+            newRoom = Room(delegate: observer, roomOptions: RoomOptions(e2eeOptions: E2EEOptions(keyProvider: provider)))
+        } else {
+            callKeyProvider = nil
+            callEncrypted = false
+            callEncryptionLabel = "Not encrypted: other person needs to update"
+            newRoom = Room(delegate: observer)
+        }
         roomObserver = observer
         activeCallID = response.id
         UserDefaults.standard.set(serverURL, forKey: "livekit.lastURL")
@@ -1185,7 +1253,13 @@ final class ProductionCommunicationsService: ObservableObject {
     func setMic(enabled: Bool) {
         guard micEnabled != enabled else { return }
         micEnabled = enabled
-        Task { try? await room?.localParticipant.setMicrophone(enabled: enabled) }
+        if screenSharing {
+            // Broadcast app audio is mixed into the mic track, so while sharing keep the track live
+            // and mute only the mic's input in the mixer; otherwise muting would also silence the shared audio.
+            AudioManager.shared.mixer.micVolume = enabled ? 1 : 0
+        } else {
+            Task { try? await room?.localParticipant.setMicrophone(enabled: enabled) }
+        }
         if let id = activeCallID { CallKitManager.shared.requestMute(callID: id, muted: !enabled) }
         AppHaptics.selection()
         UIAccessibility.post(notification: .announcement, argument: enabled ? "Microphone on" : "Muted")
@@ -1264,8 +1338,22 @@ final class ProductionCommunicationsService: ObservableObject {
                 // Whole-iPhone sharing through the Broadcast Upload extension (iOS asks you to Start Broadcast);
                 // turn off "Share whole screen" in Settings to share just this app.
                 let whole = UserDefaults.standard.object(forKey: "screenShare.wholeScreen") as? Bool ?? true
+                // appAudio: true makes LiveKit's BroadcastScreenCapturer pull .audioApp samples from the
+                // extension and mix them into the published microphone track (the only way remote people hear
+                // videos/music playing on the phone). Without it, only video was ever sent.
+                if enable {
+                    // App audio rides on the mic track: make sure it is published even when muted,
+                    // and represent "muted" as mic volume 0 in the mixer.
+                    AudioManager.shared.mixer.micVolume = micEnabled ? 1 : 0
+                    AudioManager.shared.mixer.appVolume = 1
+                    try await room.localParticipant.setMicrophone(enabled: true)
+                }
                 _ = try await room.localParticipant.set(source: .screenShareVideo, enabled: enable,
-                    captureOptions: ScreenShareCaptureOptions(useBroadcastExtension: whole))
+                    captureOptions: ScreenShareCaptureOptions(appAudio: true, useBroadcastExtension: whole))
+                if !enable {
+                    AudioManager.shared.mixer.micVolume = 1
+                    if !micEnabled { try? await room.localParticipant.setMicrophone(enabled: false) }
+                }
                 screenSharing = enable
                 statusMessage = enable
                     ? (whole ? "Choose Mr. BlindBandit, then Start Broadcast. Everyone in the call will see your whole screen." : "Sharing your screen. Everyone in the call sees this app.")
@@ -1373,6 +1461,7 @@ final class ProductionCommunicationsService: ObservableObject {
     /// Tears everything down. Safe to call more than once.
     func finishCall(notifyServer: Bool, announcement: String) {
         let id = activeCallID
+        if let id { EndedCalls.mark(id) }
         let closingRoom = room
         let wasActive = isInCall || id != nil
         stopRinging(answered: false)
@@ -1416,7 +1505,114 @@ final class ProductionCommunicationsService: ObservableObject {
         UIAccessibility.post(notification: .announcement, argument: statusMessage)
     }
 
+    // MARK: Call E2EE (2.0.6)
+
+    /// Generates a fresh 256-bit frame key and sends it to every participant device inside a p256-v1 E2EE message
+    /// (silent, hidden control payload). Returns nil when any recipient can't do E2EE (old app / no keys).
+    /// Key delivery failed after connecting encrypted: the callee can't decrypt, so drop E2EE for this call
+    /// rather than leave it silent, and say so on the call screen.
+    private func markCallUnencrypted() {
+        callEncrypted = false
+        callEncryptionLabel = "Not encrypted: other person needs to update"
+        callKeyProvider = nil
+        if let room { room.e2eeManager?.enableE2EE(enabled: false) }
+    }
+
+    private func sendCallKey(_ msg: CallKeyMessage, handle: String?, groupID: String?) async -> Bool {
+        let payload = E2EEPayload(t: "call_key", body: CallKeyStore.encode(msg), silent: true)
+        do {
+            if let groupID {
+                guard try await E2EEService.shared.sendGroup(id: groupID, payload: payload) else { return false }
+            } else if let handle, !handle.isEmpty {
+                guard try await E2EEService.shared.sendDM(handle: handle, payload: payload) != nil else { return false }
+            } else { return false }
+        } catch {
+            KeySetupLog.record("Call key delivery failed: \(error.localizedDescription)")
+            return false
+        }
+        CallKeyStore.shared.set(msg)
+        return true
+    }
+
+    private func sendNewCallKey(callID: String, handle: String?, groupID: String?, index: Int) async -> CallKeyMessage? {
+        let msg = CallKeyMessage(call_id: callID, key: E2EECrypto.b64u(CallKeyStore.newKey()), index: index)
+        let payload = E2EEPayload(t: "call_key", body: CallKeyStore.encode(msg), silent: true)
+        do {
+            if let groupID {
+                guard try await E2EEService.shared.sendGroup(id: groupID, payload: payload) else { return nil }
+            } else if let handle, !handle.isEmpty {
+                guard try await E2EEService.shared.sendDM(handle: handle, payload: payload) != nil else { return nil }
+            } else { return nil }
+        } catch {
+            KeySetupLog.record("Call key delivery failed: \(error.localizedDescription)")
+            return nil
+        }
+        CallKeyStore.shared.set(msg)
+        return msg
+    }
+
+    /// Pulls the caller's key message for up to ~8 s. No key ⇒ the caller is on an old app ⇒ unencrypted fallback.
+    private func awaitCallKey(callID: String, handle: String?, groupID: String?) async -> CallKeyMessage? {
+        for attempt in 0..<8 {
+            if let k = CallKeyStore.shared.keys[callID] { return k }
+            await fetchCallKeyMessages(handle: handle, groupID: groupID)
+            if let k = CallKeyStore.shared.keys[callID] { return k }
+            if attempt < 7 { try? await Task.sleep(nanoseconds: 1_000_000_000) }
+        }
+        return nil
+    }
+
+    private func fetchCallKeyMessages(handle: String?, groupID: String?) async {
+        if let groupID {
+            if let items = try? await BlindbanditAPI.groupMessages(id: groupID) {
+                _ = E2EEService.shared.resolveGroup(items, groupID: groupID)
+            }
+        } else if let handle {
+            let h = handle.lowercased()
+            let convs = (try? await BlindbanditAPI.conversations()) ?? conversations
+            guard let c = convs.first(where: { $0.other?.handle.lowercased() == h }),
+                  let items = try? await BlindbanditAPI.messages(conversationID: c.id) else { return }
+            _ = await E2EEService.shared.resolve(items, conversationID: c.id)
+        }
+    }
+
+    /// Group calls: listen for rotated keys while connected.
+    private func startCallKeyPolling(callID: String) {
+        callKeyPoll?.cancel()
+        CallKeyStore.shared.onKey = { [weak self] m in
+            guard let self, m.call_id == callID, m.index > self.callKeyIndex else { return }
+            self.callKeyIndex = m.index
+            self.callKeyProvider?.setKey(key: m.key, index: Int32(m.index % 16))
+        }
+        callKeyPoll = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                guard let self, self.activeCallID == callID, !self.callKeyIsMine else { continue }
+                await self.fetchCallKeyMessages(handle: nil, groupID: self.callGroupID)
+            }
+        }
+    }
+
+    /// Called when someone joins or leaves a group call: the caller rotates to a fresh key (forward/backward secrecy).
+    func rotateCallKeyIfNeeded() {
+        guard callKeyIsMine, callKeyProvider != nil, let callID = activeCallID, let groupID = callGroupID else { return }
+        let next = callKeyIndex + 1
+        Task { [weak self] in
+            guard let self, let m = await self.sendNewCallKey(callID: callID, handle: nil, groupID: groupID, index: next) else { return }
+            // Give receivers time to fetch it before switching our sending key.
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard self.activeCallID == callID, next > self.callKeyIndex else { return }
+            self.callKeyIndex = next
+            self.callKeyProvider?.setKey(key: m.key, index: Int32(next % 16))
+        }
+    }
+
     private func teardownRoom() {
+        callKeyPoll?.cancel(); callKeyPoll = nil
+        CallKeyStore.shared.onKey = nil
+        if let id = activeCallID { CallKeyStore.shared.clear(id) }
+        callKeyProvider = nil; callKeyIndex = 0; callKeyIsMine = false
+        callEncrypted = false; callEncryptionLabel = ""
         let closingRoom = room
         Task { await closingRoom?.disconnect() }
         room = nil

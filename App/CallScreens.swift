@@ -106,6 +106,7 @@ struct ActiveCallScreen: View {
     @AppStorage(MagicTapSetting.key) private var magicTapEnds = true
     @State private var pinnedID: String?
     @State private var showChat = false
+    @State private var showSafety = false
     @State private var showAdd = false
 
     private var gridItems: [CallParticipantInfo] {
@@ -135,11 +136,27 @@ struct ActiveCallScreen: View {
         .accessibilityActions { callActions }
         .sheet(isPresented: $showChat) { InCallChatSheet() }
         .sheet(isPresented: $showAdd) { AddToCallSheet() }
+        .sheet(isPresented: $showSafety) {
+            NavigationStack { SafetyNumberView(handle: String(communications.callPeerName.dropFirst())) }
+        }
     }
 
     private var header: some View {
         VStack(spacing: 4) {
             Text(communications.callPeerName.isEmpty ? "Call" : communications.callPeerName).font(.title2.bold())
+            if !communications.callEncryptionLabel.isEmpty {
+                Label(communications.callEncryptionLabel, systemImage: communications.callEncrypted ? "lock.fill" : "lock.open")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(communications.callEncrypted ? Color.green : Color.orange)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(communications.callEncryptionLabel)
+                    .accessibilityIdentifier("callEncryptionStatus")
+                if communications.callGroupID == nil, communications.callPeerName.hasPrefix("@") {
+                    Button("Verify security number") { showSafety = true }
+                        .font(.footnote)
+                        .accessibilityHint("Opens the security number for this person.")
+                }
+            }
             HStack(spacing: 8) {
                 Text(communications.isOnHold ? "On hold" : communications.isRinging ? "Ringing…" : communications.callTimeLabel)
                     .monospacedDigit()

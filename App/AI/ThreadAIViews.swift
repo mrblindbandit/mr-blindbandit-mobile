@@ -15,7 +15,7 @@ struct ThreadAIBanners: View {
         VStack(alignment: .leading, spacing: 6) {
             if keyChanged {
                 NavigationLink { SafetyNumberView(handle: handle) } label: {
-                    Label("@\(handle)'s safety number changed. Tap to verify.", systemImage: "exclamationmark.shield.fill")
+                    Label("Security number with @\(handle) changed. Verification was reset. Tap to verify.", systemImage: "exclamationmark.shield.fill")
                 }
                 .foregroundStyle(.orange)
             }

@@ -149,6 +149,7 @@ struct BlindbanditApp: App {
                     } else if lock.unlocked || !lock.isRequired {
                         MainTabs()
                             .accessibilityHidden(phase != .active && lock.isRequired)
+                            .modifier(EncryptionPasscodePrompt())
                     } else {
                         LockedView(lock: lock)
                     }

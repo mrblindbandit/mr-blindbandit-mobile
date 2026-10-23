@@ -8,6 +8,7 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 
 
 ## 2.0.6 (21)
+- New default ringtone: "Mr. BlindBandit". Used for CallKit incoming calls, the call notification fallback and in-app ringing. If you picked a different tone it stays; anyone on the old default moves to the new one. The old default is now called "Classic".
 - Fix: remote participants heard no audio from the phone during screen share. The broadcast share was started with `ScreenShareCaptureOptions(useBroadcastExtension:)` and the default `appAudio: false`, so LiveKit's BroadcastScreenCapturer never enabled the extension's `.audioApp` stream. It now passes `appAudio: true`; app audio is mixed into the microphone track.
 - While sharing, the mic track stays published and mute is applied as mixer mic volume 0, so muting doesn't silence the shared audio. Call audio session adds `.mixWithOthers` so media keeps playing during calls.
 - Fix: double tapping a voice message in a 1:1 chat with VoiceOver did nothing. The DM message row (App/CommsTabs.swift) used `.accessibilityElement(children: .ignore)`, swallowing the VoiceBubble's own button element and its play/pause default action. Voice rows now use `.contain`.

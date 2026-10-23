@@ -24,6 +24,11 @@ final class NotificationService: UNNotificationServiceExtension {
         let myHandle = UserDefaults(suiteName: PushDecryptor.appGroup)?.string(forKey: "myHandle")?.lowercased()
         let mentioned = category.contains("mention") || (myHandle.map { content.body.lowercased().contains("@" + $0) } ?? false)
         if category.contains("call") || mentioned { content.interruptionLevel = .timeSensitive }
+        // 2.0.6: ringing-call notification fallback uses the app ringtone (default Mr. BlindBandit, < 30 s).
+        if category.contains("call"), !category.contains("end"), !category.contains("missed") {
+            let file = UserDefaults(suiteName: PushDecryptor.appGroup)?.string(forKey: "ringtoneFile") ?? "ringtone_mrblindbandit.caf"
+            content.sound = UNNotificationSound(named: UNNotificationSoundName(file))
+        }
 
         Task {
             let final = await Self.communication(content, info: info)

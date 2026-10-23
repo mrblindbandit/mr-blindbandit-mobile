@@ -16,6 +16,15 @@ final class CallKitManager: NSObject {
     let isAvailable: Bool = (Locale.current.region?.identifier ?? "") != "CN"
 
     private var provider: CXProvider?
+
+    /// Re-applies the selected ringtone to CallKit after the user changes it.
+    func refreshRingtone() {
+        guard let provider else { return }
+        let config = provider.configuration
+        config.ringtoneSound = CallSounds.callKitRingtoneFile
+        provider.configuration = config
+        UserDefaults(suiteName: "group.net.mrblindbandit.app")?.set(config.ringtoneSound, forKey: "ringtoneFile")
+    }
     private let controller = CXCallController()
     private var registry: PKPushRegistry?
     private weak var service: ProductionCommunicationsService?
@@ -42,9 +51,9 @@ final class CallKitManager: NSObject {
             config.supportedHandleTypes = [.generic]
             config.includesCallsInRecents = true
             if let icon = UIImage(named: "CallKitIcon") { config.iconTemplateImageData = icon.pngData() }
-            if Bundle.main.url(forResource: "ringtone_ambient_dawn", withExtension: "mp3") != nil {
-                config.ringtoneSound = "ringtone_ambient_dawn.mp3"
-            }
+            // 2.0.6: the selected ringtone (default Mr. BlindBandit) instead of a hard-coded tone.
+            config.ringtoneSound = CallSounds.callKitRingtoneFile
+            UserDefaults(suiteName: "group.net.mrblindbandit.app")?.set(config.ringtoneSound, forKey: "ringtoneFile")
             let provider = CXProvider(configuration: config)
             provider.setDelegate(self, queue: nil)
             self.provider = provider

@@ -23,7 +23,7 @@ struct Settings: View {
     @State private var showingTextTones = false
     @State private var testNotificationMessage = ""
     @State private var sendingTest = false
-    @AppStorage("selectedRingtone") private var ringtoneID = CallSounds.Ringtone.default.rawValue
+    @AppStorage("selectedRingtone") private var ringtoneID = CallSounds.Ringtone.mrBlindBandit.rawValue
     @AppStorage("selectedNotificationTone") private var textToneID = CallSounds.NotificationTone.message.rawValue
     @AppStorage(SettingsKey.startCallsWithCameraOff) private var startCallsWithCameraOff = false
     @AppStorage(SettingsKey.notifyMessages) private var notifyMessages = true
@@ -206,7 +206,7 @@ struct Settings: View {
             Toggle("Ambient UI sounds", isOn: $ambientUITheme)
                 .accessibilityHint("Uses soft bell versions of the call and message sounds")
             Button { showingRingtones = true } label: {
-                LabeledContent("Ringtone", value: CallSounds.Ringtone(rawValue: ringtoneID)?.title ?? "Default")
+                LabeledContent("Ringtone", value: CallSounds.Ringtone(rawValue: ringtoneID)?.title ?? CallSounds.Ringtone.mrBlindBandit.title)
             }
             .foregroundStyle(.primary)
             Button { showingTextTones = true } label: {
@@ -228,7 +228,7 @@ struct Settings: View {
             TonePickerSheet(title: "Ringtone", tones: CallSounds.Ringtone.allCases, name: { $0.title },
                             preview: { CallSounds.previewRingtone($0) },
                             save: { CallSounds.selectedRingtone = $0; ringtoneID = $0.rawValue },
-                            selection: CallSounds.Ringtone(rawValue: ringtoneID) ?? .default)
+                            selection: CallSounds.Ringtone(rawValue: ringtoneID) ?? .mrBlindBandit)
         }
         .sheet(isPresented: $showingTextTones) {
             TonePickerSheet(title: "Text tone", tones: CallSounds.NotificationTone.allCases, name: { $0.title },

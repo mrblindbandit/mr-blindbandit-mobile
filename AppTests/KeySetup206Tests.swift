@@ -73,3 +73,17 @@ final class KeySetup206Tests: XCTestCase {
         store.clear("c1")
     }
 }
+
+final class RingtoneDefault206Tests: XCTestCase {
+    func testMigration() {
+        let d = UserDefaults(suiteName: "rt206")!; d.removePersistentDomain(forName: "rt206")
+        CallSounds.migrateDefaultRingtone(d)
+        XCTAssertEqual(d.string(forKey: "selectedRingtone"), "ringtone_mrblindbandit")
+        d.removePersistentDomain(forName: "rt206"); d.set("ringtone", forKey: "selectedRingtone")
+        CallSounds.migrateDefaultRingtone(d)
+        XCTAssertEqual(d.string(forKey: "selectedRingtone"), "ringtone_mrblindbandit")
+        d.removePersistentDomain(forName: "rt206"); d.set("ringtone_gold", forKey: "selectedRingtone")
+        CallSounds.migrateDefaultRingtone(d)
+        XCTAssertEqual(d.string(forKey: "selectedRingtone"), "ringtone_gold")
+    }
+}

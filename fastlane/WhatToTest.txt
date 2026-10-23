@@ -12,3 +12,5 @@ More in 2.0.2:
 - Voice messages: double tap anywhere on a voice bubble (yours or theirs) to play, again to pause. Rotor: Play/Pause, Speed 1x/1.5x/2x, Skip back/ahead 5 seconds, Show transcript. Plays on the speaker; raise the phone to your ear for the earpiece. Keeps playing when locked and moves on to the next unplayed voice message.
 - Screen share now shares your whole iPhone (Start Broadcast). Turn off "Share whole screen in calls" in Settings to share only the app.
 - Ask the AI about the weather (Apple Weather). Share a call into a FaceTime call with SharePlay. Encrypted message previews in notifications, and calls/mentions break through Focus as time-sensitive.
+
+- Ringtone: incoming calls should ring with the new Mr. BlindBandit tone. Settings > Ringtone lists "Mr. BlindBandit (Default)" first, and you can preview it. A tone you picked before should stay.

@@ -6,6 +6,8 @@ import UIKit
 @MainActor
 enum CallSounds {
     enum Ringtone: String, CaseIterable, Identifiable {
+        /// 2.0.6 default: the owner's Mr. BlindBandit ringtone (ringtone_mrblindbandit.caf, 29.5 s IMA4).
+        case mrBlindBandit = "ringtone_mrblindbandit"
         case `default` = "ringtone"
         case gold = "ringtone_gold"
         case pulse = "ringtone_pulse"
@@ -26,7 +28,8 @@ enum CallSounds {
         var id: String { rawValue }
         var title: String {
             switch self {
-            case .default: return "Default"
+            case .mrBlindBandit: return "Mr. BlindBandit (Default)"
+            case .default: return "Classic"
             case .gold: return "Gold"
             case .pulse: return "Pulse"
             case .chime: return "Chime"
@@ -104,8 +107,35 @@ enum CallSounds {
     }
 
     static var selectedRingtone: Ringtone {
-        get { Ringtone(rawValue: UserDefaults.standard.string(forKey: "selectedRingtone") ?? "") ?? .default }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: "selectedRingtone") }
+        get {
+            migrateDefaultRingtone()
+            return Ringtone(rawValue: UserDefaults.standard.string(forKey: "selectedRingtone") ?? "") ?? .mrBlindBandit
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: "selectedRingtone")
+            UserDefaults(suiteName: "group.net.mrblindbandit.app")?.set(callKitRingtoneFile, forKey: "ringtoneFile")
+            CallKitManager.shared.refreshRingtone()
+        }
+    }
+
+    /// One-time 2.0.6 migration: anyone on the old default ("ringtone", or never chose) moves to Mr. BlindBandit;
+    /// people who picked another tone keep it.
+    nonisolated static func migrateDefaultRingtone(_ d: UserDefaults = .standard) {
+        guard !d.bool(forKey: "ringtone.migrated.206") else { return }
+        let cur = d.string(forKey: "selectedRingtone")
+        if cur == nil || cur == "ringtone" { d.set("ringtone_mrblindbandit", forKey: "selectedRingtone") }
+        d.set(true, forKey: "ringtone.migrated.206")
+    }
+
+    /// File name CallKit / UNNotificationSound use (must be in the main bundle, ≤ 30 s).
+    nonisolated static var callKitRingtoneFile: String? {
+        migrateDefaultRingtone()
+        let raw = UserDefaults.standard.string(forKey: "selectedRingtone") ?? "ringtone_mrblindbandit"
+        for ext in ["caf", "mp3"] {
+            if Bundle.main.url(forResource: raw, withExtension: ext) != nil
+                || Bundle.main.url(forResource: raw, withExtension: ext, subdirectory: "Sounds") != nil { return "\(raw).\(ext)" }
+        }
+        return Bundle.main.url(forResource: "ringtone_mrblindbandit", withExtension: "caf") != nil ? "ringtone_mrblindbandit.caf" : nil
     }
 
     static var selectedNotificationTone: NotificationTone {
@@ -122,6 +152,9 @@ enum CallSounds {
     private static func url(named name: String) -> URL? {
         if ambientUITheme, !name.hasPrefix("ringtone"), !name.hasPrefix("notif_ambient"), !name.hasPrefix("ambient_"),
            let themed = url(named: "ambient_" + name) { return themed }
+        for ext in ["caf"] {
+            if let u = Bundle.main.url(forResource: name, withExtension: ext) ?? Bundle.main.url(forResource: name, withExtension: ext, subdirectory: "Sounds") { return u }
+        }
         return Bundle.main.url(forResource: name, withExtension: "mp3", subdirectory: "Sounds")
             ?? Bundle.main.url(forResource: name, withExtension: "mp3")
             ?? Bundle.main.url(forResource: name, withExtension: "mp3", subdirectory: "Resources/Sounds")

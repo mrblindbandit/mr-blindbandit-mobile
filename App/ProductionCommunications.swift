@@ -1213,7 +1213,7 @@ final class ProductionCommunicationsService: ObservableObject {
                 // Whole-iPhone sharing through the Broadcast Upload extension (iOS asks you to Start Broadcast);
                 // turn off "Share whole screen" in Settings to share just this app.
                 let whole = UserDefaults.standard.object(forKey: "screenShare.wholeScreen") as? Bool ?? true
-                _ = try await room.localParticipant.setScreenShare(enabled: enable,
+                _ = try await room.localParticipant.set(source: .screenShareVideo, enabled: enable,
                     captureOptions: ScreenShareCaptureOptions(useBroadcastExtension: whole))
                 screenSharing = enable
                 statusMessage = enable

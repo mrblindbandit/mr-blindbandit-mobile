@@ -635,7 +635,7 @@ final class ProductionCommunicationsService: ObservableObject {
                 }
             }
             let hadIncoming = fresh.count > messages.count && fresh.last?.sender_id != myProfileID && !messages.isEmpty
-            let optimistic = messages.filter { $0.id.hasPrefix("local-") && !fresh.contains(where: { f in f.sender_id == myProfileID && f.body == $0.body }) }
+            let optimistic = messages.filter { m in m.id.hasPrefix("local-") && !fresh.contains(where: { f in f.sender_id == myProfileID && f.body == m.body }) }
             let merged = fresh + optimistic
             if merged != messages { messages = merged }
             ChatCache.put(id, fresh)

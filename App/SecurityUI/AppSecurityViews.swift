@@ -84,13 +84,17 @@ enum RecoveryPassphrase {
         var salt = Data(count: 16)
         _ = salt.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!) }
         let box = try AES.GCM.seal(identity, using: derive(pass, salt: salt))
+        let c = box.combined!.base64EncodedString()
         return ["v": 1, "kdf": "pbkdf2-sha256", "iterations": 600_000, "salt": salt.base64EncodedString(),
-                "blob": box.combined!.base64EncodedString()]
+                "blob": c, "ciphertext": c,
+                "metadata": ["v": 1, "kdf": "pbkdf2-sha256", "iterations": 600_000, "salt": salt.base64EncodedString()]]
     }
 
     static func unwrap(_ blob: [String: Any], pass: String) -> Data? {
-        guard let s = (blob["salt"] as? String).flatMap({ Data(base64Encoded: $0) }),
-              let b = (blob["blob"] as? String).flatMap({ Data(base64Encoded: $0) }),
+        let blob = (blob["data"] as? [String: Any]) ?? blob
+        let meta = blob["metadata"] as? [String: Any] ?? [:]
+        guard let s = ((blob["salt"] ?? meta["salt"]) as? String).flatMap({ Data(base64Encoded: $0) }),
+              let b = ((blob["ciphertext"] ?? blob["blob"]) as? String).flatMap({ Data(base64Encoded: $0) }),
               let sealed = try? AES.GCM.SealedBox(combined: b) else { return nil }
         return try? AES.GCM.open(sealed, using: derive(pass, salt: s))
     }
@@ -125,6 +129,7 @@ struct AppSecurityView: View {
                 NavigationLink { DevicesSessionsView() } label: { Label("Devices and sessions", systemImage: "iphone.and.arrow.forward") }
                 NavigationLink { AppPINSettingsView() } label: { Label("PIN and duress PIN", systemImage: "number.square") }
                 NavigationLink { HistoryBackupView() } label: { Label("Message history backup", systemImage: "clock.arrow.circlepath") }
+                NavigationLink { AIChatBackupView() } label: { Label("AI chat backup", systemImage: "sparkles") }
                 NavigationLink { FoldersManagerView() } label: { Label("Chat folders and hidden chats", systemImage: "folder") }
                 LabeledContent("This device", value: IdentityStore.shared.deviceID ?? "Not registered")
                 LabeledContent("Encryption", value: e2ee.ready ? "On, keys in iCloud Keychain" : (ServerFeatures.shared.isAvailable(.keys) ? "Setting up" : ServerFeatures.needsUpdateText))

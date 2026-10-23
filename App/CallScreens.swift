@@ -201,6 +201,9 @@ struct ActiveCallScreen: View {
         }
         Button(communications.screenSharing ? "Stop sharing screen" : "Share screen") { communications.toggleScreenShare() }
         Button(communications.captionsOn ? "Turn off live captions" : "Turn on live captions") { communications.toggleCaptions() }
+        if let id = communications.activeCallID {
+            Button("Share this call over SharePlay") { Task { let s = await SharePlayCalls.share(callID: id, title: "Mr. BlindBandit call"); UIAccessibility.post(notification: .announcement, argument: s) } }
+        }
         Button("Add people") { showAdd = true }
         Button(communications.handRaised ? "Lower hand" : "Raise hand") { communications.toggleHand() }
         Button("Open call chat") { showChat = true }

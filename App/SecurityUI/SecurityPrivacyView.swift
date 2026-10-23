@@ -79,10 +79,18 @@ struct SecurityPrivacyView: View {
                 Toggle("Send read receipts", isOn: my(\.read_receipts, "read_receipts"))
                 Toggle("Send typing indicator", isOn: my(\.typing, "typing"))
                 Toggle("Auto-translate", isOn: my(\.translate, "translate"))
+                Toggle("Mute notification sound", isOn: my(\.mute_sound, "mute_sound"))
             } header: { Text("Just for me").accessibilityAddTraits(.isHeader) }
 
             Section {
+                Toggle(chat.isGroup ? "Allow AI in this group (admin)" : "Allow AI in this chat", isOn: Binding(get: { s.allow_ai }, set: { v in
+                    s.allow_ai = v; patch(["allow_ai": v]); applyServerAI()
+                    if chat.isGroup { Task { await sendAIPolicy(v) } }
+                }))
+                .disabled(chat.isGroup && !isAdmin)
+                .accessibilityHint("Saved for everyone in this chat. When off, summaries, smart replies and @AI stay off here.")
                 Toggle("On-device AI in this chat", isOn: Binding(get: { aiAllowed }, set: { v in aiAllowed = v; AISettings.setChat(chat.key, v) }))
+                    .disabled(!s.allow_ai)
                 Toggle(chat.isGroup ? "Allow @AI for everyone (admin)" : "Allow @AI", isOn: Binding(get: { mentionAllowed }, set: { v in
                     mentionAllowed = v
                     AIAssistant.setAllowed(v, chatKey: chat.key)
@@ -96,13 +104,13 @@ struct SecurityPrivacyView: View {
             if chat.isGroup, isAdmin {
                 Section {
                     Picker("Slow mode", selection: Binding(get: { s.group?.slow_mode_seconds ?? 0 }, set: { v in
-                        var g = s.group ?? .init(); g.slow_mode_seconds = v; s.group = g; patch(["group": ["slow_mode_seconds": v]]) })) {
+                        var g = s.group ?? .init(); g.slow_mode_seconds = v; s.group = g; patch(["slow_mode_seconds": v, "group": ["slow_mode_seconds": v]]) })) {
                         ForEach([0, 10, 30, 60, 300, 900, 3600], id: \.self) { v in Text(v == 0 ? "Off" : v < 60 ? "\(v) seconds" : v < 3600 ? "\(v / 60) minutes" : "1 hour").tag(v) }
                     }
                     Toggle("Only admins can post", isOn: Binding(get: { s.group?.admins_only_post ?? false }, set: { v in
-                        var g = s.group ?? .init(); g.admins_only_post = v; s.group = g; patch(["group": ["admins_only_post": v]]) }))
+                        var g = s.group ?? .init(); g.admins_only_post = v; s.group = g; patch(["admins_only_post": v, "group": ["admins_only_post": v]]) }))
                     Toggle("Approve new members from invite links", isOn: Binding(get: { s.group?.require_approval ?? false }, set: { v in
-                        var g = s.group ?? .init(); g.require_approval = v; s.group = g; patch(["group": ["require_approval": v]]) }))
+                        var g = s.group ?? .init(); g.require_approval = v; s.group = g; patch(["require_approval": v, "group": ["require_approval": v]]) }))
                     if case .group(let gid) = chat {
                         NavigationLink { InviteLinksView(groupID: gid) } label: { Label("Invite links and join requests", systemImage: "link") }
                     }
@@ -138,7 +146,7 @@ struct SecurityPrivacyView: View {
     }
 
     private func sec(_ kp: WritableKeyPath<ChatSecuritySettings.Security, Bool>, _ key: String) -> Binding<Bool> {
-        Binding(get: { s.security[keyPath: kp] }, set: { v in s.security[keyPath: kp] = v; patch(["security": [key: v]]) })
+        Binding(get: { s.security[keyPath: kp] }, set: { v in s.security[keyPath: kp] = v; patch([key: v, "security": [key: v]]) })
     }
     private func my(_ kp: WritableKeyPath<ChatSecuritySettings.Mine, Bool>, _ key: String) -> Binding<Bool> {
         Binding(get: { s.my[keyPath: kp] }, set: { v in s.my[keyPath: kp] = v; patch(["my": [key: v]]) })
@@ -155,7 +163,15 @@ struct SecurityPrivacyView: View {
         } catch is NeedsServerUpdate { serverMissing = true } catch {}
         e2ee.setE2EE(s.e2ee, chatKey: chat.key)
         ChatSettingsCache.set(s, chat.key)
+        applyServerAI()
         loaded = true
+    }
+
+    /// allow_ai = false from the server wins over the local AI switches.
+    private func applyServerAI() {
+        guard !s.allow_ai else { return }
+        aiAllowed = false; AISettings.setChat(chat.key, false)
+        mentionAllowed = false; AIAssistant.setAllowed(false, chatKey: chat.key)
     }
 
     private func patch(_ body: [String: Any]) {

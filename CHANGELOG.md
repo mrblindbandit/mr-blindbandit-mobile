@@ -6,6 +6,13 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 
 ---
 
+
+## 2.0.2 (iOS build 17) - 2026-10-23
+- AI chat backup and restore via `v1/backups/ai-chat`; backups accept `{ciphertext, metadata, updated_at}` and `{v, blob}`.
+- Chat settings: flat server fields (`no_store`, `allow_ai`, `screenshot_alerts`, `allow_view_once`, `admins_only_post`, `require_approval`, `my`) decoded and patched; Allow AI switch enforced; Mute notification sound.
+- Message pin/unpin syncs to the server; 404/405 handled gracefully (kept on device, announced).
+- Recovery passphrase backup (`v1/keys/backup`) sends and reads both shapes; covered by tests.
+
 ## 2.0.1 (16)
 - Voice messages: press and hold the mic to record (haptic and "Recording"), lift to send ("Sent"), slide left or use the "Cancel recording" action to cancel. Encrypted upload via the attachment path, with a transcript fallback. Listen-once option and 1x, 1.5x and 2x playback.
 - Chat header: the contact or group name opens chat info and settings (VoiceOver: "<Name>, chat settings"). The ⋯ More button is gone; call buttons stay.

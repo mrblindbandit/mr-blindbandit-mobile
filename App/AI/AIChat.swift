@@ -43,6 +43,8 @@ final class AIChatStore: ObservableObject {
     }
 
     func append(_ l: Line) { lines.append(l); save() }
+    /// Used by AIChatBackup.restore.
+    func replaceAll(lines new: [Line], memory mem: Memory) { lines = new; memory = mem; resetSession(); save() }
     func update(_ id: String, text: String) { if let i = lines.firstIndex(where: { $0.id == id }) { lines[i].text = text } }
     func commit() { save() }
     func clear() {
@@ -404,7 +406,7 @@ enum AIMemoryDigest {
 extension AIToolbox {
     static func all() -> [any Tool] {
         [SearchMyChatsTool(), ReadChatTool(), DraftMessageTool(), ReminderTool(), CalendarTool(), ContactsTool(), PlacesTool(),
-         TranslateTool(), DescribePhotoTool(), DateMathTool(), UnitConvertTool(), RememberTool(), NoteToSelfTool()]
+         TranslateTool(), DescribePhotoTool(), DateMathTool(), UnitConvertTool(), RememberTool(), NoteToSelfTool(), WeatherTool()]
     }
 }
 
@@ -590,15 +592,8 @@ struct AIChatView: View {
                         Text("Hey Kaeleb! I'm your AI buddy. Ask me anything, have me write or translate something, catch you up on a chat, set a reminder, or describe a photo. It all stays on this iPhone.")
                     }
                     ForEach(shownLines) { line in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(line.fromAI ? "AI" : "You").font(.caption.bold())
-                            Text(line.text.isEmpty ? "…" : line.text).textSelection(.enabled)
-                        }
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel("\(line.fromAI ? "AI" : "You"): \(line.text)")
-                        .accessibilityAction(named: "Read aloud") { AIVoice.shared.say(line.text) }
-                        .accessibilityAction(named: "Copy") { UIPasteboard.general.string = line.text }
-                        .id(line.id)
+                        aiBubble(line).id(line.id)
+                            .listRowSeparator(.hidden)
                     }
                     ForEach(store.pendingSends) { p in
                         VStack(alignment: .leading) {
@@ -611,8 +606,13 @@ struct AIChatView: View {
                         }
                         .accessibilityElement(children: .contain)
                     }
-                    if store.thinking { Text("AI is thinking…").italic() }
+                    if store.thinking {
+                        HStack(spacing: 8) { AIAvatar(); Text("AI is typing…").font(.caption).foregroundStyle(.secondary) }
+                            .listRowSeparator(.hidden)
+                            .accessibilityElement(children: .ignore).accessibilityLabel("AI is typing")
+                    }
                 }
+                .listStyle(.plain)
                 .onChange(of: store.lines.count) { _, _ in if let l = store.lines.last { proxy.scrollTo(l.id) } }
             }
             if store.lastPhoto != nil {
@@ -622,23 +622,31 @@ struct AIChatView: View {
                     Button("Remove") { store.lastPhoto = nil }
                 }.padding(.horizontal).font(.caption)
             }
-            HStack {
-                Button { toggleListening() } label: { Image(systemName: dictation.isListening ? "stop.circle.fill" : "mic.circle").font(.title2) }
-                    .accessibilityLabel(dictation.isListening ? "Stop talking and send" : "Talk to AI")
-                PhotosPicker(selection: $photoItem, matching: .images) { Image(systemName: "photo.badge.plus").font(.title2) }
-                    .accessibilityLabel("Add photo for AI to describe")
-                TextField("Ask anything. Stays on this iPhone.", text: $draft, axis: .vertical)
+            HStack(spacing: 8) {
+                TextField("Message AI", text: $draft, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
+                    .lineLimit(1...5)
                     .accessibilityActions {
-                        Button("Talk to AI") { toggleListening() }
+                        Button(dictation.isListening ? "Stop dictation and send" : "Dictate") { toggleListening() }
                         Button(speakReplies ? "Stop speaking replies" : "Speak replies") { speakReplies.toggle() }
                         Button("Clear AI chat") { confirmClear = true }
                     }
-                Button { send() } label: { Image(systemName: "arrow.up.circle.fill").font(.title2) }
-                    .accessibilityLabel("Ask AI")
-                    .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty || store.thinking)
+                PhotosPicker(selection: $photoItem, matching: .images) {
+                    Image(systemName: "photo").frame(width: Brand.minTouch, height: Brand.minTouch)
+                }
+                .accessibilityLabel("Attach photo")
+                Button { toggleListening() } label: {
+                    Image(systemName: dictation.isListening ? "stop.circle.fill" : "mic.fill").frame(width: Brand.minTouch, height: Brand.minTouch)
+                }
+                .accessibilityLabel(dictation.isListening ? "Stop dictation and send" : "Dictate")
+                Button { send() } label: {
+                    Image(systemName: "paperplane.fill").frame(width: Brand.minTouch, height: Brand.minTouch)
+                }
+                .accessibilityLabel("Send")
+                .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty || store.thinking)
             }
-            .padding()
+            .padding(.horizontal)
+            .padding(.vertical, 8)
         }
         .navigationTitle("AI")
         .toolbar {
@@ -674,6 +682,37 @@ struct AIChatView: View {
             voice.onDone = { if AIVoice.handsFree { Task { await dictation.start() } } }
         }
         .onDisappear { voice.onDone = nil; if dictation.isListening { dictation.stop() } }
+    }
+
+    /// Same bubble, alignment and status-line layout as a regular conversation; the AI is just the other person.
+    private func aiBubble(_ line: AIChatStore.Line) -> some View {
+        let mine = !line.fromAI
+        let stamp = Date(timeIntervalSince1970: line.at).formatted(date: .omitted, time: .shortened)
+        let answered = mine && store.lines.drop(while: { $0.id != line.id }).dropFirst().contains { $0.fromAI }
+        let status = mine ? (answered ? "Read \(stamp)" : "Sent \(stamp)") : stamp
+        return VStack(alignment: mine ? .trailing : .leading, spacing: 3) {
+            HStack(alignment: .bottom, spacing: 6) {
+                if mine { Spacer(minLength: 48) } else { AIAvatar() }
+                Text(line.text.isEmpty ? "…" : line.text)
+                    .padding(12)
+                    .background(mine ? Brand.gold.opacity(0.35) : Color.secondary.opacity(0.16), in: RoundedRectangle(cornerRadius: 16))
+                    .textSelection(.enabled)
+                if !mine { Spacer(minLength: 48) }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(mine ? "You" : "AI"): \(line.text)")
+            .accessibilityActions {
+                Button("Read aloud") { AIVoice.shared.say(line.text) }
+                Button("Copy") { UIPasteboard.general.string = line.text }
+            }
+            .contextMenu {
+                Button("Read aloud") { AIVoice.shared.say(line.text) }
+                Button("Copy") { UIPasteboard.general.string = line.text }
+            }
+            MessageStatusCaption(text: status, mine: mine)
+        }
+        .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
+        .accessibilityElement(children: .contain)
     }
 
     private func toggleListening() {
@@ -734,5 +773,18 @@ struct AIChatRow: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("AI, pinned, private on-device assistant. " + ((AppPIN.decoyActive ? nil : store.lines.last).map { "Last: \($0.text)" } ?? ""))
+    }
+}
+
+
+/// The AI's avatar, shown like any contact's.
+struct AIAvatar: View {
+    var body: some View {
+        Image(systemName: "sparkles")
+            .font(.caption.bold())
+            .foregroundStyle(.black)
+            .frame(width: 30, height: 30)
+            .background(Brand.gold, in: Circle())
+            .accessibilityHidden(true)
     }
 }

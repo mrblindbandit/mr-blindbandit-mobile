@@ -349,7 +349,7 @@ enum HistoryBackup {
         do {
             _ = try await SecurityAPI.gated(.historyBackup) {
                 try await BlindbanditAPI.request("v1/backups/history", method: "PUT",
-                    body: ["v": 1, "blob": sealed.base64EncodedString(), "ciphertext": sealed.base64EncodedString(), "metadata": ["v": 1], "updated_at": Int(Date().timeIntervalSince1970 * 1000)])
+                    body: BackupEnvelope.body(sealed, kind: "history"))
             }
             UserDefaults.standard.set(Date(), forKey: "history.lastBackup")
             return "Backed up \(LocalMessageStore.shared.snapshot.payloads.count) messages."
@@ -528,5 +528,86 @@ struct SensitiveImageView: View {
             .overlay { if sensitive && !revealed { Button("This may be sensitive. Show anyway") { revealed = true } .buttonStyle(.borderedProminent) } }
             .accessibilityLabel(sensitive && !revealed ? "Possibly sensitive image, hidden" : alt)
             .task { sensitive = await SensitiveContent.isSensitive(image) }
+    }
+}
+
+
+// MARK: - Shared lenient backup envelope ({ciphertext, metadata, updated_at} or {v, blob})
+
+enum BackupEnvelope {
+    static func body(_ sealed: Data, kind: String) -> [String: Any] {
+        let b64 = sealed.base64EncodedString()
+        return ["ciphertext": b64, "metadata": ["v": 1, "alg": "AES-GCM", "kind": kind],
+                "v": 1, "blob": b64, "updated_at": Int(Date().timeIntervalSince1970 * 1000)]
+    }
+    static func ciphertext(_ data: Data) -> Data? {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        let inner = (obj["data"] as? [String: Any]) ?? (obj["backup"] as? [String: Any]) ?? obj
+        guard let b64 = (inner["ciphertext"] as? String) ?? (inner["blob"] as? String) else { return nil }
+        return Data(base64Encoded: b64)
+    }
+}
+
+// MARK: - AI chat backup (v1/backups/ai-chat)
+
+@MainActor
+enum AIChatBackup {
+    struct Payload: Codable { var lines: [AIChatStore.Line]; var memory: AIChatStore.Memory }
+    private static var key: SymmetricKey {
+        if let d = Keychain.get("aichat-backup-key.v1"), d.count == 32 { return SymmetricKey(data: d) }
+        let d = E2EECrypto.random(32)
+        _ = Keychain.set(d, account: "aichat-backup-key.v1", synced: true)
+        return SymmetricKey(data: d)
+    }
+    static var lastBackup: Date? { UserDefaults.standard.object(forKey: "aichat.lastBackup") as? Date }
+
+    static func seal(_ p: Payload, key k: SymmetricKey) -> Data? {
+        guard let plain = try? JSONEncoder().encode(p) else { return nil }
+        return try? AES.GCM.seal(plain, using: k).combined
+    }
+    static func open(_ response: Data, key k: SymmetricKey) -> Payload? {
+        guard let c = BackupEnvelope.ciphertext(response), let box = try? AES.GCM.SealedBox(combined: c),
+              let plain = try? AES.GCM.open(box, using: k) else { return nil }
+        return try? JSONDecoder().decode(Payload.self, from: plain)
+    }
+
+    static func backup() async -> String {
+        let s = AIChatStore.shared
+        guard let sealed = seal(Payload(lines: s.lines, memory: s.memory), key: key) else { return "Couldn't prepare the AI chat backup." }
+        do {
+            _ = try await SecurityAPI.gated(.aiBackup) {
+                try await BlindbanditAPI.request("v1/backups/ai-chat", method: "PUT", body: BackupEnvelope.body(sealed, kind: "ai-chat"))
+            }
+            UserDefaults.standard.set(Date(), forKey: "aichat.lastBackup")
+            return "AI chat backed up, \(s.lines.count) messages and \(s.memory.facts.count) memories."
+        } catch is NeedsServerUpdate { return "AI chat backup: " + ServerFeatures.needsUpdateText } catch { return error.localizedDescription }
+    }
+
+    static func restore() async -> String {
+        guard let data = try? await SecurityAPI.gated(.aiBackup, { try await BlindbanditAPI.request("v1/backups/ai-chat") }),
+              let p = open(data, key: key) else { return "No AI chat backup found yet." }
+        AIChatStore.shared.replaceAll(lines: p.lines, memory: p.memory)
+        return "AI chat restored, \(p.lines.count) messages."
+    }
+
+    /// After sign-in on a new iPhone with an empty AI chat.
+    static func restoreIfNeeded() async {
+        guard AIChatStore.shared.lines.isEmpty, !UserDefaults.standard.bool(forKey: "aichat.restoredOnce") else { return }
+        _ = await restore()
+        UserDefaults.standard.set(true, forKey: "aichat.restoredOnce")
+    }
+}
+
+struct AIChatBackupView: View {
+    @State private var status = ""
+    var body: some View {
+        Form {
+            Button("Back up AI chat now") { Task { status = await AIChatBackup.backup(); UIAccessibility.post(notification: .announcement, argument: status) } }
+            Button("Restore AI chat from backup") { Task { status = await AIChatBackup.restore(); UIAccessibility.post(notification: .announcement, argument: status) } }
+            if let d = AIChatBackup.lastBackup { LabeledContent("Last backup", value: d.formatted()) }
+            if !status.isEmpty { Text(status).accessibilityAddTraits(.updatesFrequently) }
+            Section { Text("Your AI chat and what it remembers are encrypted with a key in your iCloud Keychain before upload. The server only stores ciphertext.") }
+        }
+        .navigationTitle("AI chat backup")
     }
 }

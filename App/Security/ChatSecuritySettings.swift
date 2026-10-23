@@ -60,6 +60,8 @@ struct ChatSecuritySettings: Codable, Equatable {
     var e2ee = true
     var disappearing_seconds = 0
     var no_store = false
+    /// Server-wide AI permission for this chat (default true). When false, on-device AI and @AI stay off here.
+    var allow_ai = true
     var security = Security()
     var my = Mine()
     var group: Group?
@@ -76,15 +78,31 @@ struct ChatSecuritySettings: Codable, Equatable {
     }
 
     init() {}
+    private enum FlatKeys: String, CodingKey {
+        case screenshot_alerts, allow_view_once, block_link_previews, strip_photo_metadata, admins_only_post, require_approval, slow_mode_seconds
+    }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         e2ee = c.lenientBool(.e2ee) ?? true
         disappearing_seconds = (try? c.decode(Int.self, forKey: .disappearing_seconds)) ?? 0
         no_store = c.lenientBool(.no_store) ?? false
+        allow_ai = c.lenientBool(.allow_ai) ?? true
+        // Live server sends these flat; older builds nested them. Accept both.
+        let flat = try decoder.container(keyedBy: FlatKeys.self)
         security = (try? c.decode(Security.self, forKey: .security)) ?? Security()
+        if let v = flat.lenientBool(.screenshot_alerts) { security.screenshot_alerts = v }
+        if let v = flat.lenientBool(.allow_view_once) { security.allow_view_once = v }
+        if let v = flat.lenientBool(.block_link_previews) { security.block_link_previews = v }
+        if let v = flat.lenientBool(.strip_photo_metadata) { security.strip_photo_metadata = v }
         my = (try? c.decode(Mine.self, forKey: .my)) ?? Mine()
         group = try? c.decode(Group.self, forKey: .group)
+        let ao = flat.lenientBool(.admins_only_post), ra = flat.lenientBool(.require_approval), sm = try? flat.decode(Int.self, forKey: .slow_mode_seconds)
+        if ao != nil || ra != nil || sm != nil {
+            var g = group ?? Group()
+            if let ao { g.admins_only_post = ao }; if let ra { g.require_approval = ra }; if let sm { g.slow_mode_seconds = sm }
+            group = g
+        }
         updated_by = try? c.decode(String.self, forKey: .updated_by)
         updated_at = try? c.decode(Double.self, forKey: .updated_at)
     }
@@ -140,7 +158,7 @@ final class ServerFeatures: @unchecked Sendable {
     enum Feature: String, CaseIterable {
         case keys, settings, clearServer, unsend, viewOnce, securityEvents, export, deleteMine, relay, attachments
         case sessions, inviteLinks, joinRequests, edit, envelopeFetch, keyWrap, reportEvidence
-        case folders, polls, scheduled, historyBackup, stars, aiBackup
+        case folders, polls, scheduled, historyBackup, stars, aiBackup, pins
     }
 
     private let lock = NSLock()

@@ -994,9 +994,16 @@ struct ConversationThreadView: View {
         Button { LocalMessageStore.shared.mutate { s in if s.starred.contains(message.id) { s.starred.remove(message.id) } else { s.starred.insert(message.id) } }; AppHaptics.light()
             UIAccessibility.post(notification: .announcement, argument: LocalMessageStore.shared.snapshot.starred.contains(message.id) ? "Starred" : "Unstarred")
         } label: { Label("Star", systemImage: "star") }
-        Button { let k = chatRef.key; LocalMessageStore.shared.mutate { s in var l = s.pinned[k] ?? []; if let i = l.firstIndex(of: message.id) { l.remove(at: i) } else { l.append(message.id) }; s.pinned[k] = l }
-            UIAccessibility.post(notification: .announcement, argument: "Pin updated")
-        } label: { Label("Pin", systemImage: "pin") }
+        let isPinned = LocalMessageStore.shared.snapshot.pinned[chatRef.key]?.contains(message.id) ?? false
+        Button { let k = chatRef.key, ref = chatRef, id = message.id, nowPinned = !isPinned
+            LocalMessageStore.shared.mutate { s in var l = s.pinned[k] ?? []; if let i = l.firstIndex(of: id) { l.remove(at: i) } else { l.append(id) }; s.pinned[k] = l }
+            AppHaptics.light()
+            Task {
+                let synced = await SecurityAPI.syncPin(ref, messageID: id, pinned: nowPinned)
+                let msg = (nowPinned ? "Pinned" : "Unpinned") + (synced ? "" : " on this iPhone. The server will catch up after its next update.")
+                UIAccessibility.post(notification: .announcement, argument: msg)
+            }
+        } label: { Label(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash" : "pin") }
         if !mine && translator.cached(message.id) != nil {
             Button { if showOriginal.contains(message.id) { showOriginal.remove(message.id) } else { showOriginal.insert(message.id) } } label: {
                 Label(showOriginal.contains(message.id) ? "Show translation" : "Show original", systemImage: "character.bubble")

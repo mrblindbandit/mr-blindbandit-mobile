@@ -365,7 +365,7 @@ enum HistoryBackup {
     static func restore() async -> String {
         guard let data = try? await SecurityAPI.gated(.historyBackup, { try await BlindbanditAPI.request("v1/backups/history") }),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let inner = (obj["data"] as? [String: Any]) ?? obj,
+              case let inner = (obj["data"] as? [String: Any]) ?? obj,
               let b64 = (inner["blob"] as? String) ?? (inner["ciphertext"] as? String),
               let blob = Data(base64Encoded: b64), let box = try? AES.GCM.SealedBox(combined: blob),
               let plain = try? AES.GCM.open(box, using: key),

@@ -1,0 +1,206 @@
+{
+  "suite": "p256-v1",
+  "version": 1,
+  "notes": {
+    "encoding": "base64url without padding; public keys are 65-byte uncompressed X9.63 points; private keys are 32-byte big-endian scalars (hex); signatures are P1363 r||s (64 bytes)",
+    "ecdh": "shared secret = 32-byte x coordinate",
+    "x3dh": "DH1=ECDH(IKdh_A,SPK_B) DH2=ECDH(EK_A,IKdh_B) DH3=ECDH(EK_A,SPK_B) DH4=ECDH(EK_A,OPK_B) (optional); SK=HKDF-SHA256(salt=32x00, ikm=DH1||DH2||DH3[||DH4], info='BB-X3DH-v1'||A_device||B_device, L=32)",
+    "chain": "CK_0=SK; MK_n=HMAC-SHA256(CK_n,0x01); CK_{n+1}=HMAC-SHA256(CK_n,0x02). One session per (sender device -> recipient device), identified by prekey.ek",
+    "wrap": "keys[].wrapped = AES-256-GCM(key=MK_n, nonce=keys[].nonce, pt=CEK, ad='bb1'||IKsign_A||IKsign_B) as ciphertext||tag",
+    "content": "ciphertext = AES-256-GCM(key=CEK, nonce, pt=pad(payload JSON), ad='bb1:'+msg_id+':'+sender_device_id) as ciphertext||tag",
+    "padding": "ISO/IEC 7816-4 (0x80 then 0x00) to the smallest of 256,512,1024,2048,4096 that fits len+1, else next multiple of 4096",
+    "safety_number": "per user: keys=concat(sorted signing pubs); h='\\x00\\x01'||keys||handle; repeat 5200: h=SHA512(h||keys); fp=h[0:30]; 6 groups = big-endian uint40 of each 5 bytes mod 100000, 5 digits; both users concatenated in ascending handle order; QR bbsafety:1:<handleA>:<hex fpA>:<handleB>:<hex fpB>",
+    "attachment": "pad zeros to padme(len); 65536-byte segments; seg nonce = base[0:4] || (base[4:12] as u64 BE XOR index); ad='bb-att-v1'||u32BE(index); blob=concat(seg ct||tag); sha256 over blob",
+    "delete_control": "payload {t:'delete', target_msg_id, sig}; sig = ECDSA-P256-SHA256 by sender IKsign over utf8('bb-delete:'+target_msg_id)",
+    "spk_signature": "ECDSA P-256 SHA-256 over raw spk_pub (65 bytes), P1363 r||s; randomized, so only verification is tested"
+  },
+  "keys": {
+    "alice": {
+      "handle": "alice",
+      "device_id": "d_alice_iphone",
+      "sign_priv_hex": "1111111111111111111111111111111111111111111111111111111111111111",
+      "sign_pub": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q",
+      "dh_priv_hex": "2222222222222222222222222222222222222222222222222222222222222222",
+      "dh_pub": "BNZak5d8qj0bCBhS_1ennkZfFmBXcwS66tUF3TpIWJzzUBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU",
+      "ek_priv_hex": "7777777777777777777777777777777777777777777777777777777777777777",
+      "ek_pub": "BORQVOtbGr2XZlD385W_UdDY3Rk-AXTnoUocjBJ_vfLbrv4yk7BEXz-Sv44QggLgCUFciZSZYgxxt_bfkCETLJw"
+    },
+    "bob": {
+      "handle": "bob",
+      "device_id": "d_bob_pixel",
+      "sign_priv_hex": "3333333333333333333333333333333333333333333333333333333333333333",
+      "sign_pub": "BFGnWAgziY6hsYPL1zUKQJkHjG7xweGOlwzXaDA18l59ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE",
+      "dh_priv_hex": "4444444444444444444444444444444444444444444444444444444444444444",
+      "dh_pub": "BFs2iQ2svXyalrt0oe4os9LXW3LgmiDvJc-Ob9ip8DUNDhS-2NRoKjTYNTi9_1uW6JpmZuwNtXRdAvoSEAct91o",
+      "spk_id": 17,
+      "spk_priv_hex": "5555555555555555555555555555555555555555555555555555555555555555",
+      "spk_pub": "BFfpd_bbfjPD_nrPKELtmHAJyvVtRYaC_KRHt9PXYqs0xas3cLpXO9_1QUBlZA_7WzRt-oTexNtNaOX1nMRxwuw",
+      "spk_sig": "eU17OWkzQwBbB6d3TkGmXadSqfvhSGQY-l_uH41QBvLLYVseiYzQRH2OJ6rVo3OWJHlsXJdpi9l_FOD86W9SeQ",
+      "opk_id": 433,
+      "opk_priv_hex": "6666666666666666666666666666666666666666666666666666666666666666",
+      "opk_pub": "BAu7xei8hL0z0dPOA_-smnR_TBmT_dsuyTpBFqhvAip3w8FxkVWaTCoapX55uNGXfaLJWRcvR440HicCjWn_-3s"
+    }
+  },
+  "x3dh": {
+    "dh1": "RSlsEjGVxB4k44b4g1J9l9IrNbJXaupYn-S3veB4KHs",
+    "dh2": "rsx-aWGtgC-zSEu1sbcJpQvZ4XiM-Exp-ANoBqkTl8g",
+    "dh3": "OVvrQwOE4Wj9IuyqcjcpzMuKeL0DgGhV0FTS29Ezpc4",
+    "dh4": "78X47Z9wpx8yCtYa1oeaw2QXLZg9TXy-zjQ5ZHRRqVI",
+    "info": "QkItWDNESC12MWRfYWxpY2VfaXBob25lZF9ib2JfcGl4ZWw",
+    "sk": "_tIKSqxFMBobm24kgsXpStUpsoT5wxFdo2hNYF0xPiI",
+    "sk_without_opk": "8KB-J3XqDcwPAHEU81AmNNeSIefLKfDpklT2m-kbnlA"
+  },
+  "chain": [
+    {
+      "n": 0,
+      "ck": "_tIKSqxFMBobm24kgsXpStUpsoT5wxFdo2hNYF0xPiI",
+      "mk": "17IBwVTLK_oGFaSl619r7mfb2D8M_VYLd_rLYXGLBVs"
+    },
+    {
+      "n": 1,
+      "ck": "3iJfnY0mKGxFLRmNWNO9IwOpPAi_PYjpniMZf4mMbXI",
+      "mk": "3vZ3oWhWhiLnvDGwIE1W5URuNRz9rM-qMOm3RQGy4oo"
+    },
+    {
+      "n": 2,
+      "ck": "KpeZk0KhstBKhqP5iv_rvQ688pE8Zwn2J_hvqnL8dt0",
+      "mk": "xewDWGs2ui6YeMcpcEM-5tEbcHkrPaostQpgiLPYtMs"
+    }
+  ],
+  "message": {
+    "msg_id": "6f1c2b8e-0000-4000-8000-000000000001",
+    "payload_json": "{\"body\":\"Hello Bob, this is encrypted.\",\"expires_in\":0,\"sent_at\":1761200000,\"t\":\"text\"}",
+    "padded_len": 256,
+    "cek": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "content_nonce": "oKGio6Slpqeoqaqr",
+    "content_ad": "bb1:6f1c2b8e-0000-4000-8000-000000000001:d_alice_iphone",
+    "wrap_nonce": "sLGys7S1tre4ubq7",
+    "envelope": {
+      "v": 1,
+      "suite": "p256-v1",
+      "type": "msg",
+      "sender_device_id": "d_alice_iphone",
+      "msg_id": "6f1c2b8e-0000-4000-8000-000000000001",
+      "nonce": "oKGio6Slpqeoqaqr",
+      "ciphertext": "nToeQiGyIIVALeK_axXgnB_OdTDm3ysfvGdVphrFFnOrBjOaywxxEX35fLhgCOaKGHIoaljgNlwyO2Uq-xHxko6NslkBl9TQxNLPNK267oDvf87csePk-u51Ppqxmk2Uj4QrqwOuj5ue2wZQhYjtKCRQYa7eNZs8L8_epLRV8k3FEbB_00KAFzdZ_osSSpHWiNmta77Q-oz9zb31r8c0K8YYH7G2akAWggorIm_StuF3Jv2YAmauPoKCdjlcgh9XNDZMyWDRu-3zXUDPSSQytVLp5Og_Y9i47cFY5V3G2mdoUTIhuW3ZP8C8Ql9CC0B_C73CP4lScIdrra1qZTMokjqJDFhidVR22NJlY071r2k",
+      "keys": [
+        {
+          "device_id": "d_bob_pixel",
+          "handle": "bob",
+          "prekey": {
+            "ek": "BORQVOtbGr2XZlD385W_UdDY3Rk-AXTnoUocjBJ_vfLbrv4yk7BEXz-Sv44QggLgCUFciZSZYgxxt_bfkCETLJw",
+            "spk_id": 17,
+            "opk_id": 433,
+            "ik": "BNZak5d8qj0bCBhS_1ennkZfFmBXcwS66tUF3TpIWJzzUBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU",
+            "isk": "BAIX5hfwtkQ5KCePlpmeaaI6TywVK99tbN9m5bgCgtTtGUp968uXcS0t2jyoWqh2Wlb0X8dYWZZS8ol8ZTBuV5Q"
+          },
+          "n": 0,
+          "pn": 0,
+          "wrapped": "oHuKdaax5UX7qp-wKkfh0TNBp8YjklfioW5pnpkJWN4T5tJyrvq85ZxaONzWd3GU",
+          "nonce": "sLGys7S1tre4ubq7"
+        }
+      ],
+      "sig": null
+    }
+  },
+  "padding": [
+    {
+      "len": 0,
+      "padded_len": 256
+    },
+    {
+      "len": 1,
+      "padded_len": 256
+    },
+    {
+      "len": 255,
+      "padded_len": 256
+    },
+    {
+      "len": 256,
+      "padded_len": 512
+    },
+    {
+      "len": 511,
+      "padded_len": 512
+    },
+    {
+      "len": 1000,
+      "padded_len": 1024
+    },
+    {
+      "len": 4095,
+      "padded_len": 4096
+    },
+    {
+      "len": 4096,
+      "padded_len": 8192
+    },
+    {
+      "len": 10000,
+      "padded_len": 12288
+    }
+  ],
+  "padme": [
+    {
+      "len": 1,
+      "padded_len": 1
+    },
+    {
+      "len": 100,
+      "padded_len": 104
+    },
+    {
+      "len": 1000,
+      "padded_len": 1024
+    },
+    {
+      "len": 70000,
+      "padded_len": 71680
+    },
+    {
+      "len": 1048576,
+      "padded_len": 1048576
+    },
+    {
+      "len": 5000001,
+      "padded_len": 5111808
+    }
+  ],
+  "safety_number": {
+    "alice_fp_hex": "0647b7bc7c44538a0eb5e4fa4dc388636456100f6afe960e633d374cb032",
+    "bob_fp_hex": "6a2b7a8ec7319bd689352c16b3202249832397e80a2fc40dfa171a2b504f",
+    "groups": [
+      "27452",
+      "32789",
+      "43816",
+      "24111",
+      "80323",
+      "77778",
+      "85607",
+      "25813",
+      "98946",
+      "60552",
+      "50746",
+      "94031"
+    ],
+    "display": "27452 32789 43816 24111 80323 77778 85607 25813 98946 60552 50746 94031",
+    "qr": "bbsafety:1:alice:0647b7bc7c44538a0eb5e4fa4dc388636456100f6afe960e633d374cb032:bob:6a2b7a8ec7319bd689352c16b3202249832397e80a2fc40dfa171a2b504f"
+  },
+  "attachment": {
+    "key": "ERERERERERERERERERERERERERERERERERERERERERE",
+    "base_nonce": "IiIiIiIiIiIiIiIi",
+    "plain_len": 70000,
+    "plain_rule": "byte i = (i*7) mod 256",
+    "padded_len": 71680,
+    "blob_len": 71712,
+    "sha256_hex": "153aa55ba2754226a9eb68029bc1ca3a4c2a6a72713e9d6c194ff8adc9046b99"
+  },
+  "hkdf_rfc5869_case1": {
+    "ikm_hex": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+    "salt_hex": "000102030405060708090a0b0c",
+    "info_hex": "f0f1f2f3f4f5f6f7f8f9",
+    "l": 42,
+    "okm_hex": "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865"
+  }
+}

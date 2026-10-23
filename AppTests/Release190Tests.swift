@@ -1,4 +1,5 @@
 import XCTest
+import CallKit
 @testable import Blindbandit
 
 @MainActor
@@ -82,5 +83,15 @@ final class PushRouteTests: XCTestCase {
     func testIncomingEmptyItems() throws {
         let d = try JSONDecoder().decode(ItemsPayload<BlindbanditIncomingCall>.self, from: Data(#"{"items":[]}"#.utf8))
         XCTAssertTrue(d.items.isEmpty)
+    }
+
+    func testRecentsHandleMapsBack() {
+        XCTAssertEqual(CallKitManager.recentsHandle("@bbfoundation"), "bbfoundation")
+        XCTAssertEqual(CallKitManager.recentsHandle("bbfoundation"), "bbfoundation")
+    }
+
+    func testEndReasonForRecents() {
+        XCTAssertEqual(CallKitManager.endReason(wasConnected: true), .remoteEnded)
+        XCTAssertEqual(CallKitManager.endReason(wasConnected: false), .unanswered)
     }
 }

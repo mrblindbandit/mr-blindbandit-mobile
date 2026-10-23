@@ -168,6 +168,10 @@ struct BlindbanditApp: App {
                         .accessibilityHidden(true)
                 }
             }
+            .onContinueUserActivity("INStartCallIntent") { activity in
+                // Recents / Siri at cold launch: queued until the signed-in, unlocked screen attaches.
+                CallKitManager.shared.handle(userActivity: activity)
+            }
             .environmentObject(lock)
             .environmentObject(push)
             .environmentObject(privacy)

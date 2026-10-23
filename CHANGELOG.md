@@ -6,6 +6,11 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 
 ---
 
+## 1.9.0 (14)
+- Calls are logged in Phone > Recents: incoming and outgoing calls, whether answered, missed or declined, with the real name, @handle and audio/video type.
+- CallKit end reports wait until iOS has registered the call. The server's call_end push ends the call as remote-ended or unanswered.
+- Tapping a Recents entry calls back, including at cold launch.
+
 ## [1.9.0 iOS (13)] — 2026-10-23
 
 ### Added

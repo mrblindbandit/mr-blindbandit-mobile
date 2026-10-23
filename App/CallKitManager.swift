@@ -24,6 +24,12 @@ final class CallKitManager: NSObject {
     private var answered: Set<String> = []
     private var pendingAnswer: String?
     private var pendingIncoming: [String: BlindbanditIncomingCall] = [:]
+    /// Calls CallKit has accepted (reportNewIncomingCall / CXStartCallAction finished). Ending a call
+    /// before this point makes iOS drop it from Recents, so ends are queued until it's registered.
+    private var registered: Set<UUID> = []
+    private var pendingEnds: [UUID: CXCallEndedReason] = [:]
+    private var connected: Set<String> = []
+    private var pendingCallBack: (value: String, name: String, video: Bool)?
 
     /// Called from AppDelegate.didFinishLaunching so VoIP pushes delivered at cold launch are handled.
     func setUp() {
@@ -60,6 +66,10 @@ final class CallKitManager: NSObject {
             pendingAnswer = nil
             Task { await service.performJoin(id: id) }
         }
+        if let back = pendingCallBack {
+            pendingCallBack = nil
+            callBack(value: back.value, name: back.name, video: back.video)
+        }
     }
 
     func hasCall(_ callID: String) -> Bool { uuids[callID] != nil }
@@ -86,21 +96,28 @@ final class CallKitManager: NSObject {
         action.contactIdentifier = identity.name
         CallKitManager.donate(handle: identity.handle, name: identity.name, video: video)
         controller.request(CXTransaction(action: action)) { [weak self] error in
-            guard error == nil else { return }
             Task { @MainActor in
+                guard let self else { return }
+                guard error == nil else { self.uuids[callID] = nil; self.outgoing.remove(callID); return }
+                self.registered.insert(id)
                 let update = CXCallUpdate()
                 update.remoteHandle = cxHandle
                 update.localizedCallerName = identity.name
                 update.supportsHolding = true
                 update.hasVideo = video
-                self?.provider?.reportCall(with: id, updated: update)
-                self?.provider?.reportOutgoingCall(with: id, startedConnectingAt: Date())
+                update.supportsGrouping = false
+                update.supportsUngrouping = false
+                update.supportsDTMF = false
+                self.provider?.reportCall(with: id, updated: update)
+                self.provider?.reportOutgoingCall(with: id, startedConnectingAt: Date())
+                self.flushPendingEnd(id)
             }
         }
     }
 
     func reportOutgoingConnected(callID: String) {
-        guard let id = uuids[callID], outgoing.contains(callID) else { return }
+        guard let id = uuids[callID], outgoing.contains(callID), !connected.contains(callID) else { return }
+        connected.insert(callID)
         provider?.reportOutgoingCall(with: id, connectedAt: Date())
     }
 
@@ -121,22 +138,45 @@ final class CallKitManager: NSObject {
         update.localizedCallerName = identity.name
         update.hasVideo = call.isVideo
         update.supportsHolding = true
-        CallKitManager.donate(handle: identity.handle, name: identity.name, video: call.isVideo)
+        CallKitManager.donate(handle: identity.handle, name: identity.name, video: call.isVideo, incoming: true)
         update.supportsGrouping = false
         update.supportsUngrouping = false
         update.supportsDTMF = false
         provider.reportNewIncomingCall(with: id, update: update) { [weak self] error in
-            if error != nil { Task { @MainActor in self?.uuids[call.id] = nil } }
+            Task { @MainActor in
+                guard let self else { return }
+                if error != nil { self.uuids[call.id] = nil; self.pendingEnds[id] = nil }
+                else { self.registered.insert(id); self.flushPendingEnd(id) }
+            }
             completion?()
         }
     }
 
+    /// Tells CallKit the call is over so iOS writes it to Recents. With no explicit reason:
+    /// a connected call is "remote ended", a never-answered one is "unanswered" (a missed call).
     func reportEnded(callID: String, reason: CXCallEndedReason?) {
         guard let id = uuids.removeValue(forKey: callID) else { return }
+        let wasConnected = answered.contains(callID) || connected.contains(callID)
         outgoing.remove(callID)
         answered.remove(callID)
-        if let reason { provider?.reportCall(with: id, endedAt: Date(), reason: reason) }
-        else { provider?.reportCall(with: id, endedAt: Date(), reason: .remoteEnded) }
+        connected.remove(callID)
+        let final = reason ?? CallKitManager.endReason(wasConnected: wasConnected)
+        if registered.contains(id) {
+            registered.remove(id)
+            provider?.reportCall(with: id, endedAt: Date(), reason: final)
+        } else {
+            pendingEnds[id] = final
+        }
+    }
+
+    nonisolated static func endReason(wasConnected: Bool) -> CXCallEndedReason {
+        wasConnected ? .remoteEnded : .unanswered
+    }
+
+    private func flushPendingEnd(_ id: UUID) {
+        guard let reason = pendingEnds.removeValue(forKey: id) else { return }
+        registered.remove(id)
+        provider?.reportCall(with: id, endedAt: Date(), reason: reason)
     }
 
     func reportVideo(callID: String, video: Bool) {
@@ -176,14 +216,24 @@ final class CallKitManager: NSObject {
         let value = person.personHandle?.value ?? person.displayName
         guard !value.isEmpty else { return }
         let video = intent.callCapability == .videoCall
+        guard service != nil else { pendingCallBack = (value, person.displayName, video); return }
+        callBack(value: value, name: person.displayName, video: video)
+    }
+
+    private func callBack(value: String, name: String, video: Bool) {
         Task {
             guard let service else { return }
             if let groupID = CallKitManager.groupID(forHandle: value) {
-                await service.startGroupCall(groupID: groupID, groupName: CallKitManager.groupName(forHandle: value) ?? person.displayName, video: video)
+                await service.startGroupCall(groupID: groupID, groupName: CallKitManager.groupName(forHandle: value) ?? name, video: video)
             } else {
-                await service.startCall(recipient: value, video: video)
+                await service.startCall(recipient: CallKitManager.recentsHandle(value), video: video)
             }
         }
+    }
+
+    /// Recents stores "@handle"; map it (or a bare handle) back to the username to call.
+    nonisolated static func recentsHandle(_ value: String) -> String {
+        BlindbanditHandle.normalize(value.hasPrefix("@") ? String(value.dropFirst()) : value)
     }
 
     // MARK: Caller identity (never a UUID or call id on any system surface)
@@ -217,13 +267,15 @@ final class CallKitManager: NSObject {
     }
 
     /// Donates the call so Recents and Siri suggestions can call back by name.
-    static func donate(handle: String, name: String, video: Bool) {
-        let person = INPerson(personHandle: INPersonHandle(value: handle, type: .unknown), nameComponents: nil,
+    static func donate(handle: String, name: String, video: Bool, incoming: Bool = false) {
+        let person = INPerson(personHandle: INPersonHandle(value: handle, type: .unknown, label: nil), nameComponents: nil,
                               displayName: name, image: nil, contactIdentifier: nil, customIdentifier: handle)
         let intent = INStartCallIntent(callRecordFilter: nil, callRecordToCallBack: nil, audioRoute: .unknown,
                                        destinationType: .normal, contacts: [person],
                                        callCapability: video ? .videoCall : .audioCall)
-        INInteraction(intent: intent, response: nil).donate(completion: nil)
+        let interaction = INInteraction(intent: intent, response: nil)
+        interaction.direction = incoming ? .incoming : .outgoing
+        interaction.donate(completion: nil)
     }
 
     // MARK: VoIP payload
@@ -252,8 +304,11 @@ final class CallKitManager: NSObject {
 extension CallKitManager: CXProviderDelegate {
     nonisolated func providerDidReset(_ provider: CXProvider) {
         MainActor.assumeIsolated {
-            for id in uuids.keys { service?.finishCall(notifyServer: true, announcement: "Call ended.") ; _ = id }
+            if !uuids.isEmpty { service?.finishCall(notifyServer: true, announcement: "Call ended.") }
             uuids = [:]
+            registered = []
+            pendingEnds = [:]
+            connected = []
         }
     }
 
@@ -265,6 +320,7 @@ extension CallKitManager: CXProviderDelegate {
         MainActor.assumeIsolated {
             guard let callID = callID(for: action.callUUID) else { action.fail(); return }
             answered.insert(callID)
+            connected.insert(callID)
             if let service {
                 Task { await service.performJoin(id: callID) }
             } else {
@@ -279,6 +335,8 @@ extension CallKitManager: CXProviderDelegate {
             guard let callID = callID(for: action.callUUID) else { action.fulfill(); return }
             let wasConnected = answered.contains(callID) || outgoing.contains(callID)
             uuids[callID] = nil
+            registered.remove(action.callUUID)
+            connected.remove(callID)
             outgoing.remove(callID)
             answered.remove(callID)
             pendingIncoming[callID] = nil
@@ -345,12 +403,14 @@ extension CallKitManager: PKPushRegistryDelegate {
             }
             if parsed.type == "call_end" {
                 if uuids[call.id] != nil {
+                    let reason = CallKitManager.endReason(wasConnected: answered.contains(call.id) || connected.contains(call.id))
                     service?.remoteEnded(callID: call.id)
-                    reportEnded(callID: call.id, reason: .answeredElsewhere)
+                    reportEnded(callID: call.id, reason: reason)
                     completion()
                 } else {
+                    // Never saw the ring (app was killed): log it as a missed call so it's in Recents.
                     reportIncoming(call) { [weak self] in
-                        Task { @MainActor in self?.reportEnded(callID: call.id, reason: .remoteEnded) }
+                        Task { @MainActor in self?.reportEnded(callID: call.id, reason: .unanswered) }
                         completion()
                     }
                 }

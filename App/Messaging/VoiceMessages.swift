@@ -64,6 +64,7 @@ final class VoiceRecorder: NSObject, ObservableObject {
 
 /// Sends a recorded voice note: encrypted attachment + E2EE "voice" payload when the server supports it,
 /// otherwise an on-device transcript as a plaintext message so nothing is lost.
+@MainActor
 enum VoiceSender {
     static let cacheDir: URL = {
         let d = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("voice", isDirectory: true)

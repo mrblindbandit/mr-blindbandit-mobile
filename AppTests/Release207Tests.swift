@@ -36,6 +36,11 @@ final class Release207Tests: XCTestCase {
     func testAltRingtoneInPicker() {
         XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditAlt.rawValue, "ringtone_mrblindbandit_alt")
         XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditAlt.title, "Mr. BlindBandit Alt")
+        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditNight.rawValue, "ringtone_mrblindbandit_night")
+        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditNight.title, "Mr. BlindBandit Night")
+        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditPulse.rawValue, "ringtone_mrblindbandit_pulse")
+        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditPulse.title, "Mr. BlindBandit Pulse")
+        XCTAssertEqual(CallSounds.Ringtone.mrBlindBandit.rawValue, "ringtone_mrblindbandit")
     }
 
     func testAIPersonaOwnerGate() {

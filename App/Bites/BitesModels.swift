@@ -54,7 +54,7 @@ struct BiteReactions: Codable, Equatable {
 }
 
 /// One feed item: text post from newsfeed/feed, or short video from BanditBites.
-struct BiteItem: Identifiable, Equatable {
+struct BiteItem: Identifiable, Equatable, Decodable {
     let id: String
     var body: String
     var caption: String?
@@ -71,26 +71,15 @@ struct BiteItem: Identifiable, Equatable {
 
     enum Kind: String { case post, bite }
 
-    var displayText: String {
-        let t = body.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !t.isEmpty { return t }
-        return caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    init(id: String, body: String, caption: String?, media: [String], video_url: String?, poster_url: String?,
+         created_at: Double, author: BiteAuthor, likes: Int, comments: Int, liked_by_me: Bool,
+         my_reaction: String?, kind: Kind) {
+        self.id = id; self.body = body; self.caption = caption; self.media = media
+        self.video_url = video_url; self.poster_url = poster_url; self.created_at = created_at
+        self.author = author; self.likes = likes; self.comments = comments
+        self.liked_by_me = liked_by_me; self.my_reaction = my_reaction; self.kind = kind
     }
 
-    var accessibilitySummary: String {
-        var parts = ["\(author.display_name)"]
-        if author.verified { parts.append("Verified") }
-        parts.append("@\(author.handle)")
-        let text = displayText
-        if !text.isEmpty { parts.append(text) }
-        if likes > 0 { parts.append("\(likes) likes") }
-        if comments > 0 { parts.append("\(comments) comments") }
-        if liked_by_me { parts.append("Liked by you") }
-        return parts.joined(separator: ", ")
-    }
-}
-
-extension BiteItem: Decodable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = (try? c.decode(String.self, forKey: .id)) ?? UUID().uuidString
@@ -125,6 +114,24 @@ extension BiteItem: Decodable {
     enum CodingKeys: String, CodingKey {
         case id, body, caption, media, video_url, poster_url, created_at, author, likes, comments
         case liked_by_me, my_reaction, reactions, handle, product
+    }
+
+    var displayText: String {
+        let t = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !t.isEmpty { return t }
+        return caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    var accessibilitySummary: String {
+        var parts = ["\(author.display_name)"]
+        if author.verified { parts.append("Verified") }
+        parts.append("@\(author.handle)")
+        let text = displayText
+        if !text.isEmpty { parts.append(text) }
+        if likes > 0 { parts.append("\(likes) likes") }
+        if comments > 0 { parts.append("\(comments) comments") }
+        if liked_by_me { parts.append("Liked by you") }
+        return parts.joined(separator: ", ")
     }
 }
 

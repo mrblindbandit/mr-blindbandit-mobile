@@ -57,3 +57,17 @@ Verify persists on the server; the same `VerifiedBadge` (checkmark.seal.fill) ap
 3. Relative `avatar_url` (`/assets/…`) should ideally be absolute HTTPS for Nuke/AsyncImage.
 4. Return `role` on `/v1/social/me` so AdminGate does not need hardcoded owner handles.
 5. Prefetch counts endpoint batch (`followers/following/bites` for N handles) for people search speed.
+
+
+## Upcoming batch ea112272-99f2-4d9b-a9a6-8b67922c2cb9 (deploy_authorized)
+
+Deferred until test/build. Planned aliases (not live yet — HTTP 404 as of 2026-10-25):
+
+| Alias | Maps from (live today) |
+|---|---|
+| `GET /api/v1/feed` | `/v1/social/newsfeed` / `/v1/social/feed` |
+| `GET /api/v1/bites` | `/v1/social/bites` |
+| `GET /api/v1/users/{handle}` | `/v1/social/profiles/{handle}/full` |
+| `/api/v1/admin/…` verify | `/v1/social/admin/users/{id}/verify` |
+
+iOS `BitesAPI.requestSocial` falls through to `/api/v1/feed` and `/api/v1/bites` on primary 404 so the client picks up the batch without another app release once deployed.

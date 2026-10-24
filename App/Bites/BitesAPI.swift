@@ -2,6 +2,7 @@ import Foundation
 
 // MARK: - Disk cache (instant open, no spinner when warm)
 
+@MainActor
 enum BitesCache {
     private static var dir: URL {
         let u = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -29,7 +30,33 @@ enum BitesCache {
 
 // MARK: - API
 
+@MainActor
 enum BitesAPI {
+
+    /// Live social API today: `/v1/social/…`.
+    /// Upcoming batch ea112272 (deploy_authorized): `/api/v1/feed|/bites|/users|/admin…`.
+    /// Prefer live paths; optionally probe aliases when primary 404s.
+    private static let upcomingAliases: [String: String] = [
+        "v1/social/newsfeed": "api/v1/feed",
+        "v1/social/feed": "api/v1/feed",
+        "v1/social/bites": "api/v1/bites",
+    ]
+
+    private static func requestSocial(_ path: String, method: String = "GET", body: [String: Any]? = nil) async throws -> Data {
+        do {
+            return try await BlindbanditAPI.request(path, method: method, body: body)
+        } catch let err as CommunicationsError {
+            // On notFound, try upcoming alias once (batch not live yet → stays on primary).
+            if case .notFound(_) = err, method == "GET",
+               let base = path.split(separator: "?").first.map(String.init),
+               let alias = upcomingAliases[base] {
+                let q = path.contains("?") ? "?" + path.split(separator: "?", maxSplits: 1)[1] : ""
+                return try await BlindbanditAPI.request(alias + q, method: method, body: body)
+            }
+            throw err
+        }
+    }
+
     /// Newsfeed (text posts) — primary Bites tab content while video BanditBites fill in.
     static func newsfeed(limit: Int = 40, offset: Int = 0, useCache: Bool = true) async throws -> [BiteItem] {
         let path = "v1/social/newsfeed?limit=\(limit)&offset=\(offset)"
@@ -39,7 +66,7 @@ enum BitesAPI {
             // Return cached immediately via caller; still refresh below when forced.
             _ = page
         }
-        let data = try await BlindbanditAPI.request(path)
+        let data = try await requestSocial(path)
         if offset == 0 { BitesCache.save(data, key: cacheKey) }
         return try BlindbanditAPI.decode(SocialFeedPage.self, from: data).items
     }
@@ -51,7 +78,7 @@ enum BitesAPI {
     }
 
     static func videoBites(limit: Int = 25, offset: Int = 0) async throws -> [BiteItem] {
-        let data = try await BlindbanditAPI.request("v1/social/bites?limit=\(limit)&offset=\(offset)")
+        let data = try await requestSocial("v1/social/bites?limit=\(limit)&offset=\(offset)")
         if offset == 0 { BitesCache.save(data, key: "bites-0") }
         return try BlindbanditAPI.decode(SocialFeedPage.self, from: data).items
     }
@@ -198,17 +225,5 @@ enum BitesAPI {
             "v1/social/profiles/\(BlindbanditAPI.escape(handle))/posts?limit=\(limit)"
         )
         return try BlindbanditAPI.decode(SocialFeedPage.self, from: data).items
-    }
-}
-
-// Memberwise init for BiteItem (Decodable synthesis removed default memberwise)
-extension BiteItem {
-    init(id: String, body: String, caption: String?, media: [String], video_url: String?, poster_url: String?,
-         created_at: Double, author: BiteAuthor, likes: Int, comments: Int, liked_by_me: Bool,
-         my_reaction: String?, kind: Kind) {
-        self.id = id; self.body = body; self.caption = caption; self.media = media
-        self.video_url = video_url; self.poster_url = poster_url; self.created_at = created_at
-        self.author = author; self.likes = likes; self.comments = comments
-        self.liked_by_me = liked_by_me; self.my_reaction = my_reaction; self.kind = kind
     }
 }

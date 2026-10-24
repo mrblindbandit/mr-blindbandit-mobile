@@ -24,6 +24,7 @@ enum AdminGate {
 
 // MARK: - Admin API
 
+@MainActor
 enum AdminAPI {
     static func overview() async throws -> AdminOverview {
         let data = try await BlindbanditAPI.request("v1/social/admin/overview")

@@ -377,8 +377,8 @@ enum CallWarmup {
         var api = URLRequest(url: AppConfig.apiBaseURL.appending(path: "v1/health"))
         api.httpMethod = "HEAD"; api.timeoutInterval = 5
         URLSession.shared.dataTask(with: api).resume()
-        // Touch installation_id so UserDefaults is hot before placeCall.
-        _ = BlindbanditAPI.installationID
+        // Touch installation_id so UserDefaults is hot before placeCall (MainActor).
+        Task { @MainActor in _ = BlindbanditAPI.installationID }
     }
 }
 

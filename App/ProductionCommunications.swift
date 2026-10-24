@@ -1278,6 +1278,8 @@ final class ProductionCommunicationsService: ObservableObject {
         room = newRoom
         isVideoCall = video
         micEnabled = true
+        // Keep Apple voice processing / AEC on — bypassing it makes speakerphone echo badly.
+        AudioManager.shared.isVoiceProcessingBypassed = false
         try await newRoom.localParticipant.setMicrophone(enabled: true)
         let startCameraOff = UserDefaults.standard.bool(forKey: "startCallsWithCameraOff")
         if video && !startCameraOff {

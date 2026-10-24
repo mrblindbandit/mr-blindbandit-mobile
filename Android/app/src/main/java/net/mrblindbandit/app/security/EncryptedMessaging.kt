@@ -10,7 +10,7 @@ import org.json.JSONObject
 import java.net.URLEncoder
 
 /** Coordinates the existing authenticated key directory with p256-v1; never mints server credentials. */
-class EncryptedMessaging internal constructor(private val engine: E2EEEngine, private val myHandle: String,
+class EncryptedMessaging internal constructor(internal val engine: E2EEEngine, private val myHandle: String,
     private val request: suspend (String, String, JSONObject?) -> JSONObject) {
     constructor(context: Context, accountId: String, myHandle: String,
         request: suspend (String, String, JSONObject?) -> JSONObject) : this(E2EEEngine(context, accountId), myHandle, request)
@@ -77,7 +77,7 @@ class EncryptedMessaging internal constructor(private val engine: E2EEEngine, pr
     }
     fun resolve(row: JSONObject): ServerMessage? {
         val message = ServerMessage.parse(row) ?: return null
-        if (row.lBool("view_once")) return message.copy(body = "View-once message. Opening on Android is not available yet.", encrypted = row.lBool("e2ee"))
+        // View-once: decrypt and surface media; consumption is tracked locally after the user opens it.
         val expiresAt = net.mrblindbandit.app.connect.Lenient.timestamp(row.opt("expires_at"))
         if (expiresAt != null && expiresAt <= System.currentTimeMillis()) return null
         if (!row.lBool("e2ee")) return message
@@ -115,4 +115,11 @@ class EncryptedMessaging internal constructor(private val engine: E2EEEngine, pr
             message.copy(body = body, encrypted = true, media = media)
         } catch (e: Exception) { message.copy(body = "Couldn't decrypt this message on this device.", encrypted = true, decryptFailed = true) }
     }
+
+    fun markViewOnceOpened(context: Context, messageId: String) {
+        val prefs = context.getSharedPreferences("bb_view_once", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(messageId, true).apply()
+    }
+    fun wasViewOnceOpened(context: Context, messageId: String): Boolean =
+        context.getSharedPreferences("bb_view_once", Context.MODE_PRIVATE).getBoolean(messageId, false)
 }

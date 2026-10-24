@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import net.mrblindbandit.app.auth.ClerkAuthService
 import net.mrblindbandit.app.config.AppConfig
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -483,7 +484,9 @@ class ProductionCommunicationsService(
             id = response.lString("id", "call_id").ifBlank { null }
             callPeerName = response.lString("group_name").ifBlank { "Group" }
             callPeerHandle = ""
-            connectCall(response, video, outgoing = true)
+            // Fan out the same frame key to every member who has device keys (group frame E2EE).
+            val key = id?.let { callId -> sendGroupCallFrameKey(callId, groupId) }
+            connectCall(response, video, outgoing = true, frameKey = key)
         } catch (e: Exception) {
             id?.let { endOnServer(it) }; cleanupRoom()
             statusMessage = friendly(e, "Group call could not start")
@@ -594,6 +597,33 @@ class ProductionCommunicationsService(
         Announcer.announce(appContext, statusMessage)
         scope.launch { watchForHangup(newRoom) }
         scope.launch { while (room === newRoom && isInCall) { delay(1000); if (room === newRoom && isInCall) callSeconds += 1 } }
+    }
+
+    /** Fan out one shared frame key to every group member with device keys. */
+    private suspend fun sendGroupCallFrameKey(callId: String, groupId: String): CallFrameKeys.Key? {
+        val engine = encryption ?: return null
+        val key = CallFrameKeys.newKey(callId)
+        val members = try {
+            groupDetail(groupId).optJSONArray("members") ?: JSONArray()
+        } catch (_: Exception) {
+            return null
+        }
+        val handles = (0 until members.length()).mapNotNull { i ->
+            members.getJSONObject(i).lString("handle").takeIf { it.isNotBlank() }
+        }.map(::normalizeHandle).filter { it.isNotBlank() && !it.equals(myHandle, true) }.distinct()
+        var sent = 0
+        for (handle in handles) {
+            try {
+                val payload = JSONObject().put("t", "call_key").put("body", key.wire()).put("silent", true)
+                    .put("sent_at", System.currentTimeMillis())
+                val fields = engine.fields(listOf(handle), payload) ?: continue
+                request("/v1/social/messages", "POST", fields.put("handle", handle).put("silent", true))
+                sent++
+            } catch (_: Exception) {
+                // Skip peers without keys or transient failures; keep trying others.
+            }
+        }
+        return if (sent > 0) key else null
     }
 
     /** A call key is sent only inside an authenticated p256-v1 envelope, never as plaintext. */

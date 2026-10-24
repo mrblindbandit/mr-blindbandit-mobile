@@ -111,6 +111,7 @@ import net.mrblindbandit.app.connect.rememberHaptics
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material.icons.automirrored.filled.Chat
 import net.mrblindbandit.app.creator.NativeCreatorToolkitScreen
+import net.mrblindbandit.app.androidonly.NotificationChannels
 import net.mrblindbandit.app.settings.SettingsScreen
 import net.mrblindbandit.app.ui.BlindbanditTheme
 import net.mrblindbandit.app.ui.Spacing
@@ -138,6 +139,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         installSplashScreen()
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        NotificationChannels.ensure(this)
         BlindbanditFirebaseMessagingService.ensureChannels(this)
         deepLinkState.value = resolveDeepLink(intent)
         setContent { BlindbanditAndroidApp(this, deepLinkState) }
@@ -278,7 +280,12 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
     var currentUrl by rememberSaveable { mutableStateOf(BuildConfig.WEB_BASE_URL + (screenshot?.webPath ?: "/")) }
     var showSettings by rememberSaveable { mutableStateOf(screenshot?.settings == true) }
     var showWeb by rememberSaveable { mutableStateOf(screenshot?.webPath != null) }
-    var showAssistant by remember { mutableStateOf(false) }
+    var showAssistant by remember { mutableStateOf(activity.intent?.getBooleanExtra("open_assistant", false) == true) }
+    var showEncryptionPasscode by remember { mutableStateOf(false) }
+    var openMessagesHint by remember { mutableStateOf(activity.intent?.getBooleanExtra("open_messages", false) == true) }
+    LaunchedEffect(openMessagesHint) {
+        if (openMessagesHint) { tab = AppTab.MESSAGES; openMessagesHint = false }
+    }
     var showCreator by rememberSaveable { mutableStateOf(false) }
     var showChronicle by rememberSaveable { mutableStateOf(screenshot?.chronicle == true) }
     var chronicleArticle by rememberSaveable { mutableStateOf<String?>(screenshot?.articleUrl) }
@@ -365,6 +372,7 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
                     onRequestNotifications = { activity.requestNotificationPermission() },
                     commsSection = { net.mrblindbandit.app.connect.CommsSettingsSection(communications, activity, haptics) },
                 )
+                showEncryptionPasscode -> net.mrblindbandit.app.security.EncryptionPasscodeScreen(communications) { showEncryptionPasscode = false }
                 showAssistant -> net.mrblindbandit.app.ai.AssistantScreen(communications) { showAssistant = false }
                 showCreator -> {
                     BackHandler { showCreator = false }

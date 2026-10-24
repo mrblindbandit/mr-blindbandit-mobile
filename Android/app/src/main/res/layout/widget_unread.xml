@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="12dp"
+    android:background="@android:color/black"
+    android:contentDescription="Open Mr. BlindBandit messages">
+    <TextView
+        android:id="@+id/widget_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Mr. BlindBandit"
+        android:textColor="@android:color/white"
+        android:textStyle="bold"
+        android:textSize="14sp" />
+    <TextView
+        android:id="@+id/widget_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Messages"
+        android:textColor="@android:color/white"
+        android:textSize="16sp" />
+</LinearLayout>

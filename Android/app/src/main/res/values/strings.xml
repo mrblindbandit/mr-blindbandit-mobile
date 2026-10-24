@@ -6,4 +6,6 @@
     <string name="bluetooth_permission_rationale">Bluetooth connects headsets during voice and video calls.</string>
     <string name="privacy_policy_url">https://mrblindbandit.net/privacy/</string>
     <string name="terms_url">https://mrblindbandit.net/terms/</string>
+    <string name="widget_unread_description">Unread BlindBandit messages</string>
+    <string name="assistant_tile_label">AI assistant</string>
 </resources>

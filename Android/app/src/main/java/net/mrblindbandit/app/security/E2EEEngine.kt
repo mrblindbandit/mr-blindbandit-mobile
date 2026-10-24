@@ -168,4 +168,28 @@ class E2EEEngine(private val store: SecretStore) {
         cache(next, env, payload, senderProfileId); save(next)
         return payload
     }
+
+    /** Full engine state for passcode backup. Opaque Android PKCS8 blob — not interchangeable with iOS CryptoKit export. */
+    fun exportIdentity(): ByteArray = state.toString().toByteArray(Charsets.UTF_8)
+
+    fun importIdentity(data: ByteArray): Boolean = runCatching {
+        val next = JSONObject(String(data, Charsets.UTF_8))
+        require(next.has("sign") && next.has("dh") && next.has("device"))
+        // Force re-registration of prekeys on the restored identity.
+        next.put("registered", false)
+        next.remove("pending_prekeys")
+        save(next)
+        true
+    }.getOrDefault(false)
+
+    fun resetIdentity() {
+        val root = JSONObject()
+        root.put("device", UUID.randomUUID().toString().lowercase())
+        root.put("sign", encodePair(c.generate())).put("dh", encodePair(c.generate()))
+        root.put("spk", encodePair(c.generate())).put("spk_id", 1)
+        root.put("inbound", JSONObject()).put("cache", JSONObject()).put("pins", JSONObject())
+        root.put("opks", JSONObject()).put("next_opk", 1)
+        root.put("registered", false)
+        save(root)
+    }
 }

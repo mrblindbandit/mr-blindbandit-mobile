@@ -42,6 +42,20 @@ enum BitesAPI {
         "v1/social/bites": "api/v1/bites",
     ]
 
+    /// Profile full → upcoming `/api/v1/users/{handle}` when live.
+    private static func requestProfileFull(handle: String) async throws -> Data {
+        let h = BlindbanditAPI.escape(handle.lowercased())
+        let primary = "v1/social/profiles/\(h)/full"
+        do {
+            return try await BlindbanditAPI.request(primary)
+        } catch let err as CommunicationsError {
+            if case .notFound(_) = err {
+                return try await BlindbanditAPI.request("api/v1/users/\(h)")
+            }
+            throw err
+        }
+    }
+
     private static func requestSocial(_ path: String, method: String = "GET", body: [String: Any]? = nil) async throws -> Data {
         do {
             return try await BlindbanditAPI.request(path, method: method, body: body)
@@ -173,9 +187,9 @@ enum BitesAPI {
     // MARK: Profiles
 
     static func profileFull(handle: String) async throws -> SocialProfileFull {
-        let h = BlindbanditAPI.escape(handle.lowercased())
-        let data = try await BlindbanditAPI.request("v1/social/profiles/\(h)/full")
-        BitesCache.save(data, key: "profile-\(h)")
+        let h = handle.lowercased()
+        let data = try await requestProfileFull(handle: h)
+        BitesCache.save(data, key: "profile-\(BlindbanditAPI.escape(h))")
         return try BlindbanditAPI.decode(SocialProfileFull.self, from: data)
     }
 

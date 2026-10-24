@@ -26,13 +26,27 @@ enum AdminGate {
 
 @MainActor
 enum AdminAPI {
+
+    /// Prefer live `/v1/social/admin/…`; fall through to `/api/v1/admin/…` when batch ea112272 is live.
+    private static func requestAdmin(_ path: String, method: String = "GET", body: [String: Any]? = nil) async throws -> Data {
+        do {
+            return try await BlindbanditAPI.request(path, method: method, body: body)
+        } catch let err as CommunicationsError {
+            if case .notFound(_) = err, path.hasPrefix("v1/social/admin/") {
+                let alias = "api/v1/admin/" + String(path.dropFirst("v1/social/admin/".count))
+                return try await BlindbanditAPI.request(alias, method: method, body: body)
+            }
+            throw err
+        }
+    }
+
     static func overview() async throws -> AdminOverview {
-        let data = try await BlindbanditAPI.request("v1/social/admin/overview")
+        let data = try await requestAdmin("v1/social/admin/overview")
         return try BlindbanditAPI.decode(AdminOverview.self, from: data)
     }
 
     static func reports(limit: Int = 50) async throws -> [AdminReport] {
-        let data = try await BlindbanditAPI.request("v1/social/admin/reports?limit=\(limit)")
+        let data = try await requestAdmin("v1/social/admin/reports?limit=\(limit)")
         struct Page: Decodable { let items: [AdminReport]? }
         if let page = try? BlindbanditAPI.decode(Page.self, from: data), let items = page.items {
             return items
@@ -43,7 +57,7 @@ enum AdminAPI {
     }
 
     static func users(limit: Int = 50) async throws -> [AdminUserRow] {
-        let data = try await BlindbanditAPI.request("v1/social/admin/users?limit=\(limit)")
+        let data = try await requestAdmin("v1/social/admin/users?limit=\(limit)")
         struct Page: Decodable { let items: [AdminUserRow]? }
         if let page = try? BlindbanditAPI.decode(Page.self, from: data), let items = page.items {
             return items
@@ -52,7 +66,7 @@ enum AdminAPI {
     }
 
     static func verify(userID: String) async throws {
-        _ = try await BlindbanditAPI.request(
+        _ = try await requestAdmin(
             "v1/social/admin/users/\(BlindbanditAPI.escape(userID))/verify",
             method: "POST",
             body: [:]
@@ -60,7 +74,7 @@ enum AdminAPI {
     }
 
     static func unverify(userID: String) async throws {
-        _ = try await BlindbanditAPI.request(
+        _ = try await requestAdmin(
             "v1/social/admin/users/\(BlindbanditAPI.escape(userID))/unverify",
             method: "POST",
             body: [:]
@@ -70,7 +84,7 @@ enum AdminAPI {
     static func ban(userID: String, reason: String = "") async throws {
         var body: [String: Any] = [:]
         if !reason.isEmpty { body["reason"] = reason }
-        _ = try await BlindbanditAPI.request(
+        _ = try await requestAdmin(
             "v1/social/admin/users/\(BlindbanditAPI.escape(userID))/ban",
             method: "POST",
             body: body
@@ -78,7 +92,7 @@ enum AdminAPI {
     }
 
     static func reinstate(userID: String) async throws {
-        _ = try await BlindbanditAPI.request(
+        _ = try await requestAdmin(
             "v1/social/admin/users/\(BlindbanditAPI.escape(userID))/reinstate",
             method: "POST",
             body: [:]
@@ -86,7 +100,7 @@ enum AdminAPI {
     }
 
     static func hidePost(id: String) async throws {
-        _ = try await BlindbanditAPI.request(
+        _ = try await requestAdmin(
             "v1/social/admin/posts/\(BlindbanditAPI.escape(id))/hide",
             method: "POST",
             body: [:]
@@ -94,7 +108,7 @@ enum AdminAPI {
     }
 
     static func deletePost(id: String) async throws {
-        _ = try await BlindbanditAPI.request(
+        _ = try await requestAdmin(
             "v1/social/admin/posts/\(BlindbanditAPI.escape(id))",
             method: "DELETE"
         )
@@ -103,7 +117,7 @@ enum AdminAPI {
     static func resolveReport(id: String, status: String, note: String = "") async throws {
         var body: [String: Any] = ["status": status]
         if !note.isEmpty { body["note"] = note }
-        _ = try await BlindbanditAPI.request(
+        _ = try await requestAdmin(
             "v1/social/admin/reports/\(BlindbanditAPI.escape(id))/resolve",
             method: "POST",
             body: body

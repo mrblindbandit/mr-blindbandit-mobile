@@ -116,3 +116,11 @@ Validation of code commit `b82a591fca79b60559b3b5e11dd7c571b05fcf7a`:
 - No physical Android device or authenticated two-account Android/iOS test was available. No release-signing identity was created or replaced.
 
 Follow [ANDROID_RELEASE_QA.md](ANDROID_RELEASE_QA.md) for device scenarios and the exact publication gates. Full parity and production readiness remain incomplete. The existing dedicated signed workflow remains the required release path.
+
+## 2.0.10 (14) — 2026-10-25
+- Voice: temp-file MediaPlayer + shared VoicePlayback (rates / listen-once / TalkBack).
+- Calls: answer-echo grace ~8s; Bluetooth preference; call-path warm.
+- Speed: ConversationCache local-first inbox/thread.
+- Profile: public avatar upload/remove.
+- UI: Material You; PiP activity flag.
+- Ship: Play internal upload path gated on PLAY_SERVICE_ACCOUNT_JSON.

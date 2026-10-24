@@ -97,7 +97,21 @@ class EncryptedMessaging internal constructor(private val engine: E2EEEngine, pr
             val expires = p.optLong("expires_in")
             if (sent > 0 && expires > 0 && sent + expires * 1000 <= System.currentTimeMillis()) return null
             val media = p.optJSONObject("media")
-            val body = if (media != null) listOf("Encrypted attachment", media.lString("caption"), media.lString("alt"), media.lString("transcript")).filter { it.isNotBlank() }.joinToString("\n") else p.lString("body")
+            val body = if (media != null) {
+                val mime = media.lString("mime")
+                val name = media.lString("filename").lowercase()
+                val voice = p.optString("t") == "voice" || mime.startsWith("audio/") || name.endsWith(".m4a") || name == "voice.m4a"
+                val once = media.optBoolean("listen_once") || media.optBoolean("view_once")
+                val head = when {
+                    voice && once -> "Listen-once voice message"
+                    voice -> "Voice message"
+                    once -> "View-once attachment"
+                    else -> "Encrypted attachment"
+                }
+                val dur = media.optDouble("duration", 0.0)
+                val clock = if (voice && dur > 0) " (${"%d:%02d".format(dur.toInt() / 60, dur.toInt() % 60)})" else ""
+                listOf(head + clock, media.lString("caption"), media.lString("alt"), media.lString("transcript")).filter { it.isNotBlank() }.joinToString("\n")
+            } else p.lString("body")
             message.copy(body = body, encrypted = true, media = media)
         } catch (e: Exception) { message.copy(body = "Couldn't decrypt this message on this device.", encrypted = true, decryptFailed = true) }
     }

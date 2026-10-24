@@ -207,6 +207,7 @@ private fun SettingsRoot(
                 TonePickers()
                 ToggleRow("Start video calls with camera off", prefs.startCallsWithCameraOff, "Turn your camera on when you are ready", prefs::setStartCallsWithCameraOff)
                 ToggleRow("Use speakerphone by default", prefs.speakerphoneByDefault, "Route call audio to the loudspeaker", prefs::setSpeakerphoneByDefault)
+                ToggleRow("Prefer Bluetooth headset", prefs.preferBluetoothHeadset, "Use a connected Bluetooth headset instead of the earpiece when speaker is off", prefs::setPreferBluetoothHeadset)
                 ToggleRow("Echo cancellation", prefs.echoCancellation, "Reduce echo during calls", prefs::setEchoCancellation)
                 ToggleRow("Noise suppression", prefs.noiseSuppression, "Reduce background noise during calls", prefs::setNoiseSuppression)
             }
@@ -227,6 +228,7 @@ private fun SettingsRoot(
                         }
                     }
                 }
+                ToggleRow("Material You colors", prefs.dynamicColor, "Use your Android wallpaper colors (Android 12+). High contrast overrides this.", prefs::setDynamicColor)
             }
         }
 

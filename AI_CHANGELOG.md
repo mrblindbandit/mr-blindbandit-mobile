@@ -1,3 +1,13 @@
+## 2026-10-25 — Android 2.0.10 (14), branch `feat/android-parity-210`
+- Voice playback fix: shared `VoicePlayback` writes decrypted AAC to a temp `.m4a` before MediaPlayer (in-memory MediaDataSource was broken on many devices). Speeds 1×/1.5×/2×, skip ±5s, listen-once send flag, TalkBack announcements, played-state cache.
+- Calling: `installation_id` already on join; **answer-echo ignore** (~8s `joinedAt` / `joiningCallId` + `remoteEnded`) matching iOS 2.0.9; warm call path after bootstrap; prefer Bluetooth headset when speaker off.
+- Local-first `ConversationCache` for inbox/thread (ciphertext only) — faster cold start / chat open.
+- Public profile avatars: `ProfileAvatar` + `PUT /v1/social/me/avatar` / `PATCH` clear; settings editor.
+- Material You dynamic color (Android 12+, high-contrast override); PiP support on MainActivity.
+- Notification preview privacy already default-on; settings toggle retained.
+- Release: versionCode 14 / 2.0.10; `release-aab.yml` optional Play **internal** upload via `PLAY_SERVICE_ACCOUNT_JSON` + `scripts/upload-play-internal.py` (signed AAB artifact always).
+- Gaps / Tyrese: no Play API secret in repo yet (manual Console upload of artifact until secret added); FGS still stripped for Play declaration (no call FGS); group LiveKit frame E2EE rotation; view-once image open; Keystore identity backup UI.
+
 ## 2026-10-25 — iOS 2.0.9 (25), branch `feat/ios-209-voice-encryption-calling`
 - Voice: MessageRowLabelModifier (no container label on voice rows); activateSession returns Bool + VO; play/resume retry + "Playing"; recorder/send failure announces; hasPlayableVoiceMedia; autoPlay gated by SettingsKey.autoPlayVoice.
 - Encryption settings: Restore from iCloud Keychain; forgot dialog prefers iCloud before destructive reset; Encryption + Messages sections in Settings.

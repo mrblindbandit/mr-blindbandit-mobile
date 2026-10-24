@@ -52,6 +52,7 @@ class ProductionCommunicationsService(
     internal var encryption: net.mrblindbandit.app.security.EncryptedMessaging? = null
     var encryptionStatus by mutableStateOf("Encryption not initialized"); private set
     val local = LocalComms(appContext)
+    private val conversationCache = ConversationCache(appContext)
 
     var openGroupId by mutableStateOf<String?>(null)
     val conversations = mutableStateListOf<ServerConversation>()
@@ -91,6 +92,11 @@ class ProductionCommunicationsService(
     var callPeerName by mutableStateOf(""); private set
     var callPeerHandle by mutableStateOf(""); private set
     var incomingCallId by mutableStateOf<String?>(null)
+    /** Call IDs this device just answered/joined — ignore late "answered elsewhere" echo for ~8s (iOS 2.0.9 parity). */
+    private val joinedAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    @Volatile private var joiningCallId: String? = null
+    var myAvatarUrl by mutableStateOf(""); private set
+    var myDisplayName by mutableStateOf(""); private set
     var callEncryptionLabel by mutableStateOf("Media encrypted in transit"); private set
     private var callKeyProvider: BaseKeyProvider? = null
 
@@ -100,6 +106,7 @@ class ProductionCommunicationsService(
     /** Mirrors the "Start video calls with camera off" setting. */
     var startWithCameraOff: Boolean = false
     var speakerByDefault: Boolean = false
+    var preferBluetoothHeadset: Boolean = true
 
     val callTimeLabel: String get() = "%02d:%02d".format(callSeconds / 60, callSeconds % 60)
 
@@ -117,6 +124,8 @@ class ProductionCommunicationsService(
             val me = request("/v1/social/me")
             myProfileId = me.lString("id")
             myHandle = me.lString("handle")
+            myDisplayName = me.lString("display_name")
+            myAvatarUrl = me.lString("avatar_url")
             if (myProfileId.isNotBlank()) {
                 local.bindAccount(myProfileId)
                 pendingMessages.clear(); pendingMessages.addAll(local.pending)
@@ -130,6 +139,7 @@ class ProductionCommunicationsService(
         refreshConversations()
         loadSettings()
         flushPendingMessages()
+        warmCallPath()
     }
 
     suspend fun refreshUnreadCount() {
@@ -140,9 +150,21 @@ class ProductionCommunicationsService(
     }
 
     suspend fun refreshConversations(): Boolean {
-        if (conversations.isEmpty()) conversationsState = LoadState.Loading
+        if (conversations.isEmpty()) {
+            conversationsState = LoadState.Loading
+            // Local-first: paint cached inbox immediately for faster cold start.
+            conversationCache.loadInbox()?.let { cached ->
+                val fromCache = cached.items().mapNotNull { runCatching { ServerConversation.parse(it) }.getOrNull() }
+                if (fromCache.isNotEmpty() && conversations.isEmpty()) {
+                    conversations.addAll(fromCache)
+                    conversationsState = LoadState.Loaded
+                }
+            }
+        }
         return try {
-            val parsed = request("/v1/social/messages?limit=100").items().mapNotNull { runCatching { ServerConversation.parse(it) }.getOrNull() }
+            val raw = request("/v1/social/messages?limit=100")
+            conversationCache.saveInbox(raw)
+            val parsed = raw.items().mapNotNull { runCatching { ServerConversation.parse(it) }.getOrNull() }
             announceNewIncoming(parsed)
             conversations.clear()
             conversations.addAll(parsed)
@@ -150,7 +172,8 @@ class ProductionCommunicationsService(
             refreshUnreadCount()
             true
         } catch (e: Exception) {
-            conversationsState = LoadState.Failed(friendly(e, "Could not load your conversations."))
+            if (conversations.isEmpty()) conversationsState = LoadState.Failed(friendly(e, "Could not load your conversations."))
+            else statusMessage = friendly(e, "Could not refresh conversations.")
             false
         }
     }
@@ -184,9 +207,22 @@ class ProductionCommunicationsService(
     }
 
     /** Reloads the open thread. Returns incoming messages that were not there before. */
+    private fun parseThreadItems(result: org.json.JSONObject): List<ServerMessage> =
+        result.items().mapNotNull { runCatching { encryption?.resolve(it) ?: if (!it.lBool("e2ee")) ServerMessage.parse(it) else ServerMessage.parse(it)?.copy(body = "Encrypted message unavailable on this device", encrypted = true, decryptFailed = true) }.getOrNull() }.sortedBy { it.createdAt }
+
     suspend fun reloadThread(conversationId: String): List<ServerMessage> = try {
+        if (messages.isEmpty()) {
+            conversationCache.loadThread(conversationId)?.let { cached ->
+                val fromCache = parseThreadItems(cached)
+                if (fromCache.isNotEmpty() && openConversationId == conversationId && messages.isEmpty()) {
+                    messages.addAll(fromCache)
+                    threadState = LoadState.Loaded
+                }
+            }
+        }
         val result = request("/v1/social/messages/${enc(conversationId)}?limit=100")
-        val parsed = result.items().mapNotNull { runCatching { encryption?.resolve(it) ?: if (!it.lBool("e2ee")) ServerMessage.parse(it) else ServerMessage.parse(it)?.copy(body = "Encrypted message unavailable on this device", encrypted = true, decryptFailed = true) }.getOrNull() }.sortedBy { it.createdAt }
+        conversationCache.saveThread(conversationId, result)
+        val parsed = parseThreadItems(result)
         if (openConversationId != conversationId) emptyList() else {
             val known = messages.map { it.id }.toSet()
             val hadMessages = messages.isNotEmpty()
@@ -393,6 +429,15 @@ class ProductionCommunicationsService(
 
     // Calls
 
+    /** Warm LiveKit path: resolve /v1/social/me ping keeps TLS+DNS hot; token is per-call so we only warm sockets. */
+    fun warmCallPath() {
+        scope.launch {
+            try {
+                request("/v1/social/calls/incoming")
+            } catch (_: Exception) { }
+        }
+    }
+
     suspend fun startCall(recipient: String, video: Boolean) {
         val target = normalizeHandle(recipient)
         if (target.isBlank()) {
@@ -449,6 +494,8 @@ class ProductionCommunicationsService(
         if (callId.isBlank()) return
         if (isInCall || isRinging || activeCallId != null) return
         incomingCallId = null
+        joiningCallId = callId
+        joinedAt[callId] = System.currentTimeMillis()
         try {
             // A push tap only has a call ID. Resolve caller identity from the authenticated invite,
             // never trust a sender-supplied call_key control to identify the caller.
@@ -468,7 +515,25 @@ class ProductionCommunicationsService(
             cleanupRoom()
             statusMessage = "Could not join call: ${friendly(e, "Unknown error")}"
             Announcer.announce(appContext, statusMessage)
+        } finally {
+            if (joiningCallId == callId) joiningCallId = null
         }
+    }
+
+    /** True when this device just answered/joined and a late "answered elsewhere" echo would kill the call. */
+    fun shouldIgnoreAnswerEcho(callId: String): Boolean {
+        if (joiningCallId == callId) return true
+        val t0 = joinedAt[callId] ?: return false
+        if (System.currentTimeMillis() - t0 < 8_000L) return true
+        return false
+    }
+
+    /** Caller hung up, answered elsewhere, or server sent call_end. Honours answer-echo grace. */
+    fun remoteEnded(callId: String) {
+        if (callId.isBlank()) return
+        if (shouldIgnoreAnswerEcho(callId)) return
+        if (incomingCallId == callId) incomingCallId = null
+        if (activeCallId == callId) endCall("Call ended.")
     }
 
     suspend fun declineCall(callId: String) {
@@ -595,8 +660,16 @@ class ProductionCommunicationsService(
         runCatching {
             audio.mode = AudioManager.MODE_IN_COMMUNICATION
             if (Build.VERSION.SDK_INT >= 31) {
-                if (on) audio.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }?.let { audio.setCommunicationDevice(it) }
-                else audio.clearCommunicationDevice()
+                when {
+                    on -> audio.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }?.let { audio.setCommunicationDevice(it) }
+                    preferBluetoothHeadset -> {
+                        val bt = audio.availableCommunicationDevices.firstOrNull {
+                            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO || it.type == AudioDeviceInfo.TYPE_BLE_HEADSET || it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
+                        }
+                        if (bt != null) audio.setCommunicationDevice(bt) else audio.clearCommunicationDevice()
+                    }
+                    else -> audio.clearCommunicationDevice()
+                }
             } else {
                 @Suppress("DEPRECATION")
                 audio.isSpeakerphoneOn = on
@@ -713,6 +786,41 @@ class ProductionCommunicationsService(
     }
 
     internal fun enc(value: String) = URLEncoder.encode(value, StandardCharsets.UTF_8.name()).replace("+", "%20")
+
+
+    suspend fun uploadPublicAvatar(jpeg: ByteArray): String = withContext(Dispatchers.IO) {
+        require(jpeg.isNotEmpty() && jpeg.size <= 5 * 1024 * 1024) { "Choose a JPEG under 5 MB" }
+        val token = auth.sessionToken() ?: error("Sign in to update your profile picture.")
+        val connection = (URL(AppConfig.API_BASE_URL.trimEnd('/') + "/v1/social/me/avatar").openConnection() as HttpURLConnection).apply {
+            requestMethod = "PUT"
+            doOutput = true
+            setFixedLengthStreamingMode(jpeg.size)
+            setRequestProperty("Authorization", "Bearer $token")
+            setRequestProperty("Content-Type", "image/jpeg")
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("X-Installation-ID", DeviceIdentity.installationId(appContext))
+            connectTimeout = 20_000
+            readTimeout = 45_000
+        }
+        try {
+            connection.outputStream.use { it.write(jpeg) }
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (status == 404) error("Profile photo upload is not available on the server yet.")
+            val profile = BlindbanditApiEnvelope.unwrap(status, text)
+            val url = profile.lString("avatar_url")
+            require(url.isNotBlank()) { "Upload succeeded but no public avatar URL was returned." }
+            myAvatarUrl = url
+            url
+        } finally { connection.disconnect() }
+    }
+
+    suspend fun clearPublicAvatar() {
+        val profile = request("/v1/social/me", "PATCH", JSONObject().put("avatar_url", ""))
+        myAvatarUrl = profile.lString("avatar_url")
+        statusMessage = "Profile picture removed."
+    }
 
     internal suspend fun request(path: String, method: String = "GET", body: JSONObject? = null): JSONObject = withContext(Dispatchers.IO) {
         val token = auth.sessionToken() ?: error("Sign in to use calls and messages.")

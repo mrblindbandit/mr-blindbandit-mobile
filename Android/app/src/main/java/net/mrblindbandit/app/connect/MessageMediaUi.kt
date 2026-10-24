@@ -1,14 +1,13 @@
 package net.mrblindbandit.app.connect
 
 import android.Manifest
-import android.media.MediaDataSource
-import android.media.MediaPlayer
 import android.media.MediaRecorder
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -21,6 +20,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import net.mrblindbandit.app.security.AttachmentCrypto
+import org.json.JSONObject
 import java.io.File
 
 @Composable
@@ -33,15 +33,19 @@ fun MessageMediaComposer(c: ProductionCommunicationsService, chatId: String, han
     var recording by remember { mutableStateOf(false) }
     var file by remember { mutableStateOf<File?>(null) }
     var started by remember { mutableLongStateOf(0L) }
+    var listenOnce by remember { mutableStateOf(false) }
     fun cancel() {
         runCatching { recorder?.stop() }; recorder?.release(); recorder = null
         file?.delete(); file = null; recording = false
     }
-    fun send(bytes: ByteArray, mime: String, filename: String, duration: Double? = null) {
+    fun send(bytes: ByteArray, mime: String, filename: String, duration: Double? = null, once: Boolean = false) {
         busy = true
         scope.launch {
-            try { c.sendAttachment(chatId, handles, group, bytes, mime, filename, duration); status = "Encrypted attachment sent"; onSent() }
-            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            try {
+                c.sendAttachment(chatId, handles, group, bytes, mime, filename, duration, listenOnce = once)
+                status = if (once) "Listen-once voice message sent" else "Encrypted attachment sent"
+                onSent()
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
             catch (e: Exception) { status = e.localizedMessage.orEmpty() }
             finally { busy = false }
         }
@@ -68,6 +72,7 @@ fun MessageMediaComposer(c: ProductionCommunicationsService, chatId: String, han
                 r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC); r.setAudioSamplingRate(24000); r.setAudioChannels(1); r.setAudioEncodingBitRate(64000)
                 r.setOutputFile(output.absolutePath); r.setMaxDuration(120_000); r.prepare(); r.start()
                 recording = true; started = System.currentTimeMillis(); status = "Recording voice message"
+                Announcer.announce(context, "Recording")
             } catch (e: Exception) { cancel(); status = "Recording could not start." }
         }
     }
@@ -76,18 +81,19 @@ fun MessageMediaComposer(c: ProductionCommunicationsService, chatId: String, han
     }
     DisposableEffect(Unit) { onDispose { cancel() } }
     Column {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedButton(enabled = !busy && !recording, onClick = { picker.launch(arrayOf("*/*")) }) { Text("Attach file") }
             if (recording) {
                 Button(enabled = !busy, onClick = {
                     val duration = (System.currentTimeMillis() - started) / 1000.0
                     val output = file
+                    val once = listenOnce
                     try {
                         recorder?.stop(); recorder?.release(); recorder = null; recording = false
                         if (duration < 0.6) { output?.delete(); status = "Recording too short" }
                         else if (output != null) {
                             scope.launch {
-                                try { val bytes = withContext(Dispatchers.IO) { output.readBytes() }; send(bytes, "audio/mp4", "voice.m4a", duration) }
+                                try { val bytes = withContext(Dispatchers.IO) { output.readBytes() }; send(bytes, "audio/mp4", "voice.m4a", duration, once) }
                                 finally { output.delete(); file = null }
                             }
                         }
@@ -96,18 +102,11 @@ fun MessageMediaComposer(c: ProductionCommunicationsService, chatId: String, han
                 TextButton(onClick = { cancel(); status = "Recording cancelled" }) { Text("Cancel") }
             } else OutlinedButton(enabled = !busy && !c.isInCall && !c.isRinging, onClick = { microphone.launch(Manifest.permission.RECORD_AUDIO) }) { Text("Record voice") }
         }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = listenOnce, onCheckedChange = { listenOnce = it }, enabled = !busy)
+            Text("Listen once", modifier = Modifier.semantics { contentDescription = "Send as listen-once voice message" })
+        }
         Text(status, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-    }
-}
-
-private class BytesAudioSource(private val bytes: ByteArray) : MediaDataSource() {
-    override fun getSize() = bytes.size.toLong()
-    override fun close() {}
-    override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
-        if (position >= bytes.size) return -1
-        val count = minOf(size, bytes.size - position.toInt())
-        bytes.copyInto(buffer, offset, position.toInt(), position.toInt() + count)
-        return count
     }
 }
 
@@ -120,9 +119,33 @@ fun MessageMediaActions(message: ServerMessage, c: ProductionCommunicationsServi
     var bytes by remember(message.id) { mutableStateOf<ByteArray?>(null) }
     var status by remember(message.id) { mutableStateOf("") }
     var busy by remember(message.id) { mutableStateOf(false) }
-    var playing by remember(message.id) { mutableStateOf(false) }
-    var player by remember(message.id) { mutableStateOf<MediaPlayer?>(null) }
-    val audio = media.lString("mime").startsWith("audio/")
+    var tick by remember { mutableIntStateOf(0) }
+    val audio = VoicePlayback.isVoiceMedia(media)
+    val listenOnce = media.optBoolean("listen_once") || media.optBoolean("view_once")
+    val mine = message.senderId.isNotBlank() && message.senderId == c.myProfileId
+    val item = remember(message.id, mine) {
+        VoicePlayback.Item(
+            id = message.id,
+            media = media,
+            from = message.senderId,
+            mine = mine,
+            listenOnce = listenOnce,
+        )
+    }
+    LaunchedEffect(Unit) { VoicePlayback.loadPlayed(context) }
+    DisposableEffect(message.id) {
+        val listener = { tick += 1 }
+        VoicePlayback.addListener(listener)
+        VoicePlayback.register(item)
+        onDispose {
+            VoicePlayback.removeListener(listener)
+            bytes?.fill(0)
+        }
+    }
+    val isCurrent = VoicePlayback.isCurrent(message.id)
+    val playing = isCurrent && VoicePlayback.playing
+    val loading = VoicePlayback.loadingId == message.id
+    val elapsed = if (isCurrent) VoicePlayback.elapsedMs else 0L
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(media.lString("mime").ifBlank { "application/octet-stream" })) { uri ->
         val content = bytes
         if (uri != null && content != null) scope.launch {
@@ -130,29 +153,70 @@ fun MessageMediaActions(message: ServerMessage, c: ProductionCommunicationsServi
             catch (e: Exception) { status = "Could not save attachment" }
         }
     }
-    DisposableEffect(message.id) { onDispose { player?.release(); player = null; bytes?.fill(0) } }
+    // keep tick observed so Compose recomposes on player updates
+    @Suppress("UNUSED_EXPRESSION")
+    tick
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-        Button(enabled = !busy, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = if (audio) (if (playing) "Pause voice message" else "Play voice message") else "Save encrypted attachment" }, onClick = {
-            scope.launch {
-                busy = true
-                try {
-                    val plain = bytes ?: c.downloadAttachment(media).also { bytes = it }
-                    if (audio) {
-                        if (playing) { player?.pause(); playing = false }
-                        else if (player != null) { player?.start(); playing = true }
-                        else {
-                            val p = MediaPlayer(); player = p
-                            p.setDataSource(BytesAudioSource(plain))
-                            p.setOnCompletionListener { playing = false }
-                            p.setOnErrorListener { _, _, _ -> playing = false; status = "Audio playback failed"; true }
-                            p.prepare(); p.start(); playing = true
-                        }
-                    } else export.launch(media.lString("filename").ifBlank { "attachment" })
-                } catch (e: kotlinx.coroutines.CancellationException) { throw e }
-                catch (e: Exception) { status = "Attachment could not be opened or verified." }
-                finally { busy = false }
+        if (audio) {
+            val durationSec = media.optDouble("duration", 0.0)
+            val label = when {
+                loading -> "Loading voice message"
+                playing -> "Pause voice message"
+                isCurrent -> "Resume voice message"
+                else -> "Play voice message"
             }
-        }) { Text(if (audio) (if (playing) "Pause voice message" else "Play voice message") else "Save attachment") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Button(
+                    enabled = !busy && !loading,
+                    modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = label },
+                    onClick = {
+                        scope.launch {
+                            busy = true
+                            try {
+                                VoicePlayback.toggle(context, item) { m ->
+                                    c.downloadAttachment(m).also { bytes = it }
+                                }
+                            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                            catch (e: Exception) { status = "Attachment could not be opened or verified." }
+                            finally { busy = false }
+                        }
+                    },
+                ) { Text(if (playing) "Pause" else if (loading) "…" else "Play") }
+                TextButton(
+                    enabled = !busy,
+                    onClick = { VoicePlayback.cycleRate(context) },
+                    modifier = Modifier.semantics { contentDescription = "Playback speed ${VoicePlayback.rateLabel()}" },
+                ) { Text(VoicePlayback.rateLabel()) }
+                if (isCurrent) {
+                    TextButton(onClick = { VoicePlayback.skip(context, -5) }, modifier = Modifier.semantics { contentDescription = "Skip back 5 seconds" }) { Text("−5s") }
+                    TextButton(onClick = { VoicePlayback.skip(context, 5) }, modifier = Modifier.semantics { contentDescription = "Skip forward 5 seconds" }) { Text("+5s") }
+                }
+            }
+            val clock = buildString {
+                append(VoicePlayback.clock(elapsed / 1000.0))
+                if (durationSec > 0) append(" / ").append(VoicePlayback.clock(durationSec))
+                if (listenOnce) append(" · once")
+                if (!mine && VoicePlayback.wasPlayed(message.id)) append(" · played")
+            }
+            Text(clock, style = MaterialTheme.typography.bodySmall)
+        } else {
+            Button(
+                enabled = !busy,
+                modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Save encrypted attachment" },
+                onClick = {
+                    scope.launch {
+                        busy = true
+                        try {
+                            val plain = bytes ?: c.downloadAttachment(media).also { bytes = it }
+                            export.launch(media.lString("filename").ifBlank { "attachment" })
+                            @Suppress("UNUSED_VARIABLE") val _keep = plain
+                        } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                        catch (e: Exception) { status = "Attachment could not be opened or verified." }
+                        finally { busy = false }
+                    }
+                },
+            ) { Text("Save attachment") }
+        }
         Text(status, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
     }
 }

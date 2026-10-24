@@ -30,7 +30,7 @@ internal fun readLimited(input: java.io.InputStream, limit: Int): ByteArray {
 }
 
 suspend fun ProductionCommunicationsService.sendAttachment(chatId: String, handles: List<String>, group: Boolean,
-    bytes: ByteArray, mime: String, filename: String, duration: Double? = null) {
+    bytes: ByteArray, mime: String, filename: String, duration: Double? = null, listenOnce: Boolean = false) {
     val engine = encryption ?: error("Wait for your account to load")
     check(bytes.isNotEmpty() && bytes.size <= AttachmentCrypto.MAX_SIZE) { "Choose a file between 1 byte and 20 MB" }
     val sealed = withContext(Dispatchers.Default) { AttachmentCrypto.seal(bytes) }
@@ -39,6 +39,7 @@ suspend fun ProductionCommunicationsService.sendAttachment(chatId: String, handl
         .put("key", Base64.getEncoder().encodeToString(sealed.key)).put("nonce", Base64.getEncoder().encodeToString(sealed.nonce))
         .put("sha256", Base64.getEncoder().encodeToString(sealed.digest)).put("size", sealed.size).put("mime", mime.take(100)).put("filename", filename.take(120))
     duration?.let { media.put("duration", it) }
+    if (listenOnce) media.put("listen_once", true)
     val payload = JSONObject().put("t", if (duration != null) "voice" else "file").put("media", media).put("sent_at", System.currentTimeMillis())
     val recipients = if (group) {
         val members = groupDetail(chatId).optJSONArray("members") ?: error("Group membership unavailable. File not sent.")

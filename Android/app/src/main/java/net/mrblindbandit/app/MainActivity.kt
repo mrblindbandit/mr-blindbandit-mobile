@@ -262,7 +262,7 @@ enum class AppTab(val label: String, val icon: ImageVector, val description: Str
 fun BlindbanditAndroidApp(activity: MainActivity, deepLinkState: MutableState<String?>) {
     val context = LocalContext.current
     val prefs = remember { AndroidAppPreferences(context) }
-    BlindbanditTheme(appearance = prefs.appearance, highContrast = prefs.highContrast) {
+    BlindbanditTheme(appearance = prefs.appearance, highContrast = prefs.highContrast, dynamicColor = prefs.dynamicColor) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             AppRoot(activity, deepLinkState, prefs)
         }
@@ -313,6 +313,7 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
             val communications = rememberCommunications(auth)
             communications.startWithCameraOff = prefs.startCallsWithCameraOff
             communications.speakerByDefault = prefs.speakerphoneByDefault
+            communications.preferBluetoothHeadset = prefs.preferBluetoothHeadset
             val haptics = rememberHaptics { prefs.hapticsEnabled }
             var locked by remember { mutableStateOf(screenshot == null && communications.local.appLockEnabled && !AppLock.unlockedThisProcess) }
             var pendingThread by remember { mutableStateOf<String?>(null) }
@@ -322,8 +323,7 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
                 val receiver = object : android.content.BroadcastReceiver() {
                     override fun onReceive(ctx: android.content.Context?, event: Intent?) {
                         val ended = event?.getStringExtra("call_id") ?: return
-                        if (communications.incomingCallId == ended) communications.incomingCallId = null
-                        if (communications.activeCallId == ended) communications.endCall("Call ended.")
+                        communications.remoteEnded(ended)
                     }
                 }
                 ContextCompat.registerReceiver(context, receiver, android.content.IntentFilter(BlindbanditFirebaseMessagingService.ACTION_CALL_ENDED), ContextCompat.RECEIVER_NOT_EXPORTED)

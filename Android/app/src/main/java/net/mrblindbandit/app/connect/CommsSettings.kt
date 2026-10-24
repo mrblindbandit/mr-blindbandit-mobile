@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import kotlinx.coroutines.launch
+import net.mrblindbandit.app.profile.ProfilePictureEditor
 
 /** Process-wide unlock flag: the lock asks only on a cold launch, not on every resume. */
 object AppLock {
@@ -87,6 +88,7 @@ fun CommsSettingsSection(communications: ProductionCommunicationsService, activi
     var blocked by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { communications.loadSettings() }
     Column(Modifier.fillMaxWidth()) {
+        ProfilePictureEditor(communications)
         Text("Messages & calls", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(vertical = 8.dp).semantics { heading() })
         Text(communications.encryptionStatus)
         var hidePreviews by remember { mutableStateOf(context.getSharedPreferences(net.mrblindbandit.app.AndroidAppPreferences.FILE, android.content.Context.MODE_PRIVATE).getBoolean("hideMessagePreviews", true)) }

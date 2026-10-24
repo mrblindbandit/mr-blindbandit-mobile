@@ -405,6 +405,9 @@ struct GroupChatView: View {
 
     @ViewBuilder
     private func groupMessageActions(_ m: BlindbanditGroupMessage, mine: Bool) -> some View {
+        if let media = m.decrypted?.media, VoiceRowPlayAction.isVoice(mime: media.mime, kind: m.kind, decryptedType: m.decrypted?.t) {
+            VoiceRowPlayAction(item: .init(id: m.id, media: media, from: mine ? "You" : m.sender_name, mine: mine))
+        }
         Button { quoting = m } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
         ForEach(["👍", "❤️", "😂", "😮", "😢"], id: \.self) { emoji in
             Button("React \(MessageReactions.name(emoji))") { react(m, emoji) }

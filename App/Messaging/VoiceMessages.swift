@@ -519,3 +519,31 @@ struct VoiceBubbleAccessibility: ViewModifier {
             }
     }
 }
+
+
+/// Shared Play/Pause for VoiceOver Actions on the message *row* (swipe up/down).
+/// Bubble-level actions stay on VoiceBubble; Kaeleb often focuses the row, so Play must be first here too.
+struct VoiceRowPlayAction: View {
+    let item: VoicePlayback.Item
+    @ObservedObject private var center = VoicePlayback.shared
+
+    var body: some View {
+        Button(center.isCurrent(item.id) && center.playing ? "Pause" : "Play") {
+            center.register(item)
+            Task { await center.toggle(item) }
+        }
+    }
+
+    /// Build an Item the same way VoiceBubble does (id = message id).
+    static func item(id: String, media: E2EEPayload.Media, from: String, mine: Bool) -> VoicePlayback.Item {
+        .init(id: id, media: media, from: from, mine: mine)
+    }
+
+    /// True when this row is a voice note (DM or group).
+    static func isVoice(mime: String?, kind: String? = nil, decryptedType: String? = nil) -> Bool {
+        mime?.hasPrefix("audio") == true || kind == "voice" || decryptedType == "voice"
+    }
+
+    /// Documented action name for tests / callers that need the label without a live player.
+    static func actionName(isPlayingCurrent: Bool) -> String { isPlayingCurrent ? "Pause" : "Play" }
+}

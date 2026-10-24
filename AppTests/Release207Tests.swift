@@ -52,4 +52,14 @@ final class Release207Tests: XCTestCase {
         XCTAssertEqual(AIPersona.forPrivate, .professional)
         AIPersona.serverHandle = prev
     }
+
+    func testVoiceRowPlayActionName() {
+        XCTAssertEqual(MessageRowAccessibility.voicePlayActionName(isPlayingCurrent: false), "Play")
+        XCTAssertEqual(MessageRowAccessibility.voicePlayActionName(isPlayingCurrent: true), "Pause")
+        XCTAssertEqual(VoiceRowPlayAction.actionName(isPlayingCurrent: false), "Play")
+        XCTAssertTrue(VoiceRowPlayAction.isVoice(mime: "audio/m4a"))
+        XCTAssertTrue(VoiceRowPlayAction.isVoice(mime: nil, kind: "voice"))
+        XCTAssertTrue(VoiceRowPlayAction.isVoice(mime: nil, decryptedType: "voice"))
+        XCTAssertFalse(VoiceRowPlayAction.isVoice(mime: "image/jpeg"))
+    }
 }

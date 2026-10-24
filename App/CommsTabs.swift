@@ -990,6 +990,9 @@ struct ConversationThreadView: View {
 
     @ViewBuilder
     private func messageActions(_ message: BlindbanditServerMessage, shown: String, mine: Bool) -> some View {
+        if let media = message.decrypted?.media, VoiceRowPlayAction.isVoice(mime: media.mime) {
+            VoiceRowPlayAction(item: .init(id: message.id, media: media, from: mine ? "You" : "@\(handle)", mine: mine))
+        }
         Button { quoting = message; composerFocused = true } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
         if mine {
             // One tap, no dialog, no time limit (§22.5).
@@ -1497,4 +1500,6 @@ struct ForwardSheet: View {
 enum MessageRowAccessibility {
     static func children(isVoice: Bool) -> AccessibilityChildBehavior { isVoice ? .contain : .ignore }
     static func exposesChildren(isVoice: Bool) -> Bool { isVoice }
+    /// First VoiceOver Actions rotor name on a voice row (Play, or Pause when that note is current + playing).
+    static func voicePlayActionName(isPlayingCurrent: Bool) -> String { VoiceRowPlayAction.actionName(isPlayingCurrent: isPlayingCurrent) }
 }

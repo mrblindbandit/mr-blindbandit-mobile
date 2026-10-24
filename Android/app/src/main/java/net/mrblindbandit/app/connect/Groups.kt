@@ -37,9 +37,16 @@ suspend fun ProductionCommunicationsService.createGroup(name: String, handles: L
 suspend fun ProductionCommunicationsService.groupDetail(id: String) = request("/v1/social/groups/${enc(id)}")
 suspend fun ProductionCommunicationsService.renameGroup(id: String, name: String) = request("/v1/social/groups/${enc(id)}", "PATCH", JSONObject().put("name", name.trim().take(100)))
 suspend fun ProductionCommunicationsService.addGroupMembers(id: String, handles: List<String>) = request("/v1/social/groups/${enc(id)}/members", "POST", JSONObject().put("handles", JSONArray(handles.map(::normalizeHandle))))
+suspend fun ProductionCommunicationsService.setGroupRole(id: String, handle: String, role: String) = request("/v1/social/groups/${enc(id)}/members/${enc(normalizeHandle(handle))}", "PATCH", JSONObject().put("role", role))
+suspend fun ProductionCommunicationsService.groupTyping(id: String): List<String> {
+    val names = request("/v1/social/groups/${enc(id)}/typing").optJSONArray("typing_handles") ?: return emptyList()
+    return (0 until names.length()).map { names.getString(it) }.filter { !it.equals(myHandle, true) }
+}
 suspend fun ProductionCommunicationsService.removeGroupMember(id: String, handle: String) = request("/v1/social/groups/${enc(id)}/members/${enc(normalizeHandle(handle))}", "DELETE")
 suspend fun ProductionCommunicationsService.groupMessages(id: String): List<ServerMessage> = request("/v1/social/groups/${enc(id)}/messages?limit=100").items().mapNotNull {
-    encryption?.resolve(it) ?: if (!it.lBool("e2ee")) ServerMessage.parse(it) else ServerMessage.parse(it)?.copy(body = "Encrypted message unavailable on this device", encrypted = true, decryptFailed = true)
+    if (encryption != null) encryption!!.resolve(it)
+    else if (!it.lBool("e2ee")) ServerMessage.parse(it)
+    else ServerMessage.parse(it)?.copy(body = "Encrypted message unavailable on this device", encrypted = true, decryptFailed = true)
 }.sortedBy { it.createdAt }
 suspend fun ProductionCommunicationsService.sendGroupMessage(id: String, text: String, silent: Boolean) {
     val handles = groupDetail(id).optJSONArray("members") ?: error("Group membership unavailable. Message not sent.")
@@ -107,12 +114,20 @@ fun GroupThreadScreen(c: ProductionCommunicationsService, id: String) {
     var silent by remember(id) { mutableStateOf(false) }
     var busy by remember(id) { mutableStateOf(false) }
     var members by remember(id) { mutableStateOf(false) }
+    var typing by remember(id) { mutableStateOf<List<String>>(emptyList()) }
     suspend fun refresh() {
         try {
             rows = c.groupMessages(id)
+            typing = try { c.groupTyping(id) } catch (_: Exception) { emptyList() }
             c.request("/v1/social/groups/${c.enc(id)}/read", "POST", JSONObject())
             error = ""
         } catch (e: Exception) { error = e.localizedMessage.orEmpty() }
+    }
+    LaunchedEffect(id, draft) {
+        if (draft.isNotBlank()) {
+            delay(600)
+            runCatching { c.request("/v1/social/groups/${c.enc(id)}/typing", "POST", JSONObject().put("typing", true)) }
+        }
     }
     BackHandler { c.openGroupId = null }
     LaunchedEffect(id) {
@@ -122,12 +137,14 @@ fun GroupThreadScreen(c: ProductionCommunicationsService, id: String) {
     Column(Modifier.fillMaxSize().imePadding().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row { TextButton(onClick = { c.openGroupId = null }) { Text("Back") }; Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).semantics { heading() }); TextButton(onClick = { members = true }) { Text("Members") } }
         StatusText(error)
+        StatusText(if (typing.isEmpty()) "" else typing.joinToString(", ") { "@$it" } + " typing")
         LazyColumn(Modifier.weight(1f), reverseLayout = true) {
             items(rows.asReversed(), key = { it.id }) { m ->
                 var reaction by remember(m.id) { mutableStateOf(false) }
                 Column(Modifier.fillMaxWidth().padding(8.dp)) {
                     Text(if (m.senderId == c.myProfileId) "You" else "Group member", style = MaterialTheme.typography.labelMedium)
                     Text(net.mrblindbandit.app.safety.ContentFilter.display(m.body, net.mrblindbandit.app.safety.ContentFilter.isEnabled(c.local.context)))
+                    MessageMediaActions(m, c)
                     TextButton(onClick = { reaction = true }) { Text("React to message") }
                     DropdownMenu(reaction, { reaction = false }) {
                         listOf("👍", "❤️", "😂").forEach { emoji -> DropdownMenuItem(text = { Text(emoji) }, onClick = { reaction = false; scope.launch { try { c.react(id, m.id, emoji, true) } catch (e: Exception) { error = "Reaction could not be saved." } } }) }
@@ -136,6 +153,7 @@ fun GroupThreadScreen(c: ProductionCommunicationsService, id: String) {
                 HorizontalDivider()
             }
         }
+        MessageMediaComposer(c, id, emptyList(), group = true, onSent = { scope.launch { refresh() } })
         SettingSwitch("Send silently", silent) { silent = it }
         OutlinedTextField(draft, { draft = it.take(4000); c.local.setDraft("group:$id", draft) }, label = { Text("Message $title") }, modifier = Modifier.fillMaxWidth(), maxLines = 5)
         Button(enabled = !busy && draft.isNotBlank(), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), onClick = { scope.launch {
@@ -165,7 +183,10 @@ private fun GroupMembersDialog(c: ProductionCommunicationsService, id: String, t
             items(members) { m ->
                 val handle = m.lString("handle")
                 Text("@${handle}: ${m.lString("role")}")
-                if (admin && handle != c.myHandle) TextButton(enabled = !busy, onClick = { action { c.removeGroupMember(id, handle); refresh() } }) { Text("Remove @$handle") }
+                if (admin && handle != c.myHandle && m.lString("role") != "owner") TextButton(enabled = !busy, onClick = { action {
+                    c.setGroupRole(id, handle, if (m.lString("role") == "admin") "member" else "admin"); refresh()
+                } }) { Text(if (m.lString("role") == "admin") "Make @$handle a member" else "Make @$handle an admin") }
+                if (admin && handle != c.myHandle && m.lString("role") != "owner") TextButton(enabled = !busy, onClick = { action { c.removeGroupMember(id, handle); refresh() } }) { Text("Remove @$handle") }
             }
             if (admin) item {
                 OutlinedTextField(rename, { rename = it }, label = { Text("Group name") })

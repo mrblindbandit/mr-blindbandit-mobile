@@ -304,15 +304,18 @@ private fun SemanticsPropertyReceiver.onClickHelper(action: () -> Unit) {
 private fun NewMessageDialog(communications: ProductionCommunicationsService, haptics: Haptics, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     var handle by remember { mutableStateOf("") }
+    var findingPerson by remember { mutableStateOf(false) }
     var body by remember { mutableStateOf("") }
     var error by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    if (findingPerson) { PeoplePicker(communications, { handle = it; findingPerson = false }, { findingPerson = false }); return }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("New message") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(handle, { handle = it; error = "" }, label = { Text("To (@username)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                TextButton(enabled = !busy, onClick = { findingPerson = true }) { Text("Find a person") }
                 OutlinedTextField(body, { body = it.take(4000) }, label = { Text("Message") }, minLines = 3, modifier = Modifier.fillMaxWidth())
                 if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
             }

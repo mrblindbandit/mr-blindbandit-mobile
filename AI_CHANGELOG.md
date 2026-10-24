@@ -125,3 +125,11 @@ Cross-links:
 - Includes the intent of PR #65, extended with host validation and regression tests. No main merge or Play publication.
 - Exact delivered/remaining scope, interoperability differences and release blockers: docs/ANDROID_PARITY.md.
 - No backend, signing identity or account/conversation data reset. A production-ready artifact requires all documented release gates.
+
+
+## 2026-10-24 — Continue Android parity PR #66 (ChatGPT)
+- Preserve the existing parity branch and production package/auth/backend. PR remains draft; do not merge as complete parity.
+- Connect encrypted group file/voice workflows, group typing and role controls, authenticated people picker.
+- Add explicit cloud summaries and audio transcription, caption lifecycle handling, full current ringtone/ambient asset pack with native preview lifecycle.
+- Extend p256-v1 receive/interoperability validation. See docs/ANDROID_PARITY.md for exact remaining gaps and release gates.
+- No backend changes, new production signing identity, merge or Google Play publication.

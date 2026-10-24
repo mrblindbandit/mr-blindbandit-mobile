@@ -42,7 +42,7 @@ All checked implementation items still require the verification gates below. Thi
 - [ ] Build AAB using existing authorized upload-key workflow, validate manifest and signer.
 - [ ] Owner approval before Google Play publication. Never merge untested work.
 
-No server changes are authorized by this implementation unless separately documented as necessary; none have been made.
+No server changes have been made. Android uses the existing production backend and Clerk authentication.
 
 ## Implemented in this branch (verification pending)
 
@@ -67,11 +67,30 @@ No server changes are authorized by this implementation unless separately docume
 - Group call UI/invite/role/join-request/invite-link management and complete group typing/receipt states.
 - Passcode-based key backup/restore, key rotation/revocation UI, session management UI and cross-device history recovery.
 - Signed deletion/edit controls, relay-only queues, disappearing chat settings, view-once consumption, polls, scheduling and complete reaction rendering.
-- A bundled/general on-device LLM and offline translation models; cloud transcription and summary UI.
+- A bundled/general on-device LLM and offline translation models; cloud transcription/summary device integration verification.
 - Native profile/directory/verification parity and remaining iOS-specific creator/media utilities.
-- New 2.0.8 ringtones and all ambient options, call-quality/audio routing UI parity.
+- Call-quality/audio routing UI parity and device testing of ringtone/notification playback.
 - Full physical-device TalkBack, Android/iOS account-to-account and release-signer verification.
 
 ### Backend compatibility note
 
 No backend has been changed. For Android notification privacy and terminal call events to work while backgrounded, FCM must send **data-only** payloads. An FCM `notification` object is displayed directly by Firebase while the app is backgrounded, bypassing client preview filtering. Verify this existing server behavior before release; propose an Android-only data-payload change if needed. Do not claim client redaction can override Firebase's automatic tray display.
+
+## Follow-up implementation — 2026-10-24
+
+Continued the existing PR #66 rather than rebuilding or duplicating its work. PR is draft while parity and integration gates remain open.
+
+- Connected encrypted group file/voice composition and playback/export; resolve recipients from current membership at send time.
+- Preserve hidden/expired group message filtering instead of replacing deliberately omitted controls with error rows.
+- Added group typing indicators and admin/member role actions (server remains authoritative).
+- Added authenticated people search with directory-to-search compatibility fallback, debounce, loading/error/retry and explicit recipient selection. No contacts permission.
+- Added explicit cloud summary and file-selected audio transcription (10 MB cap), with quota/unavailable states and no automatic chat upload.
+- Stop on-device caption capture when the app goes to background; handle recognizer startup failures.
+- Added all seven current Mr. BlindBandit ringtone recordings as MP3 plus remaining ambient audio assets; preserve prior saved choices. Long ringtone previews use MediaPlayer and release on dismissal.
+- Strengthened local encrypted-message validation and added a full iOS reference-envelope receive test with out-of-order/replay/one-time-prekey checks.
+
+### Release blockers remain
+
+This PR is **not complete feature parity** and is **not approved for production**. The remaining implementation list above is authoritative. In particular, frame-encrypted iOS calls, background calling, recovery, advanced chat controls, on-device model/translation, native profile editing and remaining creator tools are unfinished. Compiling an AAB does not establish that these work.
+
+Package remains `net.mrblindbandit.app`; candidate version is `2.0.8` / `13`. The highest code already uploaded to Play must still be checked in Play Console. No production signing identity was generated, and no backend or user data was changed.

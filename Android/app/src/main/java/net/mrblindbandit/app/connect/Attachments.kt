@@ -40,7 +40,12 @@ suspend fun ProductionCommunicationsService.sendAttachment(chatId: String, handl
         .put("sha256", Base64.getEncoder().encodeToString(sealed.digest)).put("size", sealed.size).put("mime", mime.take(100)).put("filename", filename.take(120))
     duration?.let { media.put("duration", it) }
     val payload = JSONObject().put("t", if (duration != null) "voice" else "file").put("media", media).put("sent_at", System.currentTimeMillis())
-    val fields = engine.fields(handles, payload) ?: error("Encrypted attachments require recipient device keys. File not sent.")
+    val recipients = if (group) {
+        val members = groupDetail(chatId).optJSONArray("members") ?: error("Group membership unavailable. File not sent.")
+        (0 until members.length()).map { members.getJSONObject(it).lString("handle") }.filter { it.isNotBlank() }
+    } else handles
+    check(recipients.isNotEmpty()) { "Recipients unavailable. File not sent." }
+    val fields = engine.fields(recipients, payload) ?: error("Encrypted attachments require recipient device keys. File not sent.")
     objectTransfer(slot.getJSONObject("upload").getString("url"), sealed.blob)
     val path = if (group) "/v1/social/groups/${enc(chatId)}/messages" else "/v1/social/messages"
     if (!group) fields.put("handle", handles.first())

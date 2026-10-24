@@ -45,8 +45,11 @@ class ProductionCommunicationsService(
 ) {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    internal var encryption: net.mrblindbandit.app.security.EncryptedMessaging? = null
+    var encryptionStatus by mutableStateOf("Encryption not initialized"); private set
     val local = LocalComms(appContext)
 
+    var openGroupId by mutableStateOf<String?>(null)
     val conversations = mutableStateListOf<ServerConversation>()
     val messages = mutableStateListOf<ServerMessage>()
     val pendingMessages = mutableStateListOf<PendingMessage>().apply { addAll(local.pending) }
@@ -85,7 +88,7 @@ class ProductionCommunicationsService(
     var callPeerHandle by mutableStateOf(""); private set
     var incomingCallId by mutableStateOf<String?>(null)
 
-    private var room: Room? = null
+    var room by mutableStateOf<Room?>(null); private set
     private var lastTypingSent = 0L
 
     /** Mirrors the "Start video calls with camera off" setting. */
@@ -108,6 +111,13 @@ class ProductionCommunicationsService(
             val me = request("/v1/social/me")
             myProfileId = me.lString("id")
             myHandle = me.lString("handle")
+            if (myProfileId.isNotBlank()) {
+                local.bindAccount(myProfileId)
+                pendingMessages.clear(); pendingMessages.addAll(local.pending)
+                encryption = net.mrblindbandit.app.security.EncryptedMessaging(appContext, myProfileId, myHandle) { p, m, b -> request(p, m, b) }
+                encryption?.bootstrap()
+                encryptionStatus = if (encryption?.ready == true) "Encryption keys ready" else "Encryption setup unavailable"
+            }
         } catch (e: Exception) {
             statusMessage = friendly(e, "Could not connect to Blindbandit communications.")
         }
@@ -170,7 +180,7 @@ class ProductionCommunicationsService(
     /** Reloads the open thread. Returns incoming messages that were not there before. */
     suspend fun reloadThread(conversationId: String): List<ServerMessage> = try {
         val result = request("/v1/social/messages/${enc(conversationId)}?limit=100")
-        val parsed = result.items().mapNotNull { runCatching { ServerMessage.parse(it) }.getOrNull() }.sortedBy { it.createdAt }
+        val parsed = result.items().mapNotNull { runCatching { encryption?.resolve(it) ?: if (!it.lBool("e2ee")) ServerMessage.parse(it) else ServerMessage.parse(it)?.copy(body = "Encrypted message unavailable on this device", encrypted = true, decryptFailed = true) }.getOrNull() }.sortedBy { it.createdAt }
         if (openConversationId != conversationId) emptyList() else {
             val known = messages.map { it.id }.toSet()
             val hadMessages = messages.isNotEmpty()
@@ -273,9 +283,10 @@ class ProductionCommunicationsService(
             return null
         }
         return try {
-            val response = request("/v1/social/messages", method = "POST", body = JSONObject().put("handle", target).put("body", text))
+            val fields = messageFields(listOf(target), text).put("handle", target)
+            val response = request("/v1/social/messages", method = "POST", body = fields)
             val who = response.optJSONObject("recipient")?.lString("display_name").orEmpty().ifBlank { "@$target" }
-            statusMessage = "Message sent to $who."
+            statusMessage = if (fields.optBoolean("e2ee")) "Encrypted message sent to $who." else "Message sent to $who without end-to-end encryption."
             val id = response.lString("conversation_id").ifBlank { conversationId }
             refreshConversations()
             if (id.isNotBlank() && openConversationId == id) reloadThread(id)
@@ -294,10 +305,20 @@ class ProductionCommunicationsService(
         }
     }
 
+    internal suspend fun messageFields(handles: List<String>, text: String, silent: Boolean = false): JSONObject {
+        val engine = encryption ?: error("Wait for your account to finish loading before sending.")
+        val payload = JSONObject().put("t", "text").put("body", text).put("sent_at", System.currentTimeMillis())
+        if (silent) payload.put("silent", true)
+        val fields = engine.fields(handles, payload) ?: JSONObject().put("body", text)
+        if (silent) fields.put("silent", true)
+        return fields
+    }
+
     suspend fun flushPendingMessages() {
+        if (myProfileId.isBlank() || encryption == null) return
         for (item in pendingMessages.toList()) {
             try {
-                request("/v1/social/messages", method = "POST", body = JSONObject().put("handle", item.handle).put("body", item.body))
+                request("/v1/social/messages", method = "POST", body = messageFields(listOf(item.handle), item.body).put("handle", item.handle))
                 pendingMessages.removeAll { it.id == item.id }
                 statusMessage = "Queued message to @${item.handle} sent."
             } catch (_: IOException) {
@@ -390,11 +411,37 @@ class ProductionCommunicationsService(
         }
     }
 
+    suspend fun refreshIncomingCalls() {
+        if (activeCallId != null || isInCall || isRinging) return
+        try {
+            val items = request("/v1/social/calls/incoming").items()
+            incomingCallId = items.firstOrNull { row ->
+                val created = row.lTime("created_at") ?: 0L
+                created > 0 && System.currentTimeMillis() - created in 0..RING_TIMEOUT_MS
+            }?.lString("id", "call_id")?.takeIf { it.isNotBlank() }
+        } catch (_: Exception) { /* FCM still works if the optional polling route is unavailable. */ }
+    }
+
+    suspend fun startGroupCall(groupId: String, video: Boolean) {
+        if (isInCall || isRinging) return
+        var id: String? = null
+        try {
+            val response = request("/v1/social/calls", "POST", JSONObject().put("group_id", groupId).put("kind", if (video) "video" else "voice"))
+            id = response.lString("id", "call_id").ifBlank { null }
+            callPeerName = response.lString("group_name").ifBlank { "Group" }
+            callPeerHandle = ""
+            connectCall(response, video, outgoing = true)
+        } catch (e: Exception) {
+            id?.let { endOnServer(it) }; cleanupRoom()
+            statusMessage = friendly(e, "Group call could not start")
+        }
+    }
+
     suspend fun joinCall(callId: String) {
         if (callId.isBlank()) return
         incomingCallId = null
         try {
-            val response = request("/v1/social/calls/${enc(callId)}/join", method = "POST", body = JSONObject())
+            val response = request("/v1/social/calls/${enc(callId)}/join", method = "POST", body = JSONObject().put("installation_id", DeviceIdentity.installationId(appContext)))
             val caller = response.optJSONObject("caller") ?: response.optJSONObject("other")
             callPeerName = caller?.lString("display_name", "handle").orEmpty().ifBlank { "Blindbandit caller" }
             callPeerHandle = caller?.lString("handle").orEmpty()
@@ -409,7 +456,11 @@ class ProductionCommunicationsService(
 
     suspend fun declineCall(callId: String) {
         incomingCallId = null
-        endOnServer(callId)
+        try {
+            request("/v1/social/calls/${enc(callId)}/decline", "POST", JSONObject())
+        } catch (e: BlindbanditApiException) {
+            if (e.status == 404 || e.status == 405) endOnServer(callId) else throw e
+        }
         statusMessage = "Call declined."
     }
 
@@ -424,7 +475,7 @@ class ProductionCommunicationsService(
         room = newRoom
         newRoom.connect(url = url, token = token)
         newRoom.localParticipant.setMicrophoneEnabled(true)
-        val cameraOn = video && !startWithCameraOff
+        val cameraOn = video && !startWithCameraOff && androidx.core.content.ContextCompat.checkSelfPermission(appContext, android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
         if (cameraOn) newRoom.localParticipant.setCameraEnabled(true)
         isVideoCall = video
         micEnabled = true
@@ -451,6 +502,7 @@ class ProductionCommunicationsService(
         statusMessage = "Connected with ${callPeerName.ifBlank { "Blindbandit user" }}."
         Announcer.announce(appContext, statusMessage)
         scope.launch { watchForHangup(newRoom) }
+        scope.launch { while (room === newRoom && isInCall) { delay(1000); if (room === newRoom && isInCall) callSeconds += 1 } }
     }
 
     /** Ends our side when the other person leaves the room. */
@@ -467,18 +519,20 @@ class ProductionCommunicationsService(
     fun tick() { if (isInCall) callSeconds += 1 }
 
     fun toggleMic() {
-        micEnabled = !micEnabled
-        val target = micEnabled
-        Announcer.announce(appContext, if (target) "Microphone on" else "Muted")
-        scope.launch { runCatching { room?.localParticipant?.setMicrophoneEnabled(target) } }
+        val target = !micEnabled
+        scope.launch {
+            try { room?.localParticipant?.setMicrophoneEnabled(target); micEnabled = target; Announcer.announce(appContext, if (target) "Microphone on" else "Muted") }
+            catch (e: Exception) { Announcer.announce(appContext, "Microphone could not be changed.") }
+        }
     }
 
     fun toggleCamera() {
         if (!isVideoCall) return
-        cameraEnabled = !cameraEnabled
-        val target = cameraEnabled
-        Announcer.announce(appContext, if (target) "Camera on" else "Camera off")
-        scope.launch { runCatching { room?.localParticipant?.setCameraEnabled(target) } }
+        val target = !cameraEnabled
+        scope.launch {
+            try { room?.localParticipant?.setCameraEnabled(target); cameraEnabled = target; Announcer.announce(appContext, if (target) "Camera on" else "Camera off") }
+            catch (e: Exception) { Announcer.announce(appContext, "Camera could not be changed. Check camera permission.") }
+        }
     }
 
     fun toggleSpeaker() = setSpeaker(!speakerOn, announce = true)
@@ -515,7 +569,7 @@ class ProductionCommunicationsService(
         scope.launch {
             try { activeRoom?.localParticipant?.setMicrophoneEnabled(false) } catch (_: Exception) {}
             try { activeRoom?.localParticipant?.setCameraEnabled(false) } catch (_: Exception) {}
-            try { activeRoom?.disconnect() } catch (_: Exception) {}
+            try { activeRoom?.disconnect(); activeRoom?.release() } catch (_: Exception) {}
             resetAudio()
             if (!callId.isNullOrBlank()) endOnServer(callId)
             if (wasConnected || callId != null) loadCallHistory()
@@ -528,7 +582,7 @@ class ProductionCommunicationsService(
         activeCallId = null
         isRinging = false
         isInCall = false
-        scope.launch { runCatching { r?.disconnect() }; resetAudio() }
+        scope.launch { runCatching { r?.disconnect(); r?.release() }; resetAudio() }
     }
 
     private fun resetAudio() {
@@ -546,7 +600,9 @@ class ProductionCommunicationsService(
                 request("/v1/social/calls/${enc(callId)}/end", method = "POST", body = JSONObject())
                 return
             } catch (e: BlindbanditApiException) {
-                return // 4xx/5xx with a body: the server has the call state; nothing more to do.
+                if (e.status in setOf(404, 409, 410)) return
+                if (e.status < 500 && e.status != 429) { statusMessage = "Could not confirm call ended on server."; return }
+                delay(1000L * (attempt + 1))
             } catch (_: Exception) {
                 delay(1000L * (attempt + 1))
             }
@@ -597,15 +653,16 @@ class ProductionCommunicationsService(
         else -> e.localizedMessage?.takeIf { it.isNotBlank() } ?: fallback
     }
 
-    private fun enc(value: String) = URLEncoder.encode(value, StandardCharsets.UTF_8.name()).replace("+", "%20")
+    internal fun enc(value: String) = URLEncoder.encode(value, StandardCharsets.UTF_8.name()).replace("+", "%20")
 
-    private suspend fun request(path: String, method: String = "GET", body: JSONObject? = null): JSONObject = withContext(Dispatchers.IO) {
+    internal suspend fun request(path: String, method: String = "GET", body: JSONObject? = null): JSONObject = withContext(Dispatchers.IO) {
         val token = auth.sessionToken() ?: error("Sign in to use calls and messages.")
         val connection = (URL(AppConfig.API_BASE_URL.trimEnd('/') + path).openConnection() as HttpURLConnection).apply {
             // Android's platform HttpURLConnection (OkHttp-backed) accepts PATCH.
             requestMethod = method
             setRequestProperty("Authorization", "Bearer $token")
             setRequestProperty("Accept", "application/json")
+            setRequestProperty("X-Installation-ID", DeviceIdentity.installationId(appContext))
             connectTimeout = 15_000
             readTimeout = 20_000
             if (body != null) {

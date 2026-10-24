@@ -89,6 +89,7 @@ import net.mrblindbandit.app.safety.ContentFilter
 private sealed interface MessagesRoute {
     data object List : MessagesRoute
     data object Notifications : MessagesRoute
+    data object Groups : MessagesRoute
     data object Blocked : MessagesRoute
 }
 
@@ -136,6 +137,7 @@ fun MessagesTab(
         return
     }
 
+    communications.openGroupId?.let { GroupThreadScreen(communications, it); return }
     val openId = communications.openConversationId
     if (openId != null) {
         ThreadScreen(communications, openId, haptics, onCall)
@@ -144,6 +146,7 @@ fun MessagesTab(
     when (route) {
         MessagesRoute.Notifications -> { NotificationCenter(communications, haptics, onBack = { route = MessagesRoute.List }, onOpen = { d -> route = MessagesRoute.List; onDestination(d) }); return }
         MessagesRoute.Blocked -> { BlockedAccountsScreen(communications, haptics, onBack = { route = MessagesRoute.List }); return }
+        MessagesRoute.Groups -> { GroupsScreen(communications) { route = MessagesRoute.List }; return }
         MessagesRoute.List -> Unit
     }
 
@@ -169,6 +172,7 @@ fun MessagesTab(
             Box {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, contentDescription = "More message options") }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuItem(text = { Text("Groups") }, onClick = { menu = false; route = MessagesRoute.Groups })
                     DropdownMenuItem(text = { Text("Blocked accounts") }, onClick = { menu = false; route = MessagesRoute.Blocked })
                 }
             }
@@ -411,6 +415,13 @@ private fun ThreadScreen(communications: ProductionCommunicationsService, conver
                 IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, contentDescription = "Conversation options") }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     DropdownMenuItem(text = { Text("Video call") }, enabled = peerHandle.isNotBlank(), onClick = { menu = false; onCall(peerHandle, true) })
+                    DropdownMenuItem(text = { Text("Verify encryption safety number") }, onClick = {
+                        menu = false
+                        scope.launch {
+                            try { val number = communications.encryption?.safetyNumber(peerHandle) ?: error("Encryption is not ready"); communications.statusMessage = "Compare this number with @$peerHandle in person or through a trusted channel: $number"; Announcer.announce(context, communications.statusMessage) }
+                            catch (e: Exception) { communications.statusMessage = e.localizedMessage.orEmpty(); Announcer.announce(context, communications.statusMessage) }
+                        }
+                    })
                     DropdownMenuItem(text = { Text("Search in conversation") }, onClick = { menu = false; finding = true })
                     DropdownMenuItem(text = { Text("Read whole conversation aloud") }, onClick = {
                         menu = false
@@ -435,7 +446,7 @@ private fun ThreadScreen(communications: ProductionCommunicationsService, conver
             }
         }
         HorizontalDivider()
-
+        StatusText(communications.statusMessage)
         Box(Modifier.weight(1f).fillMaxWidth()) {
             val state = communications.threadState
             val shown = communications.messages.filter { findText.isBlank() || it.body.contains(findText.trim(), ignoreCase = true) }
@@ -457,6 +468,8 @@ private fun ThreadScreen(communications: ProductionCommunicationsService, conver
                             onReadAloud = { readAloud.speak(ContentFilter.display(m.body, filter)) },
                             onReport = if (isMine) null else ({ report = ReportTarget("message", m.id, "this message") }),
                         )
+                        MessageMediaActions(m, communications)
+                        TextButton(onClick = { scope.launch { try { communications.react(conversationId, m.id, "👍") } catch (e: Exception) { Announcer.announce(context, "Reaction could not be saved") } } }) { Text("React with thumbs up") }
                     }
                 }
             }
@@ -476,6 +489,7 @@ private fun ThreadScreen(communications: ProductionCommunicationsService, conver
                 IconButton(onClick = { replyTo = null }) { Icon(Icons.Default.Close, contentDescription = "Cancel reply") }
             }
         }
+        MessageMediaComposer(communications, conversationId, listOf(peerHandle))
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
                 value = draft,

@@ -116,3 +116,12 @@ Cross-links:
 ---
 
 *Append dated sections after substantial AI-assisted work.*
+
+## 2026-10-24 — Android parity development (draft, not a release)
+
+- Reference inspected: iOS 2.0.8 (24), main 986372d, all remote refs and open PR metadata including #65.
+- Dedicated branch feat/android-parity-208; package net.mrblindbandit.app retained, candidate Android 2.0.8 (13).
+- Native groups, p256-v1 encryption and Keystore local storage, encrypted file/voice messages, opt-in Cloud AI, optional on-device speech, video rendering and call/push fixes.
+- Includes the intent of PR #65, extended with host validation and regression tests. No main merge or Play publication.
+- Exact delivered/remaining scope, interoperability differences and release blockers: docs/ANDROID_PARITY.md.
+- No backend, signing identity or account/conversation data reset. A production-ready artifact requires all documented release gates.

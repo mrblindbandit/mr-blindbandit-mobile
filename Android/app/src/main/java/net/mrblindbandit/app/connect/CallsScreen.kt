@@ -78,7 +78,16 @@ fun CallsTab(
     var report by remember { mutableStateOf<ReportTarget?>(null) }
     var pendingCall by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
 
+    var pendingAnswer by remember { mutableStateOf<String?>(null) }
+
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        val answer = pendingAnswer
+        pendingAnswer = null
+        if (answer != null) {
+            if (hasPermission(context, Manifest.permission.RECORD_AUDIO)) scope.launch { communications.joinCall(answer) }
+            else Announcer.announce(context, "Microphone permission is needed to answer calls.")
+            return@rememberLauncherForActivityResult
+        }
         val call = pendingCall ?: return@rememberLauncherForActivityResult
         pendingCall = null
         if (result[Manifest.permission.RECORD_AUDIO] == true || hasPermission(context, Manifest.permission.RECORD_AUDIO)) {
@@ -102,7 +111,6 @@ fun CallsTab(
     LaunchedEffect(dialRequest) { dialRequest?.let { dial(it.first, it.second); onDialHandled() } }
     LaunchedEffect(signedIn) { if (signedIn) communications.loadCallHistory() }
     LaunchedEffect(communications.isInCall) {
-        while (communications.isInCall) { delay(1000); communications.tick() }
         if (signedIn) communications.loadCallHistory()
     }
 
@@ -121,7 +129,7 @@ fun CallsTab(
                             Button(onClick = {
                                 haptics.success()
                                 if (hasPermission(context, Manifest.permission.RECORD_AUDIO)) scope.launch { communications.joinCall(callId) }
-                                else permissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO)).also { scope.launch { communications.joinCall(callId) } }
+                                else { pendingAnswer = callId; permissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO)) }
                             }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Answer") }
                             Button(onClick = { haptics.tap(); scope.launch { communications.declineCall(callId) } },
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error), modifier = Modifier.heightIn(min = 48.dp)) { Text("Decline") }
@@ -224,11 +232,16 @@ private fun CallRow(call: CallRecord, communications: ProductionCommunicationsSe
 
 @Composable
 private fun ActiveCallPanel(communications: ProductionCommunicationsService, haptics: Haptics) {
+    val context = LocalContext.current
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) communications.toggleCamera() else Announcer.announce(context, "Camera permission is off.")
+    }
     Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth().padding(16.dp, 8.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val status = if (communications.isRinging) "Ringing ${communications.callPeerName}…" else "In call with ${communications.callPeerName}, ${communications.callTimeLabel}"
             Text(status, style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.semantics { if (communications.isRinging) liveRegion = LiveRegionMode.Polite })
+            if (communications.isVideoCall) communications.room?.let { CallVideoGrid(it) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton(onClick = { haptics.tap(); communications.toggleMic() },
                     modifier = Modifier.heightIn(min = 48.dp).semantics { stateDescription = if (communications.micEnabled) "Microphone on" else "Muted" }) {
@@ -238,7 +251,11 @@ private fun ActiveCallPanel(communications: ProductionCommunicationsService, hap
                     modifier = Modifier.heightIn(min = 48.dp).semantics { stateDescription = if (communications.speakerOn) "Speaker on" else "Speaker off" }) {
                     Text("Speaker")
                 }
-                FilledTonalButton(onClick = { haptics.tap(); communications.toggleCamera() },
+                FilledTonalButton(enabled = communications.isVideoCall, onClick = {
+                    haptics.tap()
+                    if (!communications.cameraEnabled && !hasPermission(context, Manifest.permission.CAMERA)) cameraPermission.launch(Manifest.permission.CAMERA)
+                    else communications.toggleCamera()
+                },
                     modifier = Modifier.heightIn(min = 48.dp).semantics { stateDescription = if (communications.cameraEnabled) "Camera on" else "Camera off" }) {
                     Text("Camera")
                 }

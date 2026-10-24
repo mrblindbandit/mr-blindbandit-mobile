@@ -22,7 +22,7 @@ data class ServerConversation(
                 id = id,
                 peerHandle = handle,
                 peerName = other.lString("display_name", "name").ifBlank { handle.ifBlank { "Blindbandit user" } },
-                lastBody = last.lString("body", "text"),
+                lastBody = if (last.lBool("e2ee")) "Encrypted message" else last.lString("body", "text"),
                 lastSenderId = last.lString("sender_id"),
                 lastCreatedAt = last.lTime("created_at") ?: row.lTime("updated_at") ?: 0L,
                 verified = other.lBool("verified", "is_verified"),
@@ -43,6 +43,9 @@ data class ServerMessage(
     val readAt: Long? = null,
     val replyToBody: String = "",
     val pending: Boolean = false,
+    val encrypted: Boolean = false,
+    val decryptFailed: Boolean = false,
+    val media: JSONObject? = null,
 ) {
     val receipt: Receipt
         get() = when {
@@ -152,23 +155,34 @@ data class SocialNotification(
 /** Where a notification or push should take the user inside the app. */
 sealed interface CommsDestination {
     data class Thread(val conversationId: String) : CommsDestination
+    data class Group(val groupId: String) : CommsDestination
     data class Call(val callId: String) : CommsDestination
     data object Calls : CommsDestination
     data object Messages : CommsDestination
 
     companion object {
-        private val thread = Regex("/(?:messages|conversations|inbox)/([A-Za-z0-9_\\-:.]+)")
-        private val call = Regex("/calls/([A-Za-z0-9_\\-:.]+)")
+        private val idPattern = Regex("[A-Za-z0-9_\\-:.]{1,200}")
+        private fun valid(value: String?): String? = value?.trim()?.takeIf { idPattern.matches(it) }
 
-        fun parse(link: String?, conversationId: String? = null, callId: String? = null): CommsDestination? {
-            if (!conversationId.isNullOrBlank()) return Thread(conversationId)
-            if (!callId.isNullOrBlank()) return Call(callId)
-            val path = link?.substringBefore('?')?.substringBefore('#') ?: return null
-            call.find(path)?.let { m -> m.groupValues[1].takeIf { it != "history" }?.let { return Call(it) } }
-            thread.find(path)?.let { m -> m.groupValues[1].takeIf { it != "unread-count" }?.let { return Thread(it) } }
-            return when {
-                path.contains("/calls") -> Calls
-                path.contains("/messages") || path.contains("/inbox") -> Messages
+        fun parse(link: String?, conversationId: String? = null, callId: String? = null, groupId: String? = null): CommsDestination? {
+            valid(callId)?.let { return Call(it) }
+            valid(groupId)?.let { return Group(it) }
+            valid(conversationId)?.let { return Thread(it) }
+            if (link.isNullOrBlank()) return null
+            val uri = runCatching { android.net.Uri.parse(link) }.getOrNull() ?: return null
+            val path = when {
+                uri.scheme == "mrblindbandit" -> "/${uri.host.orEmpty()}${uri.path.orEmpty()}"
+                uri.scheme == null && link.startsWith("/") && !link.startsWith("//") -> uri.path.orEmpty()
+                uri.scheme == "https" && uri.host?.lowercase() in setOf("mrblindbandit.net", "www.mrblindbandit.net") && uri.userInfo == null -> uri.path.orEmpty()
+                else -> return null
+            }
+            val segments = path.split('/').filter { it.isNotBlank() }.let { if (it.firstOrNull() == "mobile") it.drop(1) else it }
+            fun parameter(vararg names: String) = names.firstNotNullOfOrNull { name -> valid(uri.getQueryParameter(name)) }
+            val trailing = valid(segments.getOrNull(1))
+            return when (segments.firstOrNull()) {
+                "calls" -> (parameter("call_id", "id") ?: trailing?.takeUnless { it == "history" || it == "incoming" })?.let { Call(it) } ?: Calls
+                "groups" -> (parameter("group_id", "id") ?: trailing)?.let { Group(it) } ?: Messages
+                "messages", "inbox", "conversations" -> (parameter("conversation_id", "id", "c") ?: trailing?.takeUnless { it == "unread-count" })?.let { Thread(it) } ?: Messages
                 else -> null
             }
         }

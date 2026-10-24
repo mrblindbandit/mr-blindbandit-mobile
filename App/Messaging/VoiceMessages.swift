@@ -241,13 +241,17 @@ final class VoicePlayback: NSObject, ObservableObject, AVAudioPlayerDelegate {
         stop(deactivate: false)
         register(item)
         loadingID = item.id
+        announce("Loading voice message")
         let p: AVAudioPlayer
         do {
             let data = try await VoicePlayerModel.loadThrowing(item.media)
             p = try AVAudioPlayer(data: data)
         } catch {
             loadingID = nil
-            announce("Couldn't play this voice message. " + VoiceLog.record("play", error)); return
+            let detail = VoiceLog.record("play", error)
+            // Loud, specific — VoiceOver users need the real reason, not a generic fail.
+            announce("Couldn't play this voice message. " + detail)
+            return
         }
         loadingID = nil
         guard activateSession(announceFailure: true) else { return }
@@ -264,7 +268,7 @@ final class VoicePlayback: NSObject, ObservableObject, AVAudioPlayerDelegate {
             announce("Playing")
         } else {
             VoiceLog.record("play", "AVAudioPlayer.play() returned false (audio session busy?)")
-            announce("Couldn't play this voice message")
+            announce("Couldn't play this voice message. Audio session refused playback. Try turning off silent mode or ending another call.")
         }
         startTimer()
         markPlayed(item)
@@ -361,42 +365,134 @@ enum VoicePlayerModel {
     }
 
     enum LoadError: LocalizedError {
-        case missingKey, noURL, http(Int), decrypt(Error)
+        case missingKey, noURL, http(Int), decrypt(Error), empty
         var errorDescription: String? {
             switch self {
-            case .missingKey: return "Attachment key or nonce missing or not base64"
+            case .missingKey: return "Attachment key or nonce missing or not base64/base64url"
             case .noURL: return "No attachment id or URL"
             case .http(let c): return "Download failed with HTTP \(c)"
             case .decrypt(let e): return "Decrypt failed: \(e.localizedDescription)"
+            case .empty: return "Downloaded audio was empty"
             }
         }
     }
 
-    /// Cached plaintext -> local file -> download + E2EE decrypt; every failure is a real, logged error.
+    /// Accept standard base64 or base64url (with/without padding) — peers may use either.
+    static func decodeKeyMaterial(_ s: String?) -> Data? {
+        guard let s, !s.isEmpty else { return nil }
+        if let d = Data(base64Encoded: s), !d.isEmpty { return d }
+        return try? E2EECrypto.unb64u(s)
+    }
+
+    /// Looks like an MPEG-4 / AAC container (unencrypted local or mistyped ciphertext).
+    static func looksLikeM4A(_ d: Data) -> Bool {
+        guard d.count > 12 else { return false }
+        // ....ftyp
+        let ftyp = d.subdata(in: 4..<8)
+        return ftyp == Data("ftyp".utf8)
+    }
+
+    /// Cached plaintext -> local file -> download (presigned, then Bearer) + E2EE decrypt.
+    /// Absolute URL resolution + Bearer fallback so voice still plays when the server returns
+    /// a relative API path or a non-public R2 URL (common failure after 2.0.9).
     static func loadThrowing(_ m: E2EEPayload.Media) async throws -> Data {
-        if let id = m.attachment_id, let d = try? Data(contentsOf: VoiceSender.cacheDir.appendingPathComponent(id + ".m4a")), !d.isEmpty { return d }
-        if let s = m.url, let u = URL(string: s), u.isFileURL { return try Data(contentsOf: u) }
-        guard let key = Data(base64Encoded: m.key), let nonceS = m.nonce, let nonce = Data(base64Encoded: nonceS) else { throw LoadError.missingKey }
-        var url: URL?
-        if let id = m.attachment_id { url = try await SecurityAPI.attachmentURL(id: id) } else if let s = m.url { url = URL(string: s) }
-        guard let url else { throw LoadError.noURL }
-        let (blob, resp) = try await URLSession.shared.data(from: url)
-        if let h = resp as? HTTPURLResponse, !(200..<300).contains(h.statusCode) { throw LoadError.http(h.statusCode) }
+        if let id = m.attachment_id {
+            let local = VoiceSender.cacheDir.appendingPathComponent(id + ".m4a")
+            if let d = try? Data(contentsOf: local), !d.isEmpty { return d }
+        }
+        if let s = m.url, let u = BlindbanditAPI.resolveURL(s), u.isFileURL {
+            return try Data(contentsOf: u)
+        }
+
+        let key = decodeKeyMaterial(m.key) ?? decodeKeyMaterial(m.wrapped_key)
+        let nonce = decodeKeyMaterial(m.nonce)
+        guard let key, let nonce else { throw LoadError.missingKey }
+
+        var blob: Data?
+        var lastHTTP: Int?
+
+        // 1) Prefer media.url when the payload already carries an absolute/relative download.
+        if let s = m.url, let u = BlindbanditAPI.resolveURL(s), !u.isFileURL {
+            do { blob = try await fetchBlob(u) } catch let e as LoadError {
+                if case .http(let c) = e { lastHTTP = c }
+            } catch { /* try attachment id next */ }
+        }
+
+        // 2) GET /v1/social/attachments/{id} → download URL (presigned or API).
+        if blob == nil, let id = m.attachment_id {
+            do {
+                let u = try await SecurityAPI.attachmentURL(id: id)
+                blob = try await fetchBlob(u)
+            } catch let e as LoadError {
+                if case .http(let c) = e { lastHTTP = c }
+            } catch {
+                // 3) Direct authenticated blob route (server may expose /blob alongside JSON URL).
+                if let d = try? await SecurityAPI.downloadAttachmentBlob(id: id), !d.isEmpty {
+                    blob = d
+                } else {
+                    throw error
+                }
+            }
+        }
+
+        guard let blob, !blob.isEmpty else {
+            if let lastHTTP { throw LoadError.http(lastHTTP) }
+            throw LoadError.noURL
+        }
+
+        // Already plaintext m4a (own cache re-upload, or server stored clear — rare).
+        if looksLikeM4A(blob) {
+            if let id = m.attachment_id, m.view_once != true {
+                try? blob.write(to: VoiceSender.cacheDir.appendingPathComponent(id + ".m4a"))
+            }
+            return blob
+        }
+
+        let sha = decodeKeyMaterial(m.sha256)
         let plain: Data
-        do { plain = try AttachmentCrypto.open(blob, key: key, baseNonce: nonce, plainSize: m.size ?? blob.count, sha256: Data(base64Encoded: m.sha256)) }
-        catch { throw LoadError.decrypt(error) }
-        if let id = m.attachment_id, m.view_once != true { try? plain.write(to: VoiceSender.cacheDir.appendingPathComponent(id + ".m4a")) }
+        do {
+            plain = try AttachmentCrypto.open(blob, key: key, baseNonce: nonce, plainSize: m.size ?? blob.count, sha256: sha)
+        } catch {
+            throw LoadError.decrypt(error)
+        }
+        guard !plain.isEmpty else { throw LoadError.empty }
+        if let id = m.attachment_id, m.view_once != true {
+            try? plain.write(to: VoiceSender.cacheDir.appendingPathComponent(id + ".m4a"))
+        }
         return plain
+    }
+
+    /// Presigned first; on 401/403 retry with Bearer. Absolute host only.
+    private static func fetchBlob(_ url: URL) async throws -> Data {
+        let (data, resp) = try await URLSession.shared.data(from: url)
+        if let h = resp as? HTTPURLResponse {
+            if (200..<300).contains(h.statusCode) {
+                guard !data.isEmpty else { throw LoadError.empty }
+                return data
+            }
+            if h.statusCode == 401 || h.statusCode == 403 {
+                let authed = try await BlindbanditAPI.authenticatedData(from: url)
+                guard !authed.isEmpty else { throw LoadError.empty }
+                return authed
+            }
+            throw LoadError.http(h.statusCode)
+        }
+        guard !data.isEmpty else { throw LoadError.empty }
+        return data
     }
 
     /// AVAudioPlayer accepts 0.5...2; anything else stored (old builds, corrupt defaults) plays at 1x.
     static func validRate(_ r: Float) -> Float { (0.5...2).contains(r) ? r : 1 }
 }
 
-/// Last real voice-playback error, shown in Settings > AI > Voice message debug log.
+/// Last real voice-playback error — always visible in Settings > Voice & calls.
 enum VoiceLog {
     static let log = Logger(subsystem: "net.mrblindbandit.app", category: "voice")
-    nonisolated(unsafe) static var lastError = ""
+    private static let defaultsKey = "voice.lastError"
+    nonisolated(unsafe) static var lastError: String {
+        get { UserDefaults.standard.string(forKey: defaultsKey) ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: defaultsKey) }
+    }
     @discardableResult static func record(_ where_: String, _ error: Error) -> String {
         let text = "\(where_): \(error.localizedDescription) [\(String(describing: error))]"
         log.error("\(text, privacy: .public)")
@@ -405,6 +501,49 @@ enum VoiceLog {
     }
     @discardableResult static func record(_ where_: String, _ message: String) -> String {
         record(where_, NSError(domain: "voice", code: 0, userInfo: [NSLocalizedDescriptionKey: message]))
+    }
+}
+
+/// Plays a short generated tone so Settings can prove the audio session path without the network.
+@MainActor
+enum VoiceTestTone {
+    private static var player: AVAudioPlayer?
+    static func play() {
+        // 0.4s 880Hz sine WAV in memory — no network, no decrypt.
+        let sampleRate = 22050.0
+        let duration = 0.45
+        let freq = 880.0
+        let n = Int(sampleRate * duration)
+        var data = Data()
+        func appendU32(_ v: UInt32) { var le = v.littleEndian; withUnsafeBytes(of: &le) { data.append(contentsOf: $0) } }
+        func appendU16(_ v: UInt16) { var le = v.littleEndian; withUnsafeBytes(of: &le) { data.append(contentsOf: $0) } }
+        data.append(contentsOf: Array("RIFF".utf8)); appendU32(UInt32(36 + n * 2))
+        data.append(contentsOf: Array("WAVEfmt ".utf8)); appendU32(16); appendU16(1); appendU16(1)
+        appendU32(UInt32(sampleRate)); appendU32(UInt32(sampleRate * 2)); appendU16(2); appendU16(16)
+        data.append(contentsOf: Array("data".utf8)); appendU32(UInt32(n * 2))
+        for i in 0..<n {
+            let t = Double(i) / sampleRate
+            let sample = Int16((sin(2 * Double.pi * freq * t) * Double(Int16.max) * 0.35).rounded())
+            var le = sample.littleEndian
+            withUnsafeBytes(of: &le) { data.append(contentsOf: $0) }
+        }
+        do {
+            let s = AVAudioSession.sharedInstance()
+            try s.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+            try s.setActive(true)
+            let p = try AVAudioPlayer(data: data)
+            p.prepareToPlay()
+            guard p.play() else {
+                _ = VoiceLog.record("test tone", "AVAudioPlayer.play() returned false")
+                UIAccessibility.post(notification: .announcement, argument: "Test tone failed to start. Check silent switch and volume.")
+                return
+            }
+            player = p
+            UIAccessibility.post(notification: .announcement, argument: "Playing test tone. If you hear a beep, audio on this iPhone works. Voice messages use the network and encryption next.")
+        } catch {
+            _ = VoiceLog.record("test tone", error)
+            UIAccessibility.post(notification: .announcement, argument: "Test tone failed. " + error.localizedDescription)
+        }
     }
 }
 

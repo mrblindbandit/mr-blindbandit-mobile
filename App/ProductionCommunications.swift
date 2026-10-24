@@ -234,6 +234,40 @@ enum BlindbanditAPI {
         return components.url!
     }
 
+    /// Absolute URL from a server string: full https, or path relative to apiBaseURL.
+    static func resolveURL(_ raw: String) -> URL? {
+        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return nil }
+        if let u = URL(string: s), let scheme = u.scheme?.lowercased(), scheme == "http" || scheme == "https" || scheme == "file" {
+            return u
+        }
+        // "//cdn..." protocol-relative
+        if s.hasPrefix("//"), let u = URL(string: "https:" + s) { return u }
+        let path = s.hasPrefix("/") ? String(s.dropFirst()) : s
+        return url(path)
+    }
+
+    /// GET an arbitrary https URL with the same Bearer + device headers as BlindbanditAPI.request.
+    /// Used for attachment downloads that are not fully public/presigned.
+    static func authenticatedData(from absolute: URL) async throws -> Data {
+        if StoreScreenshotMode.isActive { throw AuthServiceError.noActiveSession }
+        guard let token = await clerkTokenWithTimeout() else { throw AuthServiceError.noActiveSession }
+        var request = URLRequest(url: absolute)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 45
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
+        if let device = IdentityStore.shared.deviceID { request.setValue(device, forHTTPHeaderField: "X-BB-Device-Id") }
+        request.setValue(Self.installationID, forHTTPHeaderField: "X-Installation-ID")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw CommunicationsError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else {
+            if http.statusCode == 404 { throw CommunicationsError.notFound("attachment download") }
+            throw CommunicationsError.server("Attachment download failed (HTTP \(http.statusCode)).")
+        }
+        return data
+    }
+
     static func escape(_ value: String) -> String {
         value.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-_"))) ?? value
     }
@@ -930,6 +964,7 @@ final class ProductionCommunicationsService: ObservableObject {
         }
         // 2.0.6: show CallKit's outgoing UI instantly (before any network work) under a local ID,
         // then rebind it to the server call ID.
+        CallWarmup.preconnect()
         CallTiming.start("outgoing call to \(label)")
         let localID = "local-" + UUID().uuidString
         CallKitManager.shared.startOutgoing(callID: localID, handle: handle ?? "", displayName: displayName ?? label, video: video, groupID: groupID, memberCount: memberCount)

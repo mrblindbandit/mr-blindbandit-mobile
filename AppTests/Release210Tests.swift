@@ -86,4 +86,46 @@ final class Release210Tests: XCTestCase {
         XCTAssertFalse(SettingsKey.announceOutgoingSend.isEmpty)
         XCTAssertEqual(SettingsKey.profilePhotoVisibility, "privacy.profilePhoto")
     }
+
+    func testVoiceResolveAndKeyDecode() {
+        let abs = BlindbanditAPI.resolveURL("https://cdn.example/a.bin")
+        XCTAssertEqual(abs?.host, "cdn.example")
+        let rel = BlindbanditAPI.resolveURL("/v1/social/attachments/abc")
+        XCTAssertEqual(rel?.host, AppConfig.apiBaseURL.host)
+        XCTAssertTrue(rel?.path.contains("attachments/abc") == true)
+        XCTAssertNil(BlindbanditAPI.resolveURL("   "))
+        // standard base64
+        let k = Data([0x01, 0x02, 0x03]).base64EncodedString()
+        XCTAssertEqual(VoicePlayerModel.decodeKeyMaterial(k), Data([0x01, 0x02, 0x03]))
+        // base64url without padding
+        let u = E2EECrypto.b64u(Data([0xAA, 0xBB, 0xCC, 0xDD]))
+        XCTAssertEqual(VoicePlayerModel.decodeKeyMaterial(u), Data([0xAA, 0xBB, 0xCC, 0xDD]))
+        XCTAssertNil(VoicePlayerModel.decodeKeyMaterial(nil))
+        XCTAssertNil(VoicePlayerModel.decodeKeyMaterial(""))
+    }
+
+    func testVoiceLooksLikeM4A() {
+        // Minimal ftyp at offset 4
+        var d = Data(count: 12)
+        d.replaceSubrange(4..<8, with: Data("ftyp".utf8))
+        XCTAssertTrue(VoicePlayerModel.looksLikeM4A(d))
+        XCTAssertFalse(VoicePlayerModel.looksLikeM4A(Data([0, 1, 2, 3])))
+    }
+
+    func testVoiceLogPersists() {
+        let prev = VoiceLog.lastError
+        VoiceLog.lastError = "unit-test-error"
+        XCTAssertEqual(VoiceLog.lastError, "unit-test-error")
+        VoiceLog.lastError = prev
+    }
+
+    func testHasPlayableVoiceWithEmptyMime() {
+        let m = E2EEPayload.Media(
+            url: "https://cdn.example/v.bin", attachment_id: nil, key: "YQ==", nonce: "YQ==",
+            sha256: "YQ==", mime: "", size: 1, filename: "voice.m4a",
+            caption: nil, view_once: nil, duration: 1, transcript: nil, alt: nil
+        )
+        XCTAssertTrue(VoiceRowPlayAction.hasPlayableVoiceMedia(m, decryptedType: "voice"))
+    }
+
 }

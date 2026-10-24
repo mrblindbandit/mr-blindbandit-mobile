@@ -1,1 +1,8 @@
-2.0.10 (26): Public profile pictures (set in Settings → Account; shown on chats, people, groups, calls, CallKit). Deep Settings: Chats, Privacy, Notifications (preview style + quiet hours), Voice & calls, Accessibility, Data & storage — real toggles, not stubs. Default ringtone still Mr. BlindBandit. Please test: set/remove a profile photo; open Settings hubs and flip a few toggles (read receipts, typing, preview style, earpiece, captions default); confirm chats list shows avatars.
+2.0.10 (27): VOICE PLAY FIX — root cause: attachment download used plain URLSession without resolving relative URLs or Bearer retry. Now: absolute URL resolve, base64/base64url keys, Bearer on 401/403, /blob fallback, loud VoiceOver errors, Settings → Voice & calls → Last voice error (persists) + Play test tone. Also: public profile pictures + fat Settings hubs; faster call connect (LiveKit+API warm on Calls/People). Default ringtone still Mr. BlindBandit.
+
+Please test:
+1) Settings → Voice & calls → Play test tone (hear beep = audio OK).
+2) Play a received voice message (Actions → Play or double-tap bubble). If it fails, note the Last voice error text.
+3) Send yourself a voice note and play it back.
+4) Set/remove profile photo; flip a few Settings hub toggles.
+5) Place a call from Calls tab — should ring faster after the first warm.

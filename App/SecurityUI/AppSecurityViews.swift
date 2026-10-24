@@ -217,6 +217,8 @@ struct AISettingsView: View {
             Section("Voice message debug log") {
                 Text(VoiceLog.lastError.isEmpty ? "No voice message errors." : VoiceLog.lastError)
                     .font(.footnote).textSelection(.enabled)
+                Button("Play test tone") { VoiceTestTone.play() }
+                    .accessibilityHint("Proves the audio path without downloading a voice message.")
             }
             Section {
                 Toggle("Allow AI web search", isOn: Binding(get: { WebSearch.allowed }, set: { WebSearch.allowed = $0; AIChatStore.shared.resetSession() }))

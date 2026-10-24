@@ -120,6 +120,7 @@ struct Settings: View {
     // MARK: Sections
 
     private var accountSection: some View {
+        Group {
         ProfilePictureEditor()
         Section("Account & profile") {
             if case .signedIn(let name, let email) = auth.state {
@@ -153,6 +154,7 @@ struct Settings: View {
                 Label("Delete account", systemImage: "trash")
             }
             .accessibilityHint("Permanently deletes your account and data after you confirm.")
+        }
         }
     }
 

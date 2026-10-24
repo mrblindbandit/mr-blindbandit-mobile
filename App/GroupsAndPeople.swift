@@ -746,6 +746,7 @@ struct PeopleDirectoryView: View {
             }
         }
         .navigationTitle("People")
+        .onAppear { CallWarmup.preconnect() }
         .searchable(text: $query, prompt: "Name or @handle")
         .task(id: query) {
             try? await Task.sleep(nanoseconds: 300_000_000)

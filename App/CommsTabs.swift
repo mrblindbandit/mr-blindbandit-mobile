@@ -1178,6 +1178,7 @@ struct CallsTabView: View {
             }
             .navigationTitle("Calls")
             .refreshable { await communications.refreshCallHistory() }
+            .onAppear { CallWarmup.preconnect() }
             .safeAreaInset(edge: .bottom) { CommsStatusBanner(text: communications.statusMessage).background(.bar) }
             .sheet(item: $reportTarget) { target in
                 ReportSheet(target: target) { reason, details in

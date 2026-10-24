@@ -210,9 +210,21 @@ enum SecurityAPI {
     static func attachmentURL(id: String) async throws -> URL {
         try await gated(.attachments) {
             let obj = data(try await BlindbanditAPI.request("v1/social/attachments/\(ChatRef.escape(id))"))
-            guard let raw = (obj["url"] as? String) ?? (obj["download_url"] as? String), let url = URL(string: raw) else { throw CommunicationsError.invalidResponse }
+            // Nested upload/download dicts are common on Cloudflare Worker responses.
+            let nested = (obj["download"] as? [String: Any]) ?? (obj["upload"] as? [String: Any])
+            let raw = (obj["url"] as? String)
+                ?? (obj["download_url"] as? String)
+                ?? (nested?["url"] as? String)
+                ?? (obj["href"] as? String)
+            guard let raw, let url = BlindbanditAPI.resolveURL(raw) else { throw CommunicationsError.invalidResponse }
             return url
         }
+    }
+
+    /// Authenticated GET of an attachment blob (Bearer). Soft fallback — a 404 here must NOT
+    /// mark `.attachments` missing (the JSON URL route may still work).
+    static func downloadAttachmentBlob(id: String) async throws -> Data {
+        try await BlindbanditAPI.request("v1/social/attachments/\(ChatRef.escape(id))/blob")
     }
 
     // MARK: Sessions

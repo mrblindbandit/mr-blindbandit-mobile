@@ -388,13 +388,20 @@ struct VoiceCallsSettingsView: View {
             } header: { Text("Calls") }
 
             Section {
+                Button("Play test tone") {
+                    VoiceTestTone.play()
+                }
+                .accessibilityHint("Plays a short beep on this iPhone with no network. If you hear it, the audio path works; voice message failures are then download or decrypt.")
                 if VoiceLog.lastError.isEmpty {
                     Text("No recent voice errors.").foregroundStyle(.secondary)
                 } else {
-                    Text(VoiceLog.lastError).font(.caption).foregroundStyle(.secondary)
+                    Text(VoiceLog.lastError).font(.caption).foregroundStyle(.primary)
+                        .accessibilityLabel("Last voice error: " + VoiceLog.lastError)
                     Button("Clear voice debug log") { VoiceLog.lastError = "" }
                 }
-            } header: { Text("Last voice error") }
+            } header: { Text("Last voice error") } footer: {
+                Text("Last voice error stays visible until you clear it, including after relaunch. Use Play test tone to separate audio-session problems from download or decrypt failures.")
+            }
         }
         .navigationTitle("Voice & calls")
         .sheet(isPresented: $showRingtones) {

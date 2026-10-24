@@ -1,3 +1,8 @@
+## 2026-10-25 — iOS 2.0.10 (27), branch `feat/ios-2010-public-profile-pictures`
+- **Voice play root cause fix:** `loadThrowing` now resolves relative attachment URLs against apiBaseURL, accepts base64 *or* base64url keys/nonces, retries 401/403 downloads with Bearer, falls back to `/attachments/{id}/blob`, and accepts plaintext m4a if the blob is already clear. Loud VO "Loading…" / specific failure text. `VoiceLog.lastError` persists across relaunch. Settings → Voice & calls: always-visible Last voice error + **Play test tone** (proves audio session vs network).
+- Profile pictures + fat Settings hubs (unchanged from 26) + CallWarmup: rate-limited LiveKit+API TLS warm on Calls/People/chat appear and at placeCall start.
+- Build fix: Settings accountSection wrapped in Group (opaque return).
+
 ## 2026-10-25 — iOS 2.0.10 (26), branch `feat/ios-2010-public-profile-pictures`
 - Public profile pictures: ProfileAvatar + ProfilePictureEditor (Photos/camera), PATCH/PUT social me avatar client; avatars in conversation rows, thread header/info, people, group members, call history, incoming/active call UI, CallKit INImage donate.
 - Expanded Settings (Signal/WhatsApp-depth hubs): Chats, Privacy, Notifications, Voice & calls, Accessibility, Data & storage — wired to UserDefaults / NSE App Group / existing services (no stub toggles). Media auto-download + use-less-data, archive muted / keep archived, wallpaper, default disappearing, last-seen local pref, read/typing gates, announce caller, quiet hours, preview style → NSE, earpiece default, live captions default, announce send/delivery, clear caches + sizes, export safety-number help text.

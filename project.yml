@@ -56,6 +56,8 @@ targets:
         INFOPLIST_KEY_CFBundleName: BlindBandit
         INFOPLIST_KEY_NSFaceIDUsageDescription: Mr. BlindBandit Mobile uses Face ID to unlock the app. You can turn the app lock off in Settings.
         INFOPLIST_KEY_NSCameraUsageDescription: Mr. BlindBandit Mobile uses the camera for video calls, scanning safety number QR codes and describing what your camera sees, on this iPhone only.
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: Mr. BlindBandit Mobile uses your photo library so you can set a public profile picture and save chat media you choose to keep.
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: Mr. BlindBandit Mobile saves photos and videos to your library only when you turn on Save media to Photos.
         INFOPLIST_KEY_NSMicrophoneUsageDescription: Mr. BlindBandit Mobile uses the microphone for calls, voice messages, dictation and recordings you start in the creator tools.
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: Mr. BlindBandit Mobile turns voice messages and dictation into text on this iPhone. Audio is never sent to a server.
         INFOPLIST_KEY_NSRemindersFullAccessUsageDescription: Mr. BlindBandit Mobile adds reminders you ask the AI chat or a message action to create.
@@ -67,8 +69,8 @@ targets:
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         INFOPLIST_KEY_UIBackgroundModes: [audio, remote-notification, voip]
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        MARKETING_VERSION: '2.0.9'
-        CURRENT_PROJECT_VERSION: '25'
+        MARKETING_VERSION: '2.0.10'
+        CURRENT_PROJECT_VERSION: '29'
     dependencies:
       - package: LiveKitClient
         product: LiveKit
@@ -97,8 +99,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.mrblindbandit.app.ScreenShare
         CODE_SIGN_ENTITLEMENTS: ScreenShare/ScreenShare.entitlements
-        MARKETING_VERSION: '2.0.9'
-        CURRENT_PROJECT_VERSION: '25'
+        MARKETING_VERSION: '2.0.10'
+        CURRENT_PROJECT_VERSION: '29'
         TARGETED_DEVICE_FAMILY: '1'
         APPLICATION_EXTENSION_API_ONLY: YES
     dependencies:
@@ -129,8 +131,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.mrblindbandit.app.NotificationService
         CODE_SIGN_ENTITLEMENTS: NotificationService/NotificationService.entitlements
-        MARKETING_VERSION: '2.0.9'
-        CURRENT_PROJECT_VERSION: '25'
+        MARKETING_VERSION: '2.0.10'
+        CURRENT_PROJECT_VERSION: '29'
         TARGETED_DEVICE_FAMILY: '1'
   BlindbanditTests:
     type: bundle.unit-test

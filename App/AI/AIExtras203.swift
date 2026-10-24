@@ -361,12 +361,24 @@ struct NowPlayingBar: View {
 // MARK: - Responsiveness helpers
 
 enum CallWarmup {
-    /// Warms DNS + TLS to the LiveKit server so a call connects faster when the call button is on screen.
+    private static var lastWarm: TimeInterval = 0
+    /// Warms DNS + TLS to LiveKit and the Blindbandit API so call button → ring is faster.
+    /// Safe to call from onAppear of chat/people/calls screens; rate-limited to once per 60s.
     static func preconnect() {
+        let now = Date().timeIntervalSince1970
+        guard now - lastWarm > 60 else { return }
+        lastWarm = now
         let last = UserDefaults.standard.string(forKey: "livekit.lastURL") ?? AppConfig.liveKitURL
-        guard let u = URL(string: last.replacingOccurrences(of: "wss://", with: "https://")) else { return }
-        var r = URLRequest(url: u); r.httpMethod = "HEAD"; r.timeoutInterval = 5
-        URLSession.shared.dataTask(with: r).resume()
+        if let u = URL(string: last.replacingOccurrences(of: "wss://", with: "https://")) {
+            var r = URLRequest(url: u); r.httpMethod = "HEAD"; r.timeoutInterval = 5
+            URLSession.shared.dataTask(with: r).resume()
+        }
+        // Warm API TLS too — startCall / token is the usual first-hop delay.
+        var api = URLRequest(url: AppConfig.apiBaseURL.appending(path: "v1/health"))
+        api.httpMethod = "HEAD"; api.timeoutInterval = 5
+        URLSession.shared.dataTask(with: api).resume()
+        // Touch installation_id so UserDefaults is hot before placeCall (MainActor).
+        Task { @MainActor in _ = BlindbanditAPI.installationID }
     }
 }
 

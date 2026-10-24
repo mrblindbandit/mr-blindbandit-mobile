@@ -17,14 +17,23 @@ final class NotificationService: UNNotificationServiceExtension {
         let info = content.userInfo
         let category = (info["category"] as? String) ?? (info["type"] as? String) ?? ""
         let hidePreviews = PreviewPrivacyLookup.hidePreviews(info)
+        let nameOnly = PreviewPrivacyLookup.nameOnlyPreviews()
         let muteSound = PreviewPrivacyLookup.muteSound(info)
 
         if hidePreviews {
-            // Never surface decrypted body when the chat has Hide notification previews on.
+            // Global hidden, or per-chat hide: never surface decrypted body.
+            content.body = "Message"
+            if PreviewPrivacyLookup.fullyHidden() {
+                content.title = "Blindbandit"
+            } else if content.title.isEmpty {
+                content.title = PushDecryptor.senderName(info) ?? content.title
+            }
+        } else if nameOnly {
             content.body = "Message"
             if content.title.isEmpty {
                 content.title = PushDecryptor.senderName(info) ?? content.title
             }
+            if let text = PushDecryptor.decrypt(info) { _ = text /* peek unused; body stays generic */ }
         } else if let text = PushDecryptor.decrypt(info) {
             content.body = text
             if (info["is_group"] as? Bool) != true, content.title.isEmpty { content.title = PushDecryptor.senderName(info) ?? content.title }
@@ -78,7 +87,17 @@ final class NotificationService: UNNotificationServiceExtension {
 enum PreviewPrivacyLookup {
     private static let suite = UserDefaults(suiteName: "group.net.mrblindbandit.app")
 
-    static func hidePreviews(_ info: [AnyHashable: Any]) -> Bool { lookup(prefix: "hidePreviews.", info: info) }
+    static func hidePreviews(_ info: [AnyHashable: Any]) -> Bool {
+        if suite?.bool(forKey: "hidePreviews.global") == true { return true }
+        if fullyHidden() { return true }
+        return lookup(prefix: "hidePreviews.", info: info)
+    }
+    static func nameOnlyPreviews() -> Bool {
+        suite?.string(forKey: "notify.previewStyle") == "nameOnly"
+    }
+    static func fullyHidden() -> Bool {
+        suite?.string(forKey: "notify.previewStyle") == "hidden" || suite?.bool(forKey: "hidePreviews.global") == true
+    }
     static func muteSound(_ info: [AnyHashable: Any]) -> Bool { lookup(prefix: "muteSound.", info: info) }
 
     private static func lookup(prefix: String, info: [AnyHashable: Any]) -> Bool {

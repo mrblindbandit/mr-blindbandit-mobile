@@ -218,6 +218,7 @@ struct BlindbanditIncomingCall: Identifiable, Decodable, Equatable {
     let kind: String
     let from_handle: String
     let from_name: String
+    let from_avatar_url: String?
     let group_id: String?
     let group_name: String?
     let created_at: Double
@@ -228,8 +229,9 @@ struct BlindbanditIncomingCall: Identifiable, Decodable, Equatable {
         return from_name
     }
 
-    init(id: String, kind: String, from_handle: String, from_name: String, group_id: String?, group_name: String?, created_at: Double) {
+    init(id: String, kind: String, from_handle: String, from_name: String, group_id: String?, group_name: String?, created_at: Double, from_avatar_url: String? = nil) {
         self.id = id; self.kind = kind; self.from_handle = from_handle; self.from_name = from_name
+        self.from_avatar_url = from_avatar_url
         self.group_id = group_id; self.group_name = group_name; self.created_at = created_at
     }
 
@@ -240,12 +242,14 @@ struct BlindbanditIncomingCall: Identifiable, Decodable, Equatable {
         from_handle = (try? c.decode(String.self, forKey: .from_handle)) ?? ""
         let name = (try? c.decode(String.self, forKey: .from_name)) ?? ""
         from_name = name.isEmpty ? (from_handle.isEmpty ? "Someone" : "@\(from_handle)") : name
+        from_avatar_url = (try? c.decodeIfPresent(String.self, forKey: .from_avatar_url))
+            ?? (try? c.decodeIfPresent(String.self, forKey: .avatar_url))
         group_id = try? c.decodeIfPresent(String.self, forKey: .group_id)
         group_name = try? c.decodeIfPresent(String.self, forKey: .group_name)
         created_at = (try? c.decode(Double.self, forKey: .created_at)) ?? Date().timeIntervalSince1970 * 1000
     }
 
-    enum CodingKeys: String, CodingKey { case id, kind, from_handle, from_name, group_id, group_name, created_at }
+    enum CodingKeys: String, CodingKey { case id, kind, from_handle, from_name, from_avatar_url, avatar_url, group_id, group_name, created_at }
 }
 
 @MainActor
@@ -410,7 +414,8 @@ extension BlindbanditAPI {
                     BlindbanditIncomingCall(
                         id: $0.id, kind: $0.kind, from_handle: $0.other?.handle ?? "",
                         from_name: $0.other?.display_name ?? ($0.other.map { "@\($0.handle)" } ?? "Someone"),
-                        group_id: nil, group_name: nil, created_at: $0.created_at
+                        group_id: nil, group_name: nil, created_at: $0.created_at,
+                        from_avatar_url: $0.other?.avatar_url
                     )
                 }
         }

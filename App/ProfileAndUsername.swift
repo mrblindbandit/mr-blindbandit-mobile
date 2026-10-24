@@ -209,74 +209,10 @@ struct UsernameSearchField: View {
     }
 }
 
-/// Native profile screen. Shows the signed-in Clerk user's info immediately (no web view), then loads
-/// the Blindbandit profile with a timeout, an error state and Retry.
+/// Back-compat entry: opens the native social profile (not a web view).
 struct ProfileView: View {
-    @EnvironmentObject private var auth: ClerkAuthService
-    @EnvironmentObject private var communications: ProductionCommunicationsService
-    @State private var phase: Phase = .loading
-
-    enum Phase: Equatable { case loading, loaded, failed(String) }
-
     var body: some View {
-        List {
-            Section {
-                HStack(spacing: 14) {
-                    BlindbanditLogoImage(size: 56).accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 4) {
-                        if case .signedIn(let name, let email) = auth.state {
-                            HStack(spacing: 4) {
-                                Text(name.isEmpty ? "Blindbandit member" : name).font(.headline)
-                                if communications.myVerified { VerifiedBadge() }
-                            }
-                            Text(email).font(.subheadline).foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                .accessibilityElement(children: .combine)
-            }
-            Section("Username") {
-                let handle = communications.myHandle.isEmpty ? (UserDefaults.standard.string(forKey: "bbUsername") ?? "") : communications.myHandle
-                LabeledContent("Username", value: handle.isEmpty ? "Not set" : "@\(handle)")
-                NavigationLink("Edit username") { UsernameEditor().navigationTitle("Username") }
-            }
-            Section("Blindbandit profile") {
-                switch phase {
-                case .loading:
-                    HStack { ProgressView(); Text("Updating profile details") }
-                        .accessibilityElement(children: .combine)
-                case .loaded:
-                    Label("Profile is up to date", systemImage: "checkmark.seal.fill")
-                case .failed(let message):
-                    Text(message).foregroundStyle(.secondary)
-                    Button("Retry") { Task { await load() } }
-                }
-                NavigationLink("Manage account on the website") {
-                    Website(url: AppConfig.accountURL, title: "Account")
-                }
-            }
-        }
-        .navigationTitle("Profile")
-        .task { await load() }
-        .refreshable { await load() }
-    }
-
-    func load() async {
-        phase = .loading
-        // A task group would wait for a hung request even after cancelAll, so race a separate timer.
-        let watchdog = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(12))
-            if phase == .loading {
-                phase = .failed("Loading your profile is taking too long. Your account details above are from this iPhone.")
-            }
-        }
-        await communications.bootstrap(force: true)
-        watchdog.cancel()
-        if !communications.statusMessage.isEmpty && communications.myHandle.isEmpty {
-            phase = .failed(communications.statusMessage)
-        } else {
-            phase = .loaded
-        }
+        NativeProfileView(handle: "", isMe: true)
     }
 }
 

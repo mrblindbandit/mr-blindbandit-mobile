@@ -48,11 +48,26 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         let category = (userInfo["category"] as? String) ?? (userInfo["type"] as? String) ?? ""
         let link = (userInfo["deep_link"] as? String) ?? ""
         let isCall = category.contains("call") || link.hasPrefix("/mobile/calls")
+        let isGroup = category.contains("group") || (userInfo["group_id"] as? String) != nil || link.contains("/groups")
+        let isMention = category.contains("mention") || (userInfo["mention"] as? Bool) == true
         let defaults = UserDefaults.standard
-        let allowed = isCall
-            ? (defaults.object(forKey: SettingsKey.notifyCalls) as? Bool ?? true)
-            : (defaults.object(forKey: SettingsKey.notifyMessages) as? Bool ?? true)
-        completionHandler(allowed ? [.banner, .sound, .badge, .list] : [])
+        var allowed: Bool
+        if isCall {
+            allowed = defaults.object(forKey: SettingsKey.notifyCalls) as? Bool ?? true
+        } else if isMention {
+            allowed = defaults.object(forKey: SettingsKey.notifyMentions) as? Bool ?? true
+        } else if isGroup {
+            allowed = defaults.object(forKey: SettingsKey.notifyGroups) as? Bool ?? true
+        } else {
+            allowed = defaults.object(forKey: SettingsKey.notifyMessages) as? Bool ?? true
+        }
+        if allowed, QuietHoursSchedule.isQuietNow() { allowed = false }
+        var opts: UNNotificationPresentationOptions = allowed ? [.banner, .badge, .list] : []
+        if allowed {
+            let soundOn = defaults.object(forKey: SettingsKey.notificationSound) as? Bool ?? true
+            if soundOn { opts.insert(.sound) }
+        }
+        completionHandler(opts)
     }
 
     func userNotificationCenter(
@@ -208,5 +223,21 @@ struct BrandMark: View {
         }
         .frame(width: size, height: size)
         .accessibilityHidden(true)
+    }
+}
+
+
+/// Local quiet-hours window (minutes from midnight). Spans midnight when end < start.
+enum QuietHoursSchedule {
+    static func isQuietNow(date: Date = Date()) -> Bool {
+        let d = UserDefaults.standard
+        guard d.object(forKey: SettingsKey.quietHoursEnabled) as? Bool ?? false else { return false }
+        let start = d.object(forKey: SettingsKey.quietHoursStart) as? Int ?? 22 * 60
+        let end = d.object(forKey: SettingsKey.quietHoursEnd) as? Int ?? 7 * 60
+        let cal = Calendar.current
+        let mins = cal.component(.hour, from: date) * 60 + cal.component(.minute, from: date)
+        if start == end { return true }
+        if start < end { return mins >= start && mins < end }
+        return mins >= start || mins < end
     }
 }

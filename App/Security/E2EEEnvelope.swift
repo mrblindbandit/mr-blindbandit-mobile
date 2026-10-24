@@ -53,6 +53,8 @@ struct E2EEPayload: Codable, Equatable {
         var url: String?
         var attachment_id: String?
         var key: String
+        /// Optional alternate key material (base64/base64url) when peers wrap the attachment key.
+        var wrapped_key: String? = nil
         var nonce: String?
         var sha256: String
         var mime: String

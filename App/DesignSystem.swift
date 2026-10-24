@@ -12,7 +12,10 @@ enum Brand {
     static let gold = Color(red: 1.0, green: 0.835, blue: 0.31)       // #FFD54F
     static let goldDeep = Color(red: 0.72, green: 0.53, blue: 0.0)    // #B88700, AA on white
     static let ink = Color(red: 0.05, green: 0.05, blue: 0.06)
-    static let minTouch: CGFloat = 44
+    /// Base 44pt; 52pt when Settings → Accessibility → Prefer larger controls is on.
+    static var minTouch: CGFloat {
+        (UserDefaults.standard.object(forKey: SettingsKey.preferLargerControls) as? Bool ?? false) ? 52 : 44
+    }
     static let corner: CGFloat = 18
 
     /// Accent that stays readable in both light and dark mode, and in high contrast.
@@ -63,6 +66,102 @@ enum SettingsKey {
     static let autoPlayVoice = "voice.autoPlayNext"
     static let listenOnceDefault = "voice.listenOnce"
     static let callMagicTapEnds = "calls.magicTapEnds"
+
+    // Chats
+    static let mediaAutoDownload = "comms.mediaAutoDownload" // wifi | never | always
+    static let saveMediaToPhotos = "comms.saveMediaToPhotos"
+    static let showMediaGallery = "comms.showMediaGallery"
+    static let archiveMutedChats = "comms.archiveMuted"
+    static let keepChatsArchived = "comms.keepArchived"
+    static let chatWallpaper = "comms.wallpaper" // none | solid
+    static let defaultDisappearingSeconds = "comms.defaultDisappearing"
+
+    // Privacy (local prefs; server-backed when available)
+    static let lastSeenVisibility = "privacy.lastSeen" // everyone | contacts | nobody
+    static let profilePhotoVisibility = "privacy.profilePhoto" // everyone
+    static let sendReadReceipts = "privacy.sendReadReceipts"
+    static let sendTypingIndicators = "privacy.sendTyping"
+    static let announceCallerName = "privacy.announceCaller"
+    static let screenShareWholeScreen = "screenShare.wholeScreen"
+
+    // Notifications
+    static let notifyGroups = "notifyGroups"
+    static let notifyMentions = "notifyMentions"
+    static let notificationPreviewStyle = "notify.previewStyle" // nameMessage | nameOnly | hidden
+    static let notificationSound = "notify.sound"
+    static let notificationVibrate = "notify.vibrate"
+    static let quietHoursEnabled = "notify.quietHours"
+    static let quietHoursStart = "notify.quietStart" // minutes from midnight
+    static let quietHoursEnd = "notify.quietEnd"
+
+    // Voice & calls
+    static let voicePreferEarpiece = "voice.preferEarpiece"
+    static let liveCaptionsDefault = "calls.captionsDefault"
+    static let announceOutgoingSend = "a11y.announceSend"
+    static let announceDelivery = "a11y.announceDelivery"
+    static let preferLargerControls = "a11y.largerControls"
+    static let reduceTransparency = "a11y.reduceTransparency"
+    static let useLessData = "network.useLessData"
+
+    // Appearance / Advanced / Security extras (2.0.10 Signal-depth)
+    static let bubbleColorAccent = "appearance.bubbleAccent" // system | gold | blue
+    static let boldTextInBubbles = "appearance.boldBubbles"
+    static let screenshotNotify = "privacy.screenshotNotify"
+    static let linkPreviewWarn = "privacy.linkPreviewWarn"
+    static let sealedSenderPref = "privacy.sealedSenderPref" // client hint until server ships
+    static let proxyEnabled = "network.proxyEnabled"
+    static let proxyHost = "network.proxyHost"
+    static let hapticCallStates = "a11y.hapticCallStates"
+    static let shakeToRead = "a11y.shakeToRead"
+    static let audioDuckAmount = "a11y.audioDuck" // soft | medium | hard
+    static let missedCallCallbackSuggest = "calls.missedCallbackSuggest"
+}
+
+enum MediaAutoDownload: String, CaseIterable, Identifiable {
+    case wifi, never, always
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .wifi: return "Wi-Fi only"
+        case .never: return "Never"
+        case .always: return "Always"
+        }
+    }
+}
+
+enum NotificationPreviewStyle: String, CaseIterable, Identifiable {
+    case nameMessage, nameOnly, hidden
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .nameMessage: return "Name and message"
+        case .nameOnly: return "Name only"
+        case .hidden: return "Hidden"
+        }
+    }
+}
+
+enum LastSeenVisibility: String, CaseIterable, Identifiable {
+    case everyone, contacts, nobody
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .everyone: return "Everyone"
+        case .contacts: return "My contacts"
+        case .nobody: return "Nobody"
+        }
+    }
+}
+
+enum ChatWallpaperOption: String, CaseIterable, Identifiable {
+    case none, solid
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .none: return "None"
+        case .solid: return "Solid color"
+        }
+    }
 }
 
 struct BrandCard<Content: View>: View {

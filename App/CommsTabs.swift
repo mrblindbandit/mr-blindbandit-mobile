@@ -114,7 +114,10 @@ struct MessagesTabView: View {
                 if f.hidden && !folders.hiddenUnlocked { return false }
             } else if folders.isHidden(key) { return false }
             if let at = deletedAt[c.id], c.updated_at <= at { return false }
-            if let at = archivedAt[c.id], c.updated_at <= at { return showArchived }
+            if let at = archivedAt[c.id] {
+                let keep = UserDefaults.standard.object(forKey: SettingsKey.keepChatsArchived) as? Bool ?? false
+                if keep || c.updated_at <= at { return showArchived }
+            }
             if showArchived { return false }
             guard !q.isEmpty else { return true }
             return (c.other?.handle.lowercased().contains(q) ?? false)
@@ -339,7 +342,10 @@ struct MessagesTabView: View {
     }
 
     private func setMute(_ c: BlindbanditConversation, _ duration: TimeInterval?, unmute: Bool = false) {
-        if unmute { LocalComms.unmute(c.id) } else { LocalComms.mute(c.id, for: duration) }
+        if unmute { LocalComms.unmute(c.id) } else {
+            LocalComms.mute(c.id, for: duration)
+            archiveIfMutedPref(c.id, updatedAt: c.updated_at)
+        }
         muteUntil = LocalComms.muteUntil
         muted = LocalComms.muted
         AppHaptics.selection()
@@ -366,7 +372,17 @@ struct MessagesTabView: View {
 
     private func toggleArchive(_ c: BlindbanditConversation) {
         if archivedAt[c.id] != nil { archivedAt[c.id] = nil; announce("Unarchived") }
-        else { archivedAt[c.id] = c.updated_at; announce("Archived. It comes back when there's a new message.") }
+        else {
+            archivedAt[c.id] = c.updated_at
+            let keep = UserDefaults.standard.object(forKey: SettingsKey.keepChatsArchived) as? Bool ?? false
+            announce(keep ? "Archived. Stays archived until you open it." : "Archived. It comes back when there's a new message.")
+        }
+        LocalComms.archivedAt = archivedAt
+    }
+
+    private func archiveIfMutedPref(_ id: String, updatedAt: Double) {
+        guard UserDefaults.standard.object(forKey: SettingsKey.archiveMutedChats) as? Bool ?? false else { return }
+        archivedAt[id] = updatedAt
         LocalComms.archivedAt = archivedAt
     }
 
@@ -407,6 +423,13 @@ struct MessagesTabView: View {
         return HStack(alignment: .top, spacing: 10) {
             Circle().fill(unread ? Color.blue : Color.clear).frame(width: 10, height: 10).padding(.top, 6)
                 .accessibilityHidden(true)
+            ProfileAvatar(
+                urlString: conversation.other?.avatar_url,
+                displayName: name,
+                size: 44,
+                verified: false,
+                decorative: true
+            )
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     if pinned.contains(conversation.id) { Image(systemName: "pin.fill").font(.caption).accessibilityHidden(true) }
@@ -568,7 +591,14 @@ struct ConversationThreadView: View {
             // The name in the header is the chat settings button (no separate More button).
             ToolbarItem(placement: .principal) {
                 Button { showInfo = true } label: {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 6) {
+                        ProfileAvatar(
+                            urlString: conversation?.other?.avatar_url,
+                            displayName: displayName,
+                            size: 28,
+                            verified: false,
+                            decorative: true
+                        )
                         Text(displayName).font(.headline).lineLimit(1)
                         if conversation?.other?.verified == true { VerifiedBadge() }
                         if E2EEService.shared.isVerified(handle) {
@@ -610,9 +640,20 @@ struct ConversationThreadView: View {
         .navigationDestination(isPresented: $showInfo) {
             List {
                 Section {
-                    HStack { Text(displayName).font(.title3.bold()); if conversation?.other?.verified == true { VerifiedBadge() } }
+                    HStack(spacing: 12) {
+                        ProfileAvatar(urlString: conversation?.other?.avatar_url, displayName: displayName, size: 56, verified: conversation?.other?.verified == true, decorative: true)
+                        Text(displayName).font(.title3.bold())
+                    }
                         .accessibilityElement(children: .combine).accessibilityAddTraits(.isHeader)
                     if !handle.isEmpty { Text("@\(handle)").foregroundStyle(.secondary) }
+                    if !handle.isEmpty {
+                        NavigationLink {
+                            NativeProfileView(handle: handle)
+                        } label: {
+                            Label("View profile", systemImage: "person.crop.circle")
+                        }
+                        .accessibilityHint("Opens native Blindbandit profile")
+                    }
                 }
                 Section("Chat") { moreMenuItems }
                 Section("Folders") { FolderAssignMenu(chatKey: chatRef.key) }
@@ -691,6 +732,7 @@ struct ConversationThreadView: View {
     }
 
     @ViewBuilder private var messageList: some View {
+        let wallpaper = ChatWallpaperOption(rawValue: UserDefaults.standard.string(forKey: SettingsKey.chatWallpaper) ?? "none") ?? .none
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 10) {
@@ -711,19 +753,27 @@ struct ConversationThreadView: View {
                 }
                 .padding()
             }
+            .background {
+                if wallpaper == .solid {
+                    Brand.gold.opacity(0.08).ignoresSafeArea()
+                }
+            }
             .onChange(of: communications.otherTyping) { _, typing in
                 if typing, search.isEmpty { withAnimation { proxy.scrollTo("typing-indicator", anchor: .bottom) } }
             }
             .onChange(of: communications.messages) { old, list in
                 if let last = list.last, search.isEmpty { proxy.scrollTo(last.id, anchor: .bottom) }
                 let me = communications.myProfileID
+                let announceDelivery = UserDefaults.standard.object(forKey: SettingsKey.announceDelivery) as? Bool ?? false
                 for mineNow in list where mineNow.sender_id == me {
                     guard let mineBefore = old.first(where: { $0.id == mineNow.id }),
                           MessageStatus.caption(for: mineBefore, showRead: showReadReceipts) != MessageStatus.caption(for: mineNow, showRead: showReadReceipts)
                     else { continue }
                     let label = MessageStatus.caption(for: mineNow, showRead: showReadReceipts)
                     let isLatest = mineNow.id == list.last(where: { $0.sender_id == me })?.id
-                    UIAccessibility.post(notification: .announcement, argument: isLatest ? "Your last message: \(label)" : "Your message \"\(mineNow.body.prefix(40))\": \(label)")
+                    if announceDelivery || label.hasPrefix("Read") {
+                        UIAccessibility.post(notification: .announcement, argument: isLatest ? "Your last message: \(label)" : "Your message \"\(mineNow.body.prefix(40))\": \(label)")
+                    }
                     if label.hasPrefix("Read") { AppHaptics.soft() }
                 }
             }
@@ -912,8 +962,14 @@ struct ConversationThreadView: View {
         draft = ""
         quoting = nil
         LocalComms.setDraft("", for: conversationID)
-        Task { _ = await communications.sendMessage(recipient: handle, body: body, silent: silent)
-            if silent { UIAccessibility.post(notification: .announcement, argument: "Sent silently") } }
+        Task {
+            let ok = await communications.sendMessage(recipient: handle, body: body, silent: silent) != nil
+            if silent {
+                UIAccessibility.post(notification: .announcement, argument: "Sent silently")
+            } else if ok, UserDefaults.standard.object(forKey: SettingsKey.announceOutgoingSend) as? Bool ?? true {
+                UIAccessibility.post(notification: .announcement, argument: "Sent")
+            }
+        }
     }
 
     private var latestMineID: String? {
@@ -1130,6 +1186,7 @@ struct CallsTabView: View {
             }
             .navigationTitle("Calls")
             .refreshable { await communications.refreshCallHistory() }
+            .onAppear { CallWarmup.preconnect() }
             .safeAreaInset(edge: .bottom) { CommsStatusBanner(text: communications.statusMessage).background(.bar) }
             .sheet(item: $reportTarget) { target in
                 ReportSheet(target: target) { reason, details in
@@ -1168,6 +1225,7 @@ struct CallsTabView: View {
         let name = record.other?.display_name ?? (handle.isEmpty ? "Blindbandit member" : "@\(handle)")
         let duration = record.durationSeconds.map { String(format: "%d:%02d", $0 / 60, $0 % 60) }
         return HStack(spacing: 12) {
+            ProfileAvatar(urlString: record.other?.avatar_url, displayName: name, size: 40, decorative: true)
             Image(systemName: record.isIncoming ? "phone.arrow.down.left" : "phone.arrow.up.right")
                 .foregroundStyle(record.isMissed ? .red : .secondary)
                 .accessibilityHidden(true)

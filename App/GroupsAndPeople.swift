@@ -15,7 +15,7 @@ struct GroupsTabView: View {
         NavigationStack(path: $path) {
             List {
                 Section {
-                    NavigationLink { PeopleDirectoryView() } label: { Label("People", systemImage: "person.2") }
+                    NavigationLink { PeopleDirectoryView() } label: { Label("Find people", systemImage: "magnifyingglass") }
                         .accessibilityHint("Find people to message or call")
                 }
                 if !communications.missedGroupCalls.isEmpty {
@@ -63,7 +63,7 @@ struct GroupsTabView: View {
                     }
                 }
             }
-            .navigationTitle("Groups")
+            .navigationTitle("People")
             .navigationDestination(for: String.self) { id in GroupChatView(groupID: id, initial: groups.first { $0.id == id }) }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -114,15 +114,10 @@ struct GroupsTabView: View {
 
 struct GroupAvatar: View {
     let name: String
+    var urlString: String? = nil
     var size: CGFloat = 44
     var body: some View {
-        let letters = String(name.split(separator: " ").prefix(2).compactMap { $0.first }).uppercased()
-        ZStack {
-            Circle().fill(Brand.gold.opacity(0.3))
-            if letters.isEmpty { Image(systemName: "person.3.fill") } else { Text(letters).font(.headline) }
-        }
-        .frame(width: size, height: size)
-        .accessibilityHidden(true)
+        ProfileAvatar(urlString: urlString, displayName: name, size: size, decorative: true)
     }
 }
 
@@ -130,7 +125,7 @@ struct GroupRow: View {
     let group: BlindbanditGroup
     var body: some View {
         HStack(spacing: 12) {
-            GroupAvatar(name: group.name)
+            GroupAvatar(name: group.name, urlString: group.avatar_url)
             VStack(alignment: .leading, spacing: 2) {
                 Text(group.name).font(.headline)
                 Text(group.last_message_body ?? "\(group.member_count) members").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
@@ -636,7 +631,11 @@ struct GroupInfoView: View {
                     ForEach(members) { m in
                         HStack {
                             VStack(alignment: .leading) {
-                                HStack(spacing: 3) { Text(m.display_name); if m.verified { VerifiedBadge() } }
+                                HStack(spacing: 8) {
+                                    ProfileAvatar(urlString: m.avatar_url, displayName: m.display_name, size: 32, decorative: true)
+                                    Text(m.display_name)
+                                    if m.verified { VerifiedBadge() }
+                                }
                                 Text("@\(m.handle)").font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
@@ -718,34 +717,14 @@ struct PeopleDirectoryView: View {
             if !error.isEmpty { Text(error).foregroundStyle(.secondary) }
             if !loading && people.isEmpty && error.isEmpty { Text(query.isEmpty ? "No one here yet." : "No one matches \(query).").foregroundStyle(.secondary) }
             ForEach(people) { p in
-                HStack {
-                    VStack(alignment: .leading) {
-                        HStack(spacing: 3) { Text(p.display_name).font(.headline); if p.verified == true { VerifiedBadge() } }
-                        Text("@\(p.handle)").font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button { message(p) } label: { Image(systemName: "message") }.buttonStyle(.borderless)
-                    Button { call(p, video: false) } label: { Image(systemName: "phone") }.buttonStyle(.borderless)
-                    Button { call(p, video: true) } label: { Image(systemName: "video") }.buttonStyle(.borderless)
-                }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(p.accessibilitySummary)
-                .accessibilityActions {
-                    Button("Message") { message(p) }
-                    Button("Call") { call(p, video: false) }
-                    Button("Video call") { call(p, video: true) }
-                }
-                .contextMenu {
-                    Button { message(p) } label: { Label("Message", systemImage: "message") }
-                    Button { call(p, video: false) } label: { Label("Call", systemImage: "phone") }
-                    Button { call(p, video: true) } label: { Label("Video call", systemImage: "video") }
-                }
+                PeopleDirectoryRow(person: p, onMessage: { message(p) }, onCall: { call(p, video: $0) })
             }
             if let next, !loading {
                 Button("Load more") { Task { await load(cursor: next) } }
             }
         }
         .navigationTitle("People")
+        .onAppear { CallWarmup.preconnect() }
         .searchable(text: $query, prompt: "Name or @handle")
         .task(id: query) {
             try? await Task.sleep(nanoseconds: 300_000_000)
@@ -777,6 +756,64 @@ struct PeopleDirectoryView: View {
             guard await CommsPermissions.microphone(privacy, communications) else { return }
             if video { _ = await CommsPermissions.camera(privacy, communications) }
             await communications.startCall(recipient: p.handle, video: video)
+        }
+    }
+}
+
+
+// MARK: - People row with native profile + follow
+
+struct PeopleDirectoryRow: View {
+    let person: BlindbanditPerson
+    var onMessage: () -> Void
+    var onCall: (Bool) -> Void
+    @State private var isFollowing = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            NavigationLink {
+                NativeProfileView(handle: person.handle)
+            } label: {
+                HStack(spacing: 10) {
+                    ProfileAvatar(urlString: person.avatar_url, displayName: person.display_name, size: 40, verified: person.verified, decorative: true)
+                    VStack(alignment: .leading) {
+                        HStack(spacing: 3) {
+                            Text(person.display_name).font(.headline)
+                            if person.verified { VerifiedBadge() }
+                        }
+                        Text("@\(person.handle)").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(person.accessibilitySummary)
+            .accessibilityHint("Opens native profile")
+
+            Spacer(minLength: 0)
+
+            FollowButton(handle: person.handle, isFollowing: $isFollowing)
+            Button(action: onMessage) { Image(systemName: "message") }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Message")
+            Button { onCall(false) } label: { Image(systemName: "phone") }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Call")
+            Button { onCall(true) } label: { Image(systemName: "video") }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Video call")
+        }
+        .contextMenu {
+            Button { onMessage() } label: { Label("Message", systemImage: "message") }
+            Button { onCall(false) } label: { Label("Call", systemImage: "phone") }
+            Button { onCall(true) } label: { Label("Video call", systemImage: "video") }
+            NavigationLink { NativeProfileView(handle: person.handle) } label: {
+                Label("View profile", systemImage: "person.crop.circle")
+            }
+        }
+        .task {
+            if let cached = BitesAPI.cachedProfile(handle: person.handle) {
+                isFollowing = cached.is_following
+            }
         }
     }
 }

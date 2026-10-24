@@ -7,6 +7,13 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 ---
 
 
+## 2.0.9 (25)
+- Voice messages: play and send announce clearly for VoiceOver; failed audio session / decode / upload speak the error. Successful play announces "Playing". Message rows no longer swallow the bubble with a container accessibilityLabel (DM + group).
+- Settings → Messages: confirm before send, large bubbles, link previews, auto-play voice, listen once, Magic Tap ends call, voice playback speed.
+- Settings → Encryption: passcode, restore from iCloud Keychain, forgot-passcode prefers iCloud restore before destructive reset.
+- E2EE calling: send `installation_id` / `X-Installation-ID` on join, end, and device register; ignore "answered elsewhere" CallKit echo for ~8s after this device joins so answering no longer kills the call; hang-up still ends via idempotent `/end`; VoIP `created_at` parsed for stale/EndedCalls; call-key bootstrap retries with VoiceOver status when keys arrive late or are missing; in-call encryption label announced.
+- Default ringtone unchanged (Mr. BlindBandit).
+
 ## 2.0.8 (24)
 - VoiceOver: on a voice message in a DM or group chat, swipe up/down in the Actions rotor now includes **Play** (or **Pause** when that note is playing) as the first action on the message row. Double-tap on the bubble still toggles play/pause.
 - Sighted: single tap on a voice bubble plays/pauses (same toggle as VoiceOver).

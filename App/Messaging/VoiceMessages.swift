@@ -36,7 +36,10 @@ final class VoiceRecorder: NSObject, ObservableObject {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("voice-\(UUID().uuidString).m4a")
         let settings: [String: Any] = [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 24000, AVNumberOfChannelsKey: 1,
                                        AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue]
-        guard let r = try? AVAudioRecorder(url: url, settings: settings), r.record() else { return false }
+        guard let r = try? AVAudioRecorder(url: url, settings: settings), r.record() else {
+            UIAccessibility.post(notification: .announcement, argument: "Couldn't start recording. Check the microphone and try again.")
+            return false
+        }
         recorder = r; fileURL = url; isRecording = true; elapsed = 0
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         UIAccessibility.post(notification: .announcement, argument: "Recording")
@@ -106,6 +109,9 @@ enum VoiceSender {
                 UIAccessibility.post(notification: .announcement, argument: "Sent")
                 return true
             }
+            UIAccessibility.post(notification: .announcement, argument: "Couldn't send encrypted voice. Trying transcript fallback.")
+        } else {
+            UIAccessibility.post(notification: .announcement, argument: "Voice upload failed. Trying transcript fallback.")
         }
         // Fallback: the server can't store voice yet, or the chat isn't end-to-end encrypted. Send the transcript.
         let text = "🎤 Voice message (\(Int(duration.rounded())) s, transcribed on my iPhone): " + (transcript ?? "[couldn't transcribe]")
@@ -210,7 +216,14 @@ final class VoicePlayback: NSObject, ObservableObject, AVAudioPlayerDelegate {
     func toggle(_ item: Item) async {
         if currentID == item.id, let player {
             if playing { pause() } else {
-                activateSession(); player.rate = VoicePlayerModel.validRate(rate); playing = player.play()
+                guard activateSession(announceFailure: true) else { return }
+                player.rate = VoicePlayerModel.validRate(rate)
+                playing = player.play()
+                if !playing {
+                    // One retry after re-activating the session (CallKit / other audio can steal it).
+                    _ = activateSession(announceFailure: false)
+                    playing = player.play()
+                }
                 if !playing { VoiceLog.record("resume", "AVAudioPlayer.play() returned false") }
                 startTimer(); announce(playing ? "Playing" : "Couldn't resume")
             }
@@ -237,23 +250,40 @@ final class VoicePlayback: NSObject, ObservableObject, AVAudioPlayerDelegate {
             announce("Couldn't play this voice message. " + VoiceLog.record("play", error)); return
         }
         loadingID = nil
-        activateSession()
+        guard activateSession(announceFailure: true) else { return }
         UIDevice.current.isProximityMonitoringEnabled = true
         routeForProximity()
         p.enableRate = true; p.rate = VoicePlayerModel.validRate(rate); p.delegate = self; p.prepareToPlay()
         player = p; currentID = item.id; elapsed = 0   // retained on the shared singleton for the whole playback
         playing = p.play()
-        if !playing { VoiceLog.record("play", "AVAudioPlayer.play() returned false (audio session busy?)"); announce("Couldn't play this voice message") }
+        if !playing {
+            _ = activateSession(announceFailure: false)
+            playing = p.play()
+        }
+        if playing {
+            announce("Playing")
+        } else {
+            VoiceLog.record("play", "AVAudioPlayer.play() returned false (audio session busy?)")
+            announce("Couldn't play this voice message")
+        }
         startTimer()
         markPlayed(item)
     }
 
-    private func activateSession() {
+    @discardableResult
+    private func activateSession(announceFailure: Bool) -> Bool {
         let s = AVAudioSession.sharedInstance()
         do {
             try s.setCategory(.playAndRecord, mode: .spokenAudio, options: [.duckOthers, .defaultToSpeaker, .allowBluetoothA2DP, .allowBluetooth])
             try s.setActive(true)
-        } catch { VoiceLog.record("audio session", error) }
+            return true
+        } catch {
+            let detail = VoiceLog.record("audio session", error)
+            if announceFailure {
+                announce("Couldn't play: microphone or audio session unavailable. " + detail)
+            }
+            return false
+        }
     }
 
     func skip(_ seconds: TimeInterval) {
@@ -306,6 +336,8 @@ final class VoicePlayback: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private func finished() {
         guard let id = currentID, let idx = order.firstIndex(where: { $0.id == id }) else { stop(); return }
         onConsumed[id]?()
+        let auto = UserDefaults.standard.object(forKey: SettingsKey.autoPlayVoice) as? Bool ?? true
+        guard auto else { stop(); return }
         let next = order[(idx + 1)...].first { !$0.mine && !played.contains($0.id) &&
             !($0.media.view_once == true && LocalMessageStore.shared.snapshot.openedViewOnce.contains($0.id)) }
         if let next {
@@ -545,7 +577,16 @@ struct VoiceRowPlayAction: View {
 
     /// True when this row is a voice note (DM or group).
     static func isVoice(mime: String?, kind: String? = nil, decryptedType: String? = nil) -> Bool {
-        mime?.hasPrefix("audio") == true || kind == "voice" || decryptedType == "voice"
+        if let mime, mime.hasPrefix("audio") { return true }
+        return kind == "voice" || decryptedType == "voice"
+    }
+
+    /// Show a VoiceBubble when media is audio, or typed as voice with an attachment/url (even if mime is blank).
+    static func hasPlayableVoiceMedia(_ media: E2EEPayload.Media?, kind: String? = nil, decryptedType: String? = nil) -> Bool {
+        guard let media else { return false }
+        if isVoice(mime: media.mime, kind: kind, decryptedType: decryptedType) { return true }
+        let hasBlob = media.attachment_id != nil || (media.url?.isEmpty == false)
+        return hasBlob && (decryptedType == "voice" || kind == "voice" || media.mime.isEmpty)
     }
 
     /// Documented action name for tests / callers that need the label without a live player.

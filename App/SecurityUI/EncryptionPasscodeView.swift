@@ -64,15 +64,17 @@ struct EncryptionPasscodeView: View {
                     Button("Create passcode") { Task { await create() } }
                         .disabled(busy || !EncryptionPasscode.isValid(pass) || pass != confirm)
                 } header: { Text("Create your encryption passcode").accessibilityAddTraits(.isHeader) } footer: {
-                    Text("Use 6 or more digits or letters. It protects a backup of your encryption keys so a new iPhone or a reinstall keeps the same security number. We can't see it or reset it for you.")
+                    Text("Use 6 or more digits or letters. It protects a server backup of your encryption keys. Your identity also syncs through iCloud Keychain (end-to-end encrypted by Apple), so a new iPhone on the same Apple Account can restore automatically. We can't see your passcode or reset it for you.")
                 }
             case .restore:
                 Section {
                     SecureField("Encryption passcode", text: $pass).textContentType(.password)
                     Button("Restore my keys") { Task { await restore() } }.disabled(busy || pass.count < 6)
+                    Button("Restore from iCloud Keychain") { Task { await restoreFromICloud() } }
+                        .accessibilityHint("Uses the encryption identity already synced to this Apple Account. Prefer this before resetting.")
                     Button("Forgot passcode", role: .destructive) { confirmForgot = true }
                 } header: { Text("Enter your encryption passcode").accessibilityAddTraits(.isHeader) } footer: {
-                    Text("This restores your encryption keys so your contacts' security numbers stay the same.")
+                    Text("This restores your encryption keys so your contacts' security numbers stay the same. Try iCloud Keychain first if you forgot the passcode — resetting creates a new security number.")
                 }
             }
             if !status.isEmpty {
@@ -82,9 +84,10 @@ struct EncryptionPasscodeView: View {
         .navigationTitle("Encryption passcode")
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Later") { dismiss() } } }
         .task { await loadBackup() }
-        .confirmationDialog("Reset your encryption keys? Your contacts will see that your security number changed, and old encrypted messages may not open on this iPhone.",
+        .confirmationDialog("Reset your encryption keys? Try Restore from iCloud Keychain first. Resetting means your contacts will see that your security number changed, and old encrypted messages may not open on this iPhone.",
                             isPresented: $confirmForgot, titleVisibility: .visible) {
-            Button("Reset keys", role: .destructive) { forgot() }
+            Button("Try iCloud Keychain first") { Task { await restoreFromICloud() } }
+            Button("Reset keys anyway", role: .destructive) { forgot() }
         }
     }
 
@@ -131,7 +134,26 @@ struct EncryptionPasscodeView: View {
         dismiss()
     }
 
+    /// Prefer keeping the iCloud-synced identity: clear only the passcode-set flag and go to create.
+    private func restoreFromICloud() async {
+        busy = true; defer { busy = false }
+        // IdentityStore already reads the synchronizable Keychain item. If it is present, keep it.
+        if IdentityStore.shared.identity(handle: e2ee.myHandle, createIfMissing: false) != nil {
+            UserDefaults.standard.set(false, forKey: EncryptionPasscode.key(e2ee.myHandle))
+            await e2ee.bootstrap(handle: e2ee.myHandle)
+            mode = .create
+            pass = ""; confirm = ""
+            let fromCloud = IdentityStore.shared.restoredFromICloud
+            say(fromCloud
+                ? "Restored encryption keys from iCloud Keychain. Create a new passcode to protect the backup."
+                : "Encryption keys are still on this iPhone. Create a new passcode to protect the backup. Your security number stays the same.")
+            return
+        }
+        say("No encryption keys found in iCloud Keychain on this Apple Account. You can reset to create new keys.")
+    }
+
     private func forgot() {
+        // Last resort after the user confirms they do not want iCloud restore.
         IdentityStore.shared.resetIdentity()
         KeySetupLog.record("Encryption keys reset after forgotten passcode.")
         Task {

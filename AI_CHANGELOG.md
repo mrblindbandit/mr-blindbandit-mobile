@@ -4,6 +4,14 @@
 - E2EE calling client: BlindbanditAPI.installationID + X-Installation-ID; join/end body installation_id; joinedAt + shouldIgnoreAnswerEcho (~8s); CallKit isAnsweredElsewhereEcho; parseVoIP created_at; awaitCallKey retries + late-key VO; connect announces encryption label. Server gaps (exclude_installation_id, expireRingingCalls caller_id, endCall push-all) documented for Tyrese — client workarounds ship anyway.
 - Default ringtone untouched.
 
+## 2026-10-25 — Android direct-call frame encryption and downgrade hardening (PR #66)
+- Continued `feat/android-parity-208` from `6226cd1`; retained package/version 2.0.8 (13), Clerk, production API and all prior parity work including #65 routing.
+- Added authenticated p256-v1 `call_key` control handling and direct-call LiveKit frame-key wiring with caller-bound key lookup and accessible encryption state. Group frame E2EE/rotation remains incomplete.
+- Accepted flat call-grant token/livekit_url fields and rejected non-WSS endpoints.
+- Fixed mixed-recipient plaintext downgrade depending on ordering; normalized handles before policy checks. Added security regression tests.
+- Clean local validation in progress. No attached Android device or local release-signing identity. Draft only: no backend changes, user data removal, merge or publication.
+
+
 ## 2026-10-24 — iOS 2.0.7 (22), branch `feat/ios-207-app-fixes`
 - App-only: notification preview privacy (NSE + App Group), group VoiceOver/silent/schedule/optimistic/cache, live-caption speech-fail announce, screen-share DRM VO note, third ringtone CAF, AI gate audit (no code path change). Server batches still Tyrese.
 

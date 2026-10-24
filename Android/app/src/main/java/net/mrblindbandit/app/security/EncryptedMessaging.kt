@@ -10,9 +10,11 @@ import org.json.JSONObject
 import java.net.URLEncoder
 
 /** Coordinates the existing authenticated key directory with p256-v1; never mints server credentials. */
-class EncryptedMessaging(context: Context, accountId: String, private val myHandle: String,
+class EncryptedMessaging internal constructor(private val engine: E2EEEngine, private val myHandle: String,
     private val request: suspend (String, String, JSONObject?) -> JSONObject) {
-    private val engine = E2EEEngine(context, accountId)
+    constructor(context: Context, accountId: String, myHandle: String,
+        request: suspend (String, String, JSONObject?) -> JSONObject) : this(E2EEEngine(context, accountId), myHandle, request)
+    internal val callKeys = CallFrameKeys()
     var ready = false; private set
     private var routesMissing = false
     private var setupError: Exception? = null
@@ -42,24 +44,29 @@ class EncryptedMessaging(context: Context, accountId: String, private val myHand
     }
     /** Null means a legacy peer, never an encryption error. Previously encrypted chats cannot downgrade. */
     suspend fun fields(handles: List<String>, payload: JSONObject): JSONObject? {
+        val peers = handles.map { it.trim().removePrefix("@").lowercase() }.distinct().filter { !it.equals(myHandle, true) }
         if (!ready) bootstrap()
         if (!ready) {
-            check(routesMissing && handles.none(engine::hasEncrypted)) { "Encryption setup is unavailable. Your message has not been sent. Retry when connected." }
+            check(routesMissing && peers.none(engine::hasEncrypted)) { "Encryption setup is unavailable. Your message has not been sent. Retry when connected." }
             return null
         }
         val recipients = mutableListOf<E2EEEngine.Bundle>()
-        for (handle in handles.distinct().filter { it != myHandle }) {
+        var legacyRecipient = false
+        for (handle in peers) {
             val peer = devices(handle)
             if (peer.isEmpty()) {
-                check(!engine.hasEncrypted(handle)) { "Previously encrypted recipient has no device keys. Message not sent." }
-                return null
+                legacyRecipient = true
             }
             recipients += peer
+        }
+        if (legacyRecipient) {
+            check(peers.none(engine::hasEncrypted)) { "An encrypted recipient cannot be downgraded because another group member has no keys. Message not sent." }
+            return null
         }
         recipients += devices("me").filter { it.device != engine.deviceId }
         check(recipients.size <= 64) { "This chat has more than 64 devices. Message not sent." }
         val env = engine.encrypt(payload, recipients)
-        handles.forEach(engine::markEncrypted)
+        peers.forEach(engine::markEncrypted)
         return JSONObject().put("e2ee", true).put("envelope", env).put("client_msg_id", env.getString("msg_id"))
     }
     suspend fun safetyNumber(handle: String): String {
@@ -81,6 +88,10 @@ class EncryptedMessaging(context: Context, accountId: String, private val myHand
         }
         return try {
             val p = engine.decrypt(env ?: error("Missing envelope"), message.senderId)
+            if (p.optString("t") == "call_key") {
+                callKeys.receive(p.optString("body"), message.senderId)
+                return null
+            }
             if (p.optString("t") in setOf("delete", "vote", "reaction", "receipt", "ai_policy", "call_key")) return null
             val sent = p.optLong("sent_at")
             val expires = p.optLong("expires_in")

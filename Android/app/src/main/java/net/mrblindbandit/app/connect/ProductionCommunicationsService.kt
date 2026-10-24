@@ -9,6 +9,10 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import io.livekit.android.RoomOptions
+import io.livekit.android.e2ee.BaseKeyProvider
+import io.livekit.android.e2ee.E2EEOptions
+import net.mrblindbandit.app.security.CallFrameKeys
 import io.livekit.android.LiveKit
 import io.livekit.android.room.Room
 import kotlinx.coroutines.CoroutineScope
@@ -87,6 +91,8 @@ class ProductionCommunicationsService(
     var callPeerName by mutableStateOf(""); private set
     var callPeerHandle by mutableStateOf(""); private set
     var incomingCallId by mutableStateOf<String?>(null)
+    var callEncryptionLabel by mutableStateOf("Media encrypted in transit"); private set
+    private var callKeyProvider: BaseKeyProvider? = null
 
     var room by mutableStateOf<Room?>(null); private set
     private var lastTypingSent = 0L
@@ -401,7 +407,8 @@ class ProductionCommunicationsService(
             callId = response.lString("id", "call_id").ifBlank { null }
             callPeerName = response.optJSONObject("recipient")?.lString("display_name").orEmpty().ifBlank { "@$target" }
             callPeerHandle = target
-            connectCall(response, video, outgoing = true)
+            val key = callId?.let { sendCallFrameKey(it, target) }
+            connectCall(response, video, outgoing = true, frameKey = key)
         } catch (e: Exception) {
             // Always end the call on the server so it never stays "ringing".
             callId?.let { id -> scope.launch { endOnServer(id) } }
@@ -415,10 +422,11 @@ class ProductionCommunicationsService(
         if (activeCallId != null || isInCall || isRinging) return
         try {
             val items = request("/v1/social/calls/incoming").items()
-            incomingCallId = items.firstOrNull { row ->
+            val incoming = items.firstOrNull { row ->
                 val created = row.lTime("created_at") ?: 0L
                 created > 0 && System.currentTimeMillis() - created in 0..RING_TIMEOUT_MS
-            }?.lString("id", "call_id")?.takeIf { it.isNotBlank() }
+            }
+            incomingCallId = incoming?.lString("id", "call_id")?.takeIf { it.isNotBlank() }
         } catch (_: Exception) { /* FCM still works if the optional polling route is unavailable. */ }
     }
 
@@ -439,13 +447,22 @@ class ProductionCommunicationsService(
 
     suspend fun joinCall(callId: String) {
         if (callId.isBlank()) return
+        if (isInCall || isRinging || activeCallId != null) return
         incomingCallId = null
         try {
+            // A push tap only has a call ID. Resolve caller identity from the authenticated invite,
+            // never trust a sender-supplied call_key control to identify the caller.
+            val invite = request("/v1/social/calls/incoming").items().firstOrNull { it.lString("id", "call_id") == callId }
             val response = request("/v1/social/calls/${enc(callId)}/join", method = "POST", body = JSONObject().put("installation_id", DeviceIdentity.installationId(appContext)))
-            val caller = response.optJSONObject("caller") ?: response.optJSONObject("other")
+            val caller = response.optJSONObject("caller") ?: response.optJSONObject("other") ?: invite?.optJSONObject("caller")
             callPeerName = caller?.lString("display_name", "handle").orEmpty().ifBlank { "Blindbandit caller" }
-            callPeerHandle = caller?.lString("handle").orEmpty()
-            connectCall(response.apply { if (!has("id")) put("id", callId) }, response.lString("kind") == "video", outgoing = false)
+            callPeerHandle = caller?.lString("handle").orEmpty().ifBlank { invite?.lString("from_handle", "caller_handle").orEmpty() }
+            val callerId = caller?.lString("id")?.takeIf { it.isNotBlank() } ?: invite?.lString("caller_id")?.takeIf { it.isNotBlank() } ?: callPeerHandle.takeIf { it.isNotBlank() }?.let {
+                request("/v1/social/profiles/${enc(it)}").lString("id").takeIf { id -> id.isNotBlank() }
+            }
+            val key = if (response.lString("group_id").isBlank() && invite?.lString("group_id").isNullOrBlank() && callPeerHandle.isNotBlank() && callerId != null)
+                awaitCallFrameKey(callId, callPeerHandle, callerId) else null
+            connectCall(response.apply { if (!has("id")) put("id", callId) }, response.lString("kind") == "video", outgoing = false, frameKey = key)
         } catch (e: Exception) {
             endOnServer(callId)
             cleanupRoom()
@@ -464,14 +481,21 @@ class ProductionCommunicationsService(
         statusMessage = "Call declined."
     }
 
-    private suspend fun connectCall(response: JSONObject, video: Boolean, outgoing: Boolean) {
-        val livekit = response.optJSONObject("livekit") ?: error("The call server is unavailable right now. Please try again shortly.")
+    private suspend fun connectCall(response: JSONObject, video: Boolean, outgoing: Boolean, frameKey: CallFrameKeys.Key? = null) {
+        val livekit = response.optJSONObject("livekit") ?: JSONObject()
+            .put("token", response.lString("token")).put("url", response.lString("livekit_url"))
         val token = livekit.lString("token")
         val url = livekit.lString("url").ifBlank { AppConfig.liveKitUrl }
+        require(java.net.URI(url).scheme == "wss") { "The call server must use a secure connection" }
         if (token.isBlank() || url.isBlank()) error("The call server is unavailable right now. Please try again shortly.")
         activeCallId = response.lString("id", "call_id").ifBlank { null }
 
-        val newRoom = LiveKit.create(appContext = appContext)
+        val provider = frameKey?.let { key ->
+            BaseKeyProvider(enableSharedKey = true).also { check(it.setSharedKey(key.secret, key.index % 16)) { "Call encryption could not be initialized" } }
+        }
+        callKeyProvider = provider
+        callEncryptionLabel = if (provider != null) "End-to-end encrypted" else "Media encrypted in transit; end-to-end encryption unavailable"
+        val newRoom = LiveKit.create(appContext = appContext, options = RoomOptions(e2eeOptions = provider?.let { E2EEOptions(keyProvider = it) }))
         room = newRoom
         newRoom.connect(url = url, token = token)
         newRoom.localParticipant.setMicrophoneEnabled(true)
@@ -503,6 +527,33 @@ class ProductionCommunicationsService(
         Announcer.announce(appContext, statusMessage)
         scope.launch { watchForHangup(newRoom) }
         scope.launch { while (room === newRoom && isInCall) { delay(1000); if (room === newRoom && isInCall) callSeconds += 1 } }
+    }
+
+    /** A call key is sent only inside an authenticated p256-v1 envelope, never as plaintext. */
+    private suspend fun sendCallFrameKey(callId: String, handle: String): CallFrameKeys.Key? {
+        val engine = encryption ?: error("Encryption is not ready. Retry after your account loads.")
+        val key = CallFrameKeys.newKey(callId)
+        val payload = JSONObject().put("t", "call_key").put("body", key.wire()).put("silent", true)
+            .put("sent_at", System.currentTimeMillis())
+        val fields = engine.fields(listOf(handle), payload) ?: return null // legacy peer without device keys
+        request("/v1/social/messages", "POST", fields.put("handle", handle).put("silent", true))
+        return key
+    }
+
+    private suspend fun fetchCallFrameKeys(handle: String) {
+        val rows = request("/v1/social/messages?limit=100").items()
+        val conversation = rows.mapNotNull(ServerConversation::parse).firstOrNull { it.peerHandle.equals(handle, true) } ?: return
+        request("/v1/social/messages/${enc(conversation.id)}?limit=100").items().forEach { encryption?.resolve(it) }
+    }
+
+    private suspend fun awaitCallFrameKey(callId: String, handle: String, senderId: String): CallFrameKeys.Key? {
+        repeat(8) { attempt ->
+            encryption?.callKeys?.get(callId, senderId)?.let { return it }
+            try { fetchCallFrameKeys(handle) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { }
+            encryption?.callKeys?.get(callId, senderId)?.let { return it }
+            if (attempt < 7) delay(1000)
+        }
+        return null
     }
 
     /** Ends our side when the other person leaves the room. */
@@ -555,6 +606,9 @@ class ProductionCommunicationsService(
 
     fun endCall(reason: String = "Call ended.") {
         val callId = activeCallId
+        callId?.let { encryption?.callKeys?.clear(it) }
+        callKeyProvider = null
+        callEncryptionLabel = "Media encrypted in transit"
         val wasConnected = isInCall
         activeCallId = null
         isInCall = false
@@ -577,6 +631,9 @@ class ProductionCommunicationsService(
     }
 
     private fun cleanupRoom() {
+        activeCallId?.let { encryption?.callKeys?.clear(it) }
+        callKeyProvider = null
+        callEncryptionLabel = "Media encrypted in transit"
         val r = room
         room = null
         activeCallId = null

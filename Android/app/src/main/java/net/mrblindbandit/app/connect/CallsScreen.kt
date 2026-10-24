@@ -241,6 +241,7 @@ private fun ActiveCallPanel(communications: ProductionCommunicationsService, hap
             val status = if (communications.isRinging) "Ringing ${communications.callPeerName}…" else "In call with ${communications.callPeerName}, ${communications.callTimeLabel}"
             Text(status, style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.semantics { if (communications.isRinging) liveRegion = LiveRegionMode.Polite })
+            Text(communications.callEncryptionLabel, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
             if (communications.isVideoCall) communications.room?.let { CallVideoGrid(it) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton(onClick = { haptics.tap(); communications.toggleMic() },

@@ -205,6 +205,8 @@ object VoicePlayback {
         main.removeCallbacks(tick)
         if (item.listenOnce) {
             clearCache(context, item.media)
+            context.getSharedPreferences("bb_view_once", Context.MODE_PRIVATE)
+                .edit().putBoolean(item.id, true).apply()
             Announcer.announce(context, "Listen-once voice message finished")
         }
         val idx = order.indexOfFirst { it.id == item.id }

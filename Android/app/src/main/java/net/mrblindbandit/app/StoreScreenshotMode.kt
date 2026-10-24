@@ -20,13 +20,13 @@ object StoreScreenshotMode {
             "create" -> Request(AppTab.MORE, false)
             "connect", "messages" -> Request(AppTab.MESSAGES, false)
             "calls" -> Request(AppTab.CALLS, false)
-            "listen" -> Request(AppTab.LISTEN, false)
+            "listen" -> Request(AppTab.HOME, false, "/music/")
             "more" -> Request(AppTab.MORE, false)
             "settings", "accessibility" -> Request(AppTab.HOME, true)
             "music" -> Request(AppTab.HOME, false, "/music/")
             "community" -> Request(AppTab.HOME, false, "/mobile")
-            "profile" -> Request(AppTab.HOME, false, "/mobile/u/mrblindbandit")
-            "bites" -> Request(AppTab.HOME, false, "/mobile/bites")
+            "profile" -> Request(AppTab.MORE, false)
+            "bites" -> Request(AppTab.BITES, false)
             else -> Request(AppTab.HOME, false)
         }
     }

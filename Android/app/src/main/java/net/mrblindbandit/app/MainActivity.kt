@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
@@ -111,6 +112,11 @@ import net.mrblindbandit.app.connect.rememberHaptics
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material.icons.automirrored.filled.Chat
 import net.mrblindbandit.app.creator.NativeCreatorToolkitScreen
+import net.mrblindbandit.app.androidonly.NotificationChannels
+import net.mrblindbandit.app.social.AdminScreen
+import net.mrblindbandit.app.social.BitesScreen
+import net.mrblindbandit.app.social.ProfileScreen
+import net.mrblindbandit.app.social.SocialRepository
 import net.mrblindbandit.app.settings.SettingsScreen
 import net.mrblindbandit.app.ui.BlindbanditTheme
 import net.mrblindbandit.app.ui.Spacing
@@ -138,6 +144,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         installSplashScreen()
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        NotificationChannels.ensure(this)
         BlindbanditFirebaseMessagingService.ensureChannels(this)
         deepLinkState.value = resolveDeepLink(intent)
         setContent { BlindbanditAndroidApp(this, deepLinkState) }
@@ -254,7 +261,7 @@ enum class AppTab(val label: String, val icon: ImageVector, val description: Str
     HOME("Home", Icons.Default.Home, "Home"),
     MESSAGES("Messages", Icons.AutoMirrored.Filled.Chat, "Messages"),
     CALLS("Calls", Icons.Default.Phone, "Calls"),
-    LISTEN("Listen", Icons.Default.Headphones, "Listen to music"),
+    BITES("Bites", Icons.Default.Videocam, "BanditBites and community feed"),
     MORE("More", Icons.Default.MoreHoriz, "More options"),
 }
 
@@ -278,8 +285,15 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
     var currentUrl by rememberSaveable { mutableStateOf(BuildConfig.WEB_BASE_URL + (screenshot?.webPath ?: "/")) }
     var showSettings by rememberSaveable { mutableStateOf(screenshot?.settings == true) }
     var showWeb by rememberSaveable { mutableStateOf(screenshot?.webPath != null) }
-    var showAssistant by remember { mutableStateOf(false) }
+    var showAssistant by remember { mutableStateOf(activity.intent?.getBooleanExtra("open_assistant", false) == true) }
+    var showEncryptionPasscode by remember { mutableStateOf(false) }
+    var openMessagesHint by remember { mutableStateOf(activity.intent?.getBooleanExtra("open_messages", false) == true) }
+    LaunchedEffect(openMessagesHint) {
+        if (openMessagesHint) { tab = AppTab.MESSAGES; openMessagesHint = false }
+    }
     var showCreator by rememberSaveable { mutableStateOf(false) }
+    var showProfileHandle by rememberSaveable { mutableStateOf<String?>(null) }
+    var showAdmin by rememberSaveable { mutableStateOf(false) }
     var showChronicle by rememberSaveable { mutableStateOf(screenshot?.chronicle == true) }
     var chronicleArticle by rememberSaveable { mutableStateOf<String?>(screenshot?.articleUrl) }
 
@@ -311,6 +325,7 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
         AuthState.SignedOut -> Box(Modifier.fillMaxSize().safeDrawingPadding()) { AuthGatewayScreen(auth, prefs.reduceMotion) }
         is AuthState.SignedIn -> {
             val communications = rememberCommunications(auth)
+            val social = remember { SocialRepository(context, auth) }
             communications.startWithCameraOff = prefs.startCallsWithCameraOff
             communications.speakerByDefault = prefs.speakerphoneByDefault
             communications.preferBluetoothHeadset = prefs.preferBluetoothHeadset
@@ -337,7 +352,7 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
                 }
             }
             LaunchedEffect(communications.incomingCallId) {
-                if (communications.incomingCallId != null) { tab = AppTab.CALLS; showAssistant = false; showWeb = false; showSettings = false }
+                if (communications.incomingCallId != null) { tab = AppTab.CALLS; showAssistant = false; showWeb = false; showSettings = false; showProfileHandle = null; showAdmin = false }
             }
             val destination = activity.commsDestinationState.value
             LaunchedEffect(destination) {
@@ -349,7 +364,7 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
                     CommsDestination.Messages -> tab = AppTab.MESSAGES
                     null -> Unit
                 }
-                if (destination != null) { showAssistant = false; showSettings = false; showWeb = false; showChronicle = false; showCreator = false; activity.commsDestinationState.value = null }
+                if (destination != null) { showAssistant = false; showSettings = false; showWeb = false; showChronicle = false; showCreator = false; showProfileHandle = null; showAdmin = false; activity.commsDestinationState.value = null }
             }
             if (locked) {
                 AppLockScreen(activity) { AppLock.unlockedThisProcess = true; locked = false }
@@ -365,6 +380,7 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
                     onRequestNotifications = { activity.requestNotificationPermission() },
                     commsSection = { net.mrblindbandit.app.connect.CommsSettingsSection(communications, activity, haptics) },
                 )
+                showEncryptionPasscode -> net.mrblindbandit.app.security.EncryptionPasscodeScreen(communications) { showEncryptionPasscode = false }
                 showAssistant -> net.mrblindbandit.app.ai.AssistantScreen(communications) { showAssistant = false }
                 showCreator -> {
                     BackHandler { showCreator = false }
@@ -374,6 +390,15 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
                     onBack = { showChronicle = false; chronicleArticle = null },
                     initialArticleUrl = chronicleArticle,
                     onOpenWeb = openWeb,
+                )
+                showAdmin -> AdminScreen(social = social, onBack = { showAdmin = false })
+                showProfileHandle != null -> ProfileScreen(
+                    handle = showProfileHandle!!,
+                    myHandle = communications.myHandle,
+                    signedIn = true,
+                    social = social,
+                    onBack = { showProfileHandle = null },
+                    onOpenProfile = { showProfileHandle = it },
                 )
                 showWeb -> Box(Modifier.fillMaxSize().safeDrawingPadding()) { WebScreen(activity, currentUrl, prefs, onClose = { showWeb = false }) }
                 else -> {
@@ -404,7 +429,8 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
                                     onAssistant = { showAssistant = true },
                                     onCreator = { showCreator = true },
                                     onConnect = { tab = AppTab.MESSAGES },
-                                    onListen = { tab = AppTab.LISTEN },
+                                    onBites = { tab = AppTab.BITES },
+                                    onListen = { openWeb(BuildConfig.WEB_BASE_URL + "/music/") },
                                     onWeb = openWeb,
                                     onChronicle = { chronicleArticle = null; showChronicle = true },
                                     onSettings = { showSettings = true },
@@ -421,8 +447,26 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
                                     dialRequest = dialRequest, onDialHandled = { dialRequest = null },
                                     onMessage = { h -> tab = AppTab.MESSAGES; activity.commsDestinationState.value = null; dialRequest = null; messageHandle(communications, h) { id -> pendingThread = id } },
                                 )
-                                AppTab.LISTEN -> ListenHubScreen(onOpenSite = openWeb, prefs = prefs)
-                                AppTab.MORE -> MoreHubScreen(auth = auth, onOpenSite = openWeb, onOpenSettings = { showSettings = true }, onOpenCreator = { showCreator = true })
+                                AppTab.BITES -> BitesScreen(
+                                    communications = communications,
+                                    social = social,
+                                    signedIn = true,
+                                    isOwnerAdmin = SocialRepository.isOwnerAdmin(communications.myHandle),
+                                    onBack = { tab = AppTab.HOME },
+                                    onOpenProfile = { showProfileHandle = it },
+                                    onOpenAdmin = { showAdmin = true },
+                                )
+                                AppTab.MORE -> MoreHubScreen(
+                                    auth = auth,
+                                    myHandle = communications.myHandle,
+                                    onOpenSite = openWeb,
+                                    onOpenSettings = { showSettings = true },
+                                    onOpenCreator = { showCreator = true },
+                                    onOpenProfile = { showProfileHandle = communications.myHandle.ifBlank { "me" } },
+                                    onOpenBites = { tab = AppTab.BITES },
+                                    onOpenAdmin = { showAdmin = true },
+                                    onOpenListen = { openWeb(BuildConfig.WEB_BASE_URL + "/music/") },
+                                )
                             }
                         }
                     }
@@ -457,6 +501,7 @@ private fun HomeScreen(
     onAssistant: () -> Unit,
     onCreator: () -> Unit,
     onConnect: () -> Unit,
+    onBites: () -> Unit,
     onListen: () -> Unit,
     onWeb: (String) -> Unit,
     onChronicle: () -> Unit,
@@ -494,6 +539,7 @@ private fun HomeScreen(
             }
         }
         item { HomeCard(Icons.Default.Language, "The Chronicle", "Read the latest Blindbandit Chronicle stories natively. Saved for offline reading.", onChronicle, highlighted = notificationsOn) }
+        item { HomeCard(Icons.Default.Videocam, "BanditBites", "Short videos and the community feed. Post, scroll, follow people.", onBites) }
         item { HomeCard(Icons.Default.Phone, "Calls & messages", "Voice calls, video calls, and chat with people on Blindbandit.", onConnect) }
         item { HomeCard(Icons.Default.Build, "AI assistant", "Cloud chat, translation, images and on-device speech.", onAssistant) }
         item { HomeCard(Icons.Default.Build, "Creator tools", "Metronome, BPM tapper, royalty splits, release checklist, and more. Works offline.", onCreator) }

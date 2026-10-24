@@ -28,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -91,6 +92,25 @@ fun CommsSettingsSection(communications: ProductionCommunicationsService, activi
         ProfilePictureEditor(communications)
         Text("Messages & calls", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(vertical = 8.dp).semantics { heading() })
         Text(communications.encryptionStatus)
+        var showPasscode by remember { mutableStateOf(false) }
+        Text(
+            if (net.mrblindbandit.app.security.EncryptionPasscode.isSet(context, communications.myHandle))
+                "Change encryption passcode" else "Create encryption passcode",
+            Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { showPasscode = true }.padding(vertical = 12.dp)
+                .semantics { contentDescription = "Encryption passcode settings" },
+        )
+        if (showPasscode) {
+            // Full-screen sheet replaced by parent route when available; inline dialog fallback:
+            AlertDialog(
+                onDismissRequest = { showPasscode = false },
+                confirmButton = { TextButton(onClick = { showPasscode = false }) { Text("Close") } },
+                text = {
+                    Box(Modifier.fillMaxWidth().heightIn(max = 640.dp)) {
+                        net.mrblindbandit.app.security.EncryptionPasscodeScreen(communications) { showPasscode = false }
+                    }
+                },
+            )
+        }
         var hidePreviews by remember { mutableStateOf(context.getSharedPreferences(net.mrblindbandit.app.AndroidAppPreferences.FILE, android.content.Context.MODE_PRIVATE).getBoolean("hideMessagePreviews", true)) }
         SettingSwitch("Hide message previews in notifications", hidePreviews) { value ->
             hidePreviews = value

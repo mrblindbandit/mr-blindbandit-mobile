@@ -124,3 +124,11 @@ Follow [ANDROID_RELEASE_QA.md](ANDROID_RELEASE_QA.md) for device scenarios and t
 - Profile: public avatar upload/remove.
 - UI: Material You; PiP activity flag.
 - Ship: Play internal upload path gated on PLAY_SERVICE_ACCOUNT_JSON.
+
+## 2.0.11 (15) — 2026-10-25
+
+See [TYRESE_ANDROID_211_ADDENDUM.md](TYRESE_ANDROID_211_ADDENDUM.md). Feature cut: Better AI + YouTube Music + device controls, encryption passcode UI, view-once open, group call frame-key fanout, QS tile / widget / extra notification channels. Version 2.0.11 (15). Cross-platform key backup restore remains platform-native only.
+
+
+## 2.0.11 social (2026-10-25)
+- Native BanditBites + newsfeed, Profile (followers/following/follow), Social Admin (@kheck), VerifiedBadge everywhere listed in TYRESE_ANDROID_211_ADDENDUM.

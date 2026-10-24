@@ -102,6 +102,19 @@ enum SettingsKey {
     static let preferLargerControls = "a11y.largerControls"
     static let reduceTransparency = "a11y.reduceTransparency"
     static let useLessData = "network.useLessData"
+
+    // Appearance / Advanced / Security extras (2.0.10 Signal-depth)
+    static let bubbleColorAccent = "appearance.bubbleAccent" // system | gold | blue
+    static let boldTextInBubbles = "appearance.boldBubbles"
+    static let screenshotNotify = "privacy.screenshotNotify"
+    static let linkPreviewWarn = "privacy.linkPreviewWarn"
+    static let sealedSenderPref = "privacy.sealedSenderPref" // client hint until server ships
+    static let proxyEnabled = "network.proxyEnabled"
+    static let proxyHost = "network.proxyHost"
+    static let hapticCallStates = "a11y.hapticCallStates"
+    static let shakeToRead = "a11y.shakeToRead"
+    static let audioDuckAmount = "a11y.audioDuck" // soft | medium | hard
+    static let missedCallCallbackSuggest = "calls.missedCallbackSuggest"
 }
 
 enum MediaAutoDownload: String, CaseIterable, Identifiable {

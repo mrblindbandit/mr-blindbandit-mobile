@@ -646,6 +646,14 @@ struct ConversationThreadView: View {
                     }
                         .accessibilityElement(children: .combine).accessibilityAddTraits(.isHeader)
                     if !handle.isEmpty { Text("@\(handle)").foregroundStyle(.secondary) }
+                    if !handle.isEmpty {
+                        NavigationLink {
+                            NativeProfileView(handle: handle)
+                        } label: {
+                            Label("View profile", systemImage: "person.crop.circle")
+                        }
+                        .accessibilityHint("Opens native Blindbandit profile")
+                    }
                 }
                 Section("Chat") { moreMenuItems }
                 Section("Folders") { FolderAssignMenu(chatKey: chatRef.key) }

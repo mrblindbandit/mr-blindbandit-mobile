@@ -128,4 +128,57 @@ final class Release210Tests: XCTestCase {
         XCTAssertTrue(VoiceRowPlayAction.hasPlayableVoiceMedia(m, decryptedType: "voice"))
     }
 
+
+    func testDetectLooseShortCebuano() {
+        // Under 8 chars used to skip detect entirely — loose path should still guess ceb/tl heuristics when enough function words.
+        XCTAssertNil(LanguageID.detect("hi"))
+        let r = LanguageID.detectLoose("dili jud kaayo")
+        XCTAssertEqual(r, "ceb")
+    }
+
+    func testVoiceTempPlayPathCompiles() {
+        // Smoke: looksLikeM4A + decode still present after Android-parity play rewrite.
+        var d = Data(count: 12)
+        d.replaceSubrange(4..<8, with: Data("ftyp".utf8))
+        XCTAssertTrue(VoicePlayerModel.looksLikeM4A(d))
+    }
+    func testAdminGateOwnerOnly() {
+        XCTAssertTrue(AdminGate.isAdmin(handle: "kheck", profileID: ""))
+        XCTAssertTrue(AdminGate.isAdmin(handle: "@Kheck", profileID: ""))
+        XCTAssertTrue(AdminGate.isAdmin(handle: "other", profileID: "profile_mr_blindbandit"))
+        XCTAssertTrue(AdminGate.isAdmin(handle: "mod", profileID: "", role: "admin"))
+        XCTAssertFalse(AdminGate.isAdmin(handle: "celyneheck14", profileID: "someone-else"))
+        XCTAssertFalse(AdminGate.isAdmin(handle: "", profileID: ""))
+    }
+
+    func testBiteItemDecodesNewsfeedSeed() throws {
+        let json = """
+        {"id":"post_seed_5","body":"Hello Bite","media":[],"created_at":1726963200000,
+         "author":{"id":"profile_mr_blindbandit","handle":"kheck","display_name":"Mr. Blindbandit",
+                   "avatar_url":"/assets/x.jpg","verified":true},
+         "reactions":{"like":1,"love":0,"fire":0,"laugh":0,"wow":0,"sad":0,"total":1},
+         "likes":1,"comments":0,"my_reaction":null,"liked_by_me":false}
+        """.data(using: .utf8)!
+        let item = try JSONDecoder().decode(BiteItem.self, from: json)
+        XCTAssertEqual(item.id, "post_seed_5")
+        XCTAssertEqual(item.author.handle, "kheck")
+        XCTAssertTrue(item.author.verified)
+        XCTAssertEqual(item.likes, 1)
+        XCTAssertEqual(item.created_at, 1726963200000)
+    }
+
+    func testSocialProfileFullDecodes() throws {
+        let json = """
+        {"id":"profile_mr_blindbandit","handle":"kheck","display_name":"Mr. Blindbandit",
+         "bio":"Founder","avatar_url":"/a.jpg","verified":true,"is_artist":true,
+         "followers":2,"following":3,"posts":5,"bites":0,"is_following":false}
+        """.data(using: .utf8)!
+        let p = try JSONDecoder().decode(SocialProfileFull.self, from: json)
+        XCTAssertEqual(p.handle, "kheck")
+        XCTAssertEqual(p.followers, 2)
+        XCTAssertTrue(p.verified)
+        XCTAssertFalse(p.is_following)
+    }
+
+
 }

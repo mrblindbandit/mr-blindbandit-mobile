@@ -262,6 +262,17 @@ enum LanguageID {
         return lang.rawValue
     }
 
+    /// Looser detect for short bubbles (auto-translate was skipping anything under 8 chars).
+    static func detectLoose(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 3 else { return nil }
+        if let h = CebuanoHeuristic.guess(trimmed) { return h }
+        let r = NLLanguageRecognizer()
+        r.processString(trimmed)
+        guard let (lang, p) = r.languageHypotheses(withMaximum: 1).first, p > 0.45 else { return nil }
+        return lang.rawValue
+    }
+
     static func name(_ code: String) -> String {
         Locale.current.localizedString(forLanguageCode: code) ?? code
     }

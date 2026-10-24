@@ -84,7 +84,7 @@ final class AppPreferences: ObservableObject {
 
 @MainActor
 final class TabRouter: ObservableObject {
-    enum Tab: Hashable { case home, messages, groups, calls, more }
+    enum Tab: Hashable { case messages, bites, calls, people, profile }
     @Published var selection: Tab = TabRouter.initialTab
     /// Set when a notification asks for a DM thread; MessagesTabView opens it and clears it.
     @Published var pendingThread: ThreadTarget?
@@ -94,16 +94,15 @@ final class TabRouter: ObservableObject {
     struct ThreadTarget: Equatable { let id: String?; let handle: String? }
 
     private static var initialTab: Tab {
-        guard StoreScreenshotMode.isActive else { return .home }
+        guard StoreScreenshotMode.isActive else { return .messages }
         switch StoreScreenshotMode.screen {
-        case "create": return .more
+        case "create", "listen", "chronicle": return .profile
         case "connect", "messages": return .messages
         case "calls": return .calls
-        case "listen": return .more
-        case "chronicle": return .more
-        case "groups": return .groups
-        case "more", "settings", "accessibility": return .more
-        default: return .home
+        case "groups", "people": return .people
+        case "bites": return .bites
+        case "more", "settings", "accessibility", "profile": return .profile
+        default: return .messages
         }
     }
 }
@@ -300,38 +299,32 @@ struct MainTabs: View {
 
     var body: some View {
         TabView(selection: $router.selection) {
-            NavigationStack {
-                if let page = StoreScreenshotMode.webPage {
-                    Website(path: page.path, title: page.title)
-                } else {
-                    ProfessionalHome()
-                }
-            }
-                .tabItem { Label("Home", systemImage: "house.fill") }
-                .tag(TabRouter.Tab.home)
-
             MessagesTabView()
-                .tabItem { Label("Messages", systemImage: "bubble.left.and.bubble.right.fill") }
+                .tabItem { Label("Chats", systemImage: "bubble.left.and.bubble.right.fill") }
                 .badge(communications.unreadCount)
                 .tag(TabRouter.Tab.messages)
+
+            BitesTabView()
+                .tabItem { Label("Bites", systemImage: "flame.fill") }
+                .tag(TabRouter.Tab.bites)
 
             CallsTabView()
                 .tabItem { Label("Calls", systemImage: "phone.fill") }
                 .tag(TabRouter.Tab.calls)
 
             GroupsTabView()
-                .tabItem { Label("Groups", systemImage: "person.3.fill") }
-                .tag(TabRouter.Tab.groups)
+                .tabItem { Label("People", systemImage: "person.2.fill") }
+                .tag(TabRouter.Tab.people)
 
             NavigationStack {
                 if StoreScreenshotMode.isActive && ["settings", "accessibility"].contains(StoreScreenshotMode.screen) {
                     Settings()
                 } else {
-                    MoreHubView()
+                    ProfileHubView()
                 }
             }
-                .tabItem { Label("More", systemImage: "ellipsis.circle.fill") }
-                .tag(TabRouter.Tab.more)
+                .tabItem { Label("Profile", systemImage: "person.crop.circle.fill") }
+                .tag(TabRouter.Tab.profile)
         }
         .onChange(of: router.selection) { _, _ in AppHaptics.selection() }
         .task {
@@ -419,7 +412,7 @@ struct MainTabs: View {
             router.selection = .messages
             router.pendingThread = TabRouter.ThreadTarget(id: id, handle: handle)
         case .group(let id):
-            router.selection = .groups
+            router.selection = .people
             router.pendingGroupID = id
         case .call(let id):
             router.selection = .calls

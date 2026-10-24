@@ -251,50 +251,99 @@ struct ActiveCallScreen: View {
         }
     }
 
+    @State private var showKeypad = false
+
     private var controls: some View {
-        VStack(spacing: 14) {
-            HStack(spacing: 14) {
+        VStack(spacing: 12) {
+            HStack(spacing: 10) {
                 control(communications.micEnabled ? "mic.fill" : "mic.slash.fill", communications.micEnabled ? "Mute" : "Unmute", selected: !communications.micEnabled) { communications.toggleMic() }
                 control("speaker.wave.3.fill", communications.speakerOn ? "Speaker on" : "Speaker", selected: communications.speakerOn) { communications.toggleSpeaker() }
+                // RoutePicker is the Bluetooth / AirPods / speaker chooser — labeled clearly for VO.
+                RoutePicker().frame(width: 64, height: 64)
+                    .accessibilityLabel("Bluetooth and audio route")
+                    .accessibilityHint("Choose speaker, Bluetooth headset, or AirPods")
                 if communications.isVideoCall {
                     control(communications.cameraEnabled ? "video.fill" : "video.slash.fill", communications.cameraEnabled ? "Camera off" : "Camera on", selected: !communications.cameraEnabled) { communications.toggleCamera() }
                     control("arrow.triangle.2.circlepath.camera", communications.usingFrontCamera ? "Back camera" : "Front camera") { communications.switchCamera() }
                 } else {
-                    control("video.badge.plus", "Switch to video") { upgrade() }
+                    control("video.badge.plus", "Camera") { upgrade() }
                 }
-                RoutePicker().frame(width: 56, height: 56)
-                    .accessibilityLabel("Audio output")
-                    .accessibilityHint("Choose speaker, Bluetooth or AirPods")
             }
-            HStack(spacing: 14) {
-                control(communications.screenSharing ? "rectangle.on.rectangle.slash" : "rectangle.on.rectangle", communications.screenSharing ? "Stop share" : "Share screen", selected: communications.screenSharing) { communications.toggleScreenShare() }
-                control("person.badge.plus", "Add people") { showAdd = true }
+            HStack(spacing: 10) {
+                control(communications.screenSharing ? "rectangle.on.rectangle.slash" : "rectangle.on.rectangle", communications.screenSharing ? "Stop share" : "Screen share", selected: communications.screenSharing) { communications.toggleScreenShare() }
+                control("person.badge.plus", "Add person") { showAdd = true }
+                control("circle.grid.3x3.fill", "Keypad") { showKeypad = true }
+                control("bubble.left.and.bubble.right.fill", communications.unreadCallChat > 0 ? "Chat, \(communications.unreadCallChat) new" : "Chat") { showChat = true }
+                control(communications.captionsOn ? "captions.bubble.fill" : "captions.bubble", communications.captionsOn ? "Captions on" : "Captions", selected: communications.captionsOn) { communications.toggleCaptions() }
+            }
+            HStack(spacing: 10) {
                 control(communications.handRaised ? "hand.raised.fill" : "hand.raised", communications.handRaised ? "Lower hand" : "Raise hand", selected: communications.handRaised) { communications.toggleHand() }
-                control("bubble.left.and.bubble.right", communications.unreadCallChat > 0 ? "Chat, \(communications.unreadCallChat) new" : "Chat") { showChat = true }
+                control(communications.isOnHold ? "play.fill" : "pause.fill", communications.isOnHold ? "Resume" : "Hold", selected: communications.isOnHold) { communications.setHold(!communications.isOnHold) }
                 if communications.isVideoCall {
                     control("phone.fill", "Voice only") { communications.downgradeToVoice() }
                 }
-                control("phone.down.fill", communications.isRinging ? "Cancel" : "End", destructive: true) { communications.endCall() }
+                control("phone.down.fill", communications.isRinging ? "Cancel" : "End call", destructive: true) { communications.endCall() }
             }
         }
         .padding(.bottom, 8)
+        .sheet(isPresented: $showKeypad) { InCallKeypadSheet() }
     }
 
     private func control(_ icon: String, _ label: String, selected: Bool = false, destructive: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.title3)
-                    .frame(width: 52, height: 52)
+                    .font(.title2)
+                    .frame(width: 64, height: 64)
                     .background(destructive ? Color.red : (selected ? Color.primary : Color.primary.opacity(0.12)), in: Circle())
                     .foregroundStyle(destructive ? Color.white : (selected ? Color(uiColor: .systemBackground) : Color.primary))
-                Text(label).font(.caption2).lineLimit(2).multilineTextAlignment(.center)
+                Text(label).font(.caption2.weight(.semibold)).lineLimit(2).multilineTextAlignment(.center)
             }
-            .frame(width: 60)
+            .frame(minWidth: 68, minHeight: 88)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityHint(destructive ? "Double tap to end the call" : "Double tap to activate")
+    }
+}
+
+/// Soft in-call dial pad — announces digits for VO; useful for IVR menus even without carrier DTMF.
+struct InCallKeypadSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var digits = ""
+    private let keys = [["1","2","3"],["4","5","6"],["7","8","9"],["*","0","#"]]
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                Text(digits.isEmpty ? " " : digits)
+                    .font(.largeTitle.monospacedDigit())
+                    .accessibilityLabel(digits.isEmpty ? "No digits entered" : "Digits \(digits.map(String.init).joined(separator: " "))")
+                    .accessibilityAddTraits(.updatesFrequently)
+                ForEach(keys, id: \.self) { row in
+                    HStack(spacing: 20) {
+                        ForEach(row, id: \.self) { k in
+                            Button {
+                                digits.append(k)
+                                UIAccessibility.post(notification: .announcement, argument: k == "*" ? "Star" : (k == "#" ? "Pound" : k))
+                                AppHaptics.light()
+                            } label: {
+                                Text(k).font(.title.bold()).frame(width: 72, height: 72)
+                                    .background(Color.primary.opacity(0.1), in: Circle())
+                            }
+                            .accessibilityLabel(k == "*" ? "Star" : (k == "#" ? "Pound" : k))
+                        }
+                    }
+                }
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Keypad")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 

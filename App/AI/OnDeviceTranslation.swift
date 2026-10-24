@@ -28,7 +28,10 @@ final class Translator: ObservableObject {
     /// Incoming: detect, translate to the device language. Returns nil when no translation is needed or possible.
     func translateIncoming(id: String, text: String, chatKey: String) async -> Result? {
         if let c = cache[id] { return c }
-        guard AISettings.enabled(.translate, chat: chatKey), let src = LanguageID.detect(text) else { return nil }
+        // Honor both Settings > AI auto-translate AND per-chat Security "Auto-translate".
+        let chatPref = ChatSettingsCache.get(chatKey)?.my.translate ?? true
+        guard AISettings.isOn(.translate), AISettings.chatAllowed(chatKey), chatPref else { return nil }
+        guard let src = LanguageID.detect(text) ?? LanguageID.detectLoose(text) else { return nil }
         let target = LanguageID.deviceLanguage
         guard src != target else { return nil }
         guard let r = await translate(text, from: src, to: target) else { return nil }
@@ -51,6 +54,10 @@ final class Translator: ObservableObject {
         let srcName = LanguageID.name(src), tgtName = LanguageID.name(target)
         if let out = await OnDeviceAI.respond(instructions: "Translate the user's message from \(srcName) to \(tgtName). Return only the translation, keep names, emoji and tone.", prompt: text) {
             return Result(text: out, source: src, engine: Engine.llm.rawValue)
+        }
+        // Cloud fallback — devices without Apple Intelligence / Translation packs still get auto-translate.
+        if let out = await CloudAI.translate(text, target: target, source: src), !out.isEmpty {
+            return Result(text: out, source: src, engine: "Cloud")
         }
         return nil
     }

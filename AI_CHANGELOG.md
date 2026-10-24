@@ -1,3 +1,16 @@
+## 2026-10-25 — iOS 2.0.10 (29), branch `feat/ios-2010-public-profile-pictures`
+- **Bites (P0):** native tab over `/v1/social/newsfeed` + `/v1/social/bites`; composer → posts; like/comment/share/report/delete; disk cache for instant open. `docs/BITES_API.md`.
+- **Native Profile:** `/profiles/{handle}/full`, followers/following lists, follow/unfollow optimistic; author tap + People rows.
+- **IA:** tabs Chats / Bites / Calls / People / Profile (+ Settings & owner Admin). Groups live under People.
+- **Admin (owner @kheck only):** Verify/Unverify via `/v1/social/admin/users/{id}/verify|unverify`, report queue, hide/delete Bite, ban/reinstate, overview stats. `AdminGate` hardcodes owner handle/id until `/me` returns role.
+- Keeps 28 voice temp-.m4a + auto-translate + call icons + settings mega.
+
+## 2026-10-25 — iOS 2.0.10 (28), branch `feat/ios-2010-public-profile-pictures`
+- **Voice play (device proof path):** write decrypted AAC to temp `.m4a` and `AVAudioPlayer(contentsOf:)` (Android MediaPlayer file parity). Session falls back to `.playback` when `.playAndRecord` fails. Keeps 27’s URL resolve / base64url / Bearer /blob / VoiceLog / test tone.
+- **Auto-translate E2E:** honor per-chat Security Auto-translate; CloudAI.translate fallback; `LanguageID.detectLoose` for short bubbles.
+- **In-call UI:** larger icon grid — mute, speaker, Bluetooth route, camera, flip, screen share, add, keypad, chat, captions, hold, end (VO-labeled).
+- Settings hubs: Appearance extras, Advanced & network (proxy/sealed-sender prefs), Blind-first extras, Note to self link. `docs/TYRESE_SIGNAL_COMPETITOR_WISHLIST.md` for server.
+
 ## 2026-10-25 — iOS 2.0.10 (27), branch `feat/ios-2010-public-profile-pictures`
 - **Voice play root cause fix:** `loadThrowing` now resolves relative attachment URLs against apiBaseURL, accepts base64 *or* base64url keys/nonces, retries 401/403 downloads with Bearer, falls back to `/attachments/{id}/blob`, and accepts plaintext m4a if the blob is already clear. Loud VO "Loading…" / specific failure text. `VoiceLog.lastError` persists across relaunch. Settings → Voice & calls: always-visible Last voice error + **Play test tone** (proves audio session vs network).
 - Profile pictures + fat Settings hubs (unchanged from 26) + CallWarmup: rate-limited LiveKit+API TLS warm on Calls/People/chat appear and at placeCall start.

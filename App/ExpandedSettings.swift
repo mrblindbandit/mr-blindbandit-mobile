@@ -620,3 +620,93 @@ struct DisplayNameEditor: View {
         }
     }
 }
+
+
+// MARK: - Hub: Appearance extras
+
+struct AppearanceExtrasSettingsView: View {
+    @AppStorage(SettingsKey.bubbleColorAccent) private var accent = "gold"
+    @AppStorage(SettingsKey.boldTextInBubbles) private var boldBubbles = false
+    @AppStorage(SettingsKey.largeMessageBubbles) private var largeBubbles = false
+    var body: some View {
+        Form {
+            Section {
+                Picker("Bubble accent", selection: $accent) {
+                    Text("System").tag("system")
+                    Text("Mr. BlindBandit gold").tag("gold")
+                    Text("Blue").tag("blue")
+                }
+                Toggle("Bold text in bubbles", isOn: $boldBubbles)
+                Toggle("Larger message bubbles", isOn: $largeBubbles)
+            } header: { Text("Chat look").accessibilityAddTraits(.isHeader) } footer: {
+                Text("Accent is a local preference for your bubbles. Larger bubbles help sighted helpers and make hit targets easier.")
+            }
+        }
+        .navigationTitle("Appearance extras")
+    }
+}
+
+// MARK: - Hub: Advanced & network
+
+struct AdvancedNetworkSettingsView: View {
+    @AppStorage(SettingsKey.useLessData) private var useLessData = false
+    @AppStorage(SettingsKey.proxyEnabled) private var proxyEnabled = false
+    @AppStorage(SettingsKey.proxyHost) private var proxyHost = ""
+    @AppStorage(SettingsKey.sealedSenderPref) private var sealedSender = true
+    @AppStorage(SettingsKey.linkPreviewWarn) private var linkWarn = true
+    @AppStorage(SettingsKey.screenshotNotify) private var screenshotNotify = true
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Use less data", isOn: $useLessData)
+                Toggle("Prefer sealed-sender style sends", isOn: $sealedSender)
+                Toggle("Warn before opening link previews", isOn: $linkWarn)
+                Toggle("Screenshot alerts when server supports them", isOn: $screenshotNotify)
+            } header: { Text("Privacy network").accessibilityAddTraits(.isHeader) } footer: {
+                Text("Sealed-sender and screenshot alerts need matching server support. The toggles are remembered so they turn on the moment Tyrese ships the APIs.")
+            }
+            Section {
+                Toggle("SOCKS proxy (experimental)", isOn: $proxyEnabled)
+                TextField("Proxy host:port", text: $proxyHost)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .disabled(!proxyEnabled)
+            } header: { Text("Proxy").accessibilityAddTraits(.isHeader) } footer: {
+                Text("Optional routing for hostile networks. Tor/Orbot users can point this at a local SOCKS port when the networking stack is wired.")
+            }
+        }
+        .navigationTitle("Advanced & network")
+    }
+}
+
+// MARK: - Hub: Blind-first extras (Signal-competitor accessibility)
+
+struct BlindExtrasSettingsView: View {
+    @AppStorage(SettingsKey.hapticCallStates) private var hapticCalls = true
+    @AppStorage(SettingsKey.shakeToRead) private var shakeToRead = false
+    @AppStorage(SettingsKey.audioDuckAmount) private var duck = "medium"
+    @AppStorage(SettingsKey.missedCallCallbackSuggest) private var missedCallback = true
+    @AppStorage(SettingsKey.announceOutgoingSend) private var announceSend = true
+    @AppStorage(SettingsKey.announceDelivery) private var announceDelivery = false
+    @AppStorage(SettingsKey.preferLargerControls) private var largerControls = true
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Haptic patterns for call state", isOn: $hapticCalls)
+                Toggle("Shake to read latest message", isOn: $shakeToRead)
+                Picker("Audio ducking while VoiceOver speaks", selection: $duck) {
+                    Text("Soft").tag("soft")
+                    Text("Medium").tag("medium")
+                    Text("Hard").tag("hard")
+                }
+                Toggle("Suggest callback after missed calls", isOn: $missedCallback)
+                Toggle("Announce when I send", isOn: $announceSend)
+                Toggle("Announce delivery", isOn: $announceDelivery)
+                Toggle("Prefer larger controls", isOn: $largerControls)
+            } header: { Text("Blind-first").accessibilityAddTraits(.isHeader) } footer: {
+                Text("Extras Signal and WhatsApp rarely ship. Designed so VoiceOver users feel call state and chat activity without staring at the screen.")
+            }
+        }
+        .navigationTitle("Blind-first extras")
+    }
+}

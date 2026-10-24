@@ -87,8 +87,20 @@ struct Settings: View {
                 NavigationLink { AppSecurityView() } label: {
                     Label("Security & encryption", systemImage: "lock.shield")
                 }
+                NavigationLink { AppearanceExtrasSettingsView() } label: {
+                    Label("Appearance extras", systemImage: "paintbrush")
+                }
+                NavigationLink { AdvancedNetworkSettingsView() } label: {
+                    Label("Advanced & network", systemImage: "gearshape.2")
+                }
+                NavigationLink { BlindExtrasSettingsView() } label: {
+                    Label("Blind-first extras", systemImage: "eye")
+                }
                 NavigationLink { MessagesSettingsView() } label: {
                     Label("Messages extras", systemImage: "text.bubble")
+                }
+                NavigationLink { NotesToSelfView() } label: {
+                    Label("Note to self", systemImage: "note.text")
                 }
             }
             appearanceSection

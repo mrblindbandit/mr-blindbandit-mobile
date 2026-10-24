@@ -237,6 +237,9 @@ final class VoicePlayback: NSObject, ObservableObject, AVAudioPlayerDelegate {
         announce("Paused")
     }
 
+    /// Temp file kept for the life of the current player (AVAudioPlayer(data:) is flaky for AAC/m4a).
+    private var tempPlayFile: URL?
+
     func play(_ item: Item) async {
         stop(deactivate: false)
         register(item)
@@ -245,11 +248,17 @@ final class VoicePlayback: NSObject, ObservableObject, AVAudioPlayerDelegate {
         let p: AVAudioPlayer
         do {
             let data = try await VoicePlayerModel.loadThrowing(item.media)
-            p = try AVAudioPlayer(data: data)
+            // Android parity: write decrypted AAC to a temp .m4a, then play from file URL.
+            // AVAudioPlayer(data:) often returns play()==false / silent for m4a containers on device.
+            let file = FileManager.default.temporaryDirectory
+                .appendingPathComponent("voice-play-\(item.id.prefix(40)).m4a")
+            try data.write(to: file, options: .atomic)
+            tempPlayFile = file
+            p = try AVAudioPlayer(contentsOf: file)
+            p.volume = 1
         } catch {
             loadingID = nil
             let detail = VoiceLog.record("play", error)
-            // Loud, specific — VoiceOver users need the real reason, not a generic fail.
             announce("Couldn't play this voice message. " + detail)
             return
         }
@@ -258,10 +267,11 @@ final class VoicePlayback: NSObject, ObservableObject, AVAudioPlayerDelegate {
         UIDevice.current.isProximityMonitoringEnabled = true
         routeForProximity()
         p.enableRate = true; p.rate = VoicePlayerModel.validRate(rate); p.delegate = self; p.prepareToPlay()
-        player = p; currentID = item.id; elapsed = 0   // retained on the shared singleton for the whole playback
+        player = p; currentID = item.id; elapsed = 0
         playing = p.play()
         if !playing {
-            _ = activateSession(announceFailure: false)
+            // Retry with .playback-only session (no mic) — common when mic permission denied / CallKit held session.
+            _ = activateSession(announceFailure: false, preferPlaybackOnly: true)
             playing = p.play()
         }
         if playing {
@@ -275,13 +285,21 @@ final class VoicePlayback: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     @discardableResult
-    private func activateSession(announceFailure: Bool) -> Bool {
+    private func activateSession(announceFailure: Bool, preferPlaybackOnly: Bool = false) -> Bool {
         let s = AVAudioSession.sharedInstance()
         do {
-            try s.setCategory(.playAndRecord, mode: .spokenAudio, options: [.duckOthers, .defaultToSpeaker, .allowBluetoothA2DP, .allowBluetooth])
+            if preferPlaybackOnly {
+                try s.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers, .defaultToSpeaker])
+            } else {
+                try s.setCategory(.playAndRecord, mode: .spokenAudio, options: [.duckOthers, .defaultToSpeaker, .allowBluetoothA2DP, .allowBluetooth])
+            }
             try s.setActive(true)
             return true
         } catch {
+            // Fallback: .playback never needs the mic.
+            if !preferPlaybackOnly {
+                return activateSession(announceFailure: announceFailure, preferPlaybackOnly: true)
+            }
             let detail = VoiceLog.record("audio session", error)
             if announceFailure {
                 announce("Couldn't play: microphone or audio session unavailable. " + detail)
@@ -308,6 +326,7 @@ final class VoicePlayback: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     func stop(deactivate: Bool = true) {
         player?.stop(); player = nil; playing = false; currentID = nil; elapsed = 0; timer?.invalidate()
+        if let f = tempPlayFile { try? FileManager.default.removeItem(at: f); tempPlayFile = nil }
         if deactivate {
             UIDevice.current.isProximityMonitoringEnabled = false
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)

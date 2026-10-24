@@ -386,7 +386,7 @@ enum VoicePlayerModel {
 
     /// Looks like an MPEG-4 / AAC container (unencrypted local or mistyped ciphertext).
     static func looksLikeM4A(_ d: Data) -> Bool {
-        guard d.count > 12 else { return false }
+        guard d.count >= 8 else { return false }
         // ....ftyp
         let ftyp = d.subdata(in: 4..<8)
         return ftyp == Data("ftyp".utf8)

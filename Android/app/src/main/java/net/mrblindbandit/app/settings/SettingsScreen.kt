@@ -436,6 +436,7 @@ private fun safeStart(context: Context, intent: Intent) {
 private fun TonePickers() {
     val context = LocalContext.current
     val sounds = remember { net.mrblindbandit.app.connect.CallSounds(context) }
+    androidx.compose.runtime.DisposableEffect(sounds) { onDispose { sounds.release() } }
     var ringtone by remember { mutableStateOf(sounds.selectedRingtone) }
     var notifTone by remember { mutableStateOf(sounds.selectedNotificationTone) }
     var picker by remember { mutableStateOf<String?>(null) }
@@ -446,7 +447,7 @@ private fun TonePickers() {
         var pendingRing by remember { mutableStateOf(ringtone) }
         var pendingNotif by remember { mutableStateOf(notifTone) }
         androidx.compose.material3.AlertDialog(
-            onDismissRequest = { picker = null },
+            onDismissRequest = { sounds.stopPreview(); picker = null },
             title = { Text(if (isRing) "Ringtone" else "Message tone") },
             text = {
                 LazyColumn(Modifier.selectableGroup()) {
@@ -467,10 +468,10 @@ private fun TonePickers() {
                 TextButton(onClick = {
                     if (isRing) { sounds.selectedRingtone = pendingRing; ringtone = pendingRing }
                     else { sounds.selectedNotificationTone = pendingNotif; notifTone = pendingNotif }
-                    sounds.persist(); picker = null
+                    sounds.persist(); sounds.stopPreview(); picker = null
                 }) { Text("Done") }
             },
-            dismissButton = { TextButton(onClick = { picker = null }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { sounds.stopPreview(); picker = null }) { Text("Cancel") } },
         )
     }
 }

@@ -45,11 +45,30 @@ class CommsModelsTest {
         assertEquals(Receipt.SENDING, m.copy(pending = true).receipt)
     }
 
+    @Test fun pushTerminalEventsAreNotIncomingCalls() {
+        val ended = net.mrblindbandit.app.connect.PushPayload.parse(mapOf("type" to "call_end", "call_id" to "k9"))
+        assertTrue(ended.endsCall)
+        assertEquals("call:k9", ended.key)
+        val invite = net.mrblindbandit.app.connect.PushPayload.parse(mapOf("type" to "call_invite", "call_id" to "k9"))
+        assertFalse(invite.endsCall)
+        assertEquals(ended.key, invite.key)
+        assertFalse(net.mrblindbandit.app.connect.PushPayload.parse(mapOf("type" to "message")).isCall)
+    }
     @Test fun destinations() {
         assertEquals(CommsDestination.Thread("abc"), CommsDestination.parse("https://mrblindbandit.net/messages/abc"))
         assertEquals(CommsDestination.Call("k9"), CommsDestination.parse("/mobile/calls/k9"))
         assertEquals(CommsDestination.Calls, CommsDestination.parse("/mobile/calls"))
         assertEquals(CommsDestination.Thread("x"), CommsDestination.parse(null, conversationId = "x"))
         assertNull(CommsDestination.parse("/music/"))
+        assertEquals(CommsDestination.Thread("abc"), CommsDestination.parse("/mobile/messages/?c=abc"))
+        assertEquals(CommsDestination.Thread("a:b"), CommsDestination.parse("/mobile/messages/?id=a%3Ab"))
+        assertEquals(CommsDestination.Thread("abc"), CommsDestination.parse("/mobile/messages/?conversation_id=abc"))
+        assertEquals(CommsDestination.Call("k9"), CommsDestination.parse("/mobile/calls/?call_id=k9"))
+        assertEquals(CommsDestination.Group("g1"), CommsDestination.parse("/mobile/groups/?id=g1"))
+        assertEquals(CommsDestination.Thread("abc"), CommsDestination.parse("mrblindbandit://messages/abc"))
+        assertNull(CommsDestination.parse("https://evilmrblindbandit.net/messages/abc"))
+        assertNull(CommsDestination.parse("https://example.com/messages/abc"))
+        assertNull(CommsDestination.parse("//example.com/messages/abc"))
+        assertEquals(CommsDestination.Call("k9"), CommsDestination.parse(null, conversationId = "abc", callId = "k9"))
     }
 }

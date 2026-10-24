@@ -1,4 +1,4 @@
-# Mr. Blindbandit Android — v1.6
+# Mr. Blindbandit Android — development candidate 2.0.8 (13)
 
 Native Android app built with Kotlin, Jetpack Compose, Clerk authentication, server-authorized LiveKit communications, Listen music services, creator tools, Android System WebView, Material 3, and Firebase Cloud Messaging integration.
 
@@ -18,11 +18,13 @@ gradle -p Android bundleRelease --stacktrace
 
 ## Release metadata
 
-- Version name: `1.6.0`
-- Version code: `6`
+- Version name: `2.0.8`
+- Version code: `13`
 - Minimum SDK: `26`
 - Target SDK: `36`
 
 ## Compliance
 
 Account deletion, Privacy Policy, Terms, permissions, and accessibility controls are exposed in the app. See `../RELEASING.md` and `../Config/STORE_COMPLIANCE.md` for the release checklist and declaration notes.
+
+See [Android parity checklist](../docs/ANDROID_PARITY.md) for delivered scope, remaining work and release gates. This development branch is not certified for publication.

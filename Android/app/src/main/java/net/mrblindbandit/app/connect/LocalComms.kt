@@ -10,6 +10,37 @@ data class PendingMessage(val id: String, val handle: String, val body: String, 
 class LocalComms(val context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("blindbandit_comms", Context.MODE_PRIVATE)
 
+    private var secure = net.mrblindbandit.app.security.SecureLocalStore(context, "comms")
+    private var boundAccount: String? = null
+
+    fun bindAccount(accountId: String) {
+        require(accountId.isNotBlank())
+        if (boundAccount == accountId) return
+        check(boundAccount == null) { "Use a new communications session when switching accounts" }
+        val hash = net.mrblindbandit.app.security.P256Crypto.b64(net.mrblindbandit.app.security.P256Crypto.sha256(accountId.toByteArray()))
+        val destination = net.mrblindbandit.app.security.SecureLocalStore(context, "comms.$hash")
+        val owner = prefs.getString("legacyPrivateOwner", null)
+        if (owner == null || owner == accountId) {
+            // Claim legacy records only once. No other account can inherit the previous user's queue.
+            check(prefs.edit().putString("legacyPrivateOwner", accountId).commit())
+            val keys = (secure.names() + prefs.all.keys).filter { it == "pending" || it.startsWith("draft.") }
+            for (key in keys) {
+                val value = secure.get(key) ?: prefs.getString(key, null) ?: continue
+                if (destination.get(key) == null) destination.put(key, value)
+                secure.put(key, null)
+                check(prefs.edit().remove(key).commit())
+            }
+        }
+        secure = destination
+        boundAccount = accountId
+    }
+
+    // Read legacy data once, then remove it only after durable encrypted storage succeeds.
+    private fun readPrivate(key: String, fallback: String): String {
+        if (boundAccount == null) return fallback
+        return secure.get(key) ?: fallback
+    }
+
     private fun set(key: String) = prefs.getStringSet(key, emptySet())!!.toSet()
     private fun toggle(key: String, value: String): Boolean {
         val now = set(key).toMutableSet()
@@ -39,10 +70,11 @@ class LocalComms(val context: Context) {
         return on
     }
 
-    fun draft(conversationId: String): String = prefs.getString("draft.$conversationId", "").orEmpty()
+    fun draft(conversationId: String): String = readPrivate("draft.$conversationId", "")
     fun setDraft(conversationId: String, text: String) {
-        if (text.isEmpty()) prefs.edit().remove("draft.$conversationId").apply()
-        else prefs.edit().putString("draft.$conversationId", text).apply()
+        check(boundAccount != null) { "Account is still loading" }
+        secure.put("draft.$conversationId", text.takeIf { it.isNotEmpty() })
+        prefs.edit().remove("draft.$conversationId").apply()
     }
 
     var lastSeenMessageIds: Map<String, String>
@@ -53,16 +85,18 @@ class LocalComms(val context: Context) {
         set(value) { prefs.edit().putString("lastSeen", JSONObject(value).toString()).apply() }
 
     var pending: List<PendingMessage>
-        get() = runCatching {
-            val a = JSONArray(prefs.getString("pending", "[]")!!)
-            (0 until a.length()).mapNotNull { i ->
+        get() {
+            val a = JSONArray(readPrivate("pending", "[]"))
+            return (0 until a.length()).mapNotNull { i ->
                 a.optJSONObject(i)?.let { PendingMessage(it.optString("id"), it.optString("handle"), it.optString("body"), it.optString("conversation_id"), it.optLong("created")) }
             }
-        }.getOrDefault(emptyList())
+        }
         set(value) {
+            check(boundAccount != null) { "Account is still loading" }
             val a = JSONArray()
             value.forEach { a.put(JSONObject().put("id", it.id).put("handle", it.handle).put("body", it.body).put("conversation_id", it.conversationId).put("created", it.created)) }
-            prefs.edit().putString("pending", a.toString()).apply()
+            secure.put("pending", a.toString())
+            prefs.edit().remove("pending").apply()
         }
 
     var appLockEnabled: Boolean
@@ -73,5 +107,5 @@ class LocalComms(val context: Context) {
         get() = prefs.getFloat("readAloudRate", 1.0f).coerceIn(0.5f, 2.0f)
         set(value) { prefs.edit().putFloat("readAloudRate", value.coerceIn(0.5f, 2.0f)).apply() }
 
-    fun clearAll() { prefs.edit().clear().apply() }
+    fun clearAll() { secure.clear(); prefs.edit().clear().apply() }
 }

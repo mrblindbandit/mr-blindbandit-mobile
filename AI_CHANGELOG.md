@@ -1,3 +1,10 @@
+## 2026-10-25 — Android direct-call frame encryption and downgrade hardening (PR #66)
+- Continued `feat/android-parity-208` from `6226cd1`; retained package/version 2.0.8 (13), Clerk, production API and all prior parity work including #65 routing.
+- Added authenticated p256-v1 `call_key` control handling and direct-call LiveKit frame-key wiring with caller-bound key lookup and accessible encryption state. Group frame E2EE/rotation remains incomplete.
+- Accepted flat call-grant token/livekit_url fields and rejected non-WSS endpoints.
+- Fixed mixed-recipient plaintext downgrade depending on ordering; normalized handles before policy checks. Added security regression tests.
+- Code `b82a591`: Android CI 40110833516 passed unit/lint/APK/AAB and four emulator tests; 34 local unit tests passed, local debug/release lint each 0 errors/155 warnings. R8 metadata warnings remain. CI AAB is explicitly unsigned (no signing secrets); physical cross-platform/TalkBack QA remains open. See docs/ANDROID_PARITY.md and docs/ANDROID_RELEASE_QA.md. Draft only: no backend changes, user data removal, merge or publication.
+
 ## 2026-10-24 — iOS 2.0.7 (22), branch `feat/ios-207-app-fixes`
 - App-only: notification preview privacy (NSE + App Group), group VoiceOver/silent/schedule/optimistic/cache, live-caption speech-fail announce, screen-share DRM VO note, third ringtone CAF, AI gate audit (no code path change). Server batches still Tyrese.
 
@@ -116,3 +123,20 @@ Cross-links:
 ---
 
 *Append dated sections after substantial AI-assisted work.*
+
+## 2026-10-24 — Android parity development (draft, not a release)
+
+- Reference inspected: iOS 2.0.8 (24), main 986372d, all remote refs and open PR metadata including #65.
+- Dedicated branch feat/android-parity-208; package net.mrblindbandit.app retained, candidate Android 2.0.8 (13).
+- Native groups, p256-v1 encryption and Keystore local storage, encrypted file/voice messages, opt-in Cloud AI, optional on-device speech, video rendering and call/push fixes.
+- Includes the intent of PR #65, extended with host validation and regression tests. No main merge or Play publication.
+- Exact delivered/remaining scope, interoperability differences and release blockers: docs/ANDROID_PARITY.md.
+- No backend, signing identity or account/conversation data reset. A production-ready artifact requires all documented release gates.
+
+
+## 2026-10-24 — Continue Android parity PR #66 (ChatGPT)
+- Preserve the existing parity branch and production package/auth/backend. PR remains draft; do not merge as complete parity.
+- Connect encrypted group file/voice workflows, group typing and role controls, authenticated people picker.
+- Add explicit cloud summaries and audio transcription, caption lifecycle handling, full current ringtone/ambient asset pack with native preview lifecycle.
+- Extend p256-v1 receive/interoperability validation. See docs/ANDROID_PARITY.md for exact remaining gaps and release gates.
+- No backend changes, new production signing identity, merge or Google Play publication.

@@ -420,25 +420,29 @@ struct VoiceBubble: View {
         let progress: Double = current ? min(center.elapsed, total) : 0
         let timeText: String = current ? VoicePlayback.clock(center.elapsed) + " / " + duration : duration
         let icon: String = loading ? "hourglass" : (isPlaying ? "pause.circle.fill" : "play.circle.fill")
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 12) {
-                Image(systemName: icon).font(.largeTitle)
-                VStack(alignment: .leading, spacing: 2) {
-                    ProgressView(value: progress, total: total)
-                    Text(timeText).font(.caption)
+        // Plain Button so a sighted single tap plays/pauses; parent contextMenu was eating onTapGesture.
+        // VoiceOver still uses accessibilityAction / Actions rotor (hint stays "Double tap…").
+        return Button(action: { toggle(once) }) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 12) {
+                    Image(systemName: icon).font(.largeTitle)
+                    VStack(alignment: .leading, spacing: 2) {
+                        ProgressView(value: progress, total: total)
+                        Text(timeText).font(.caption)
+                    }
+                    Text(VoicePlayerModel.rateLabel(center.rate)).font(.caption.bold())
+                    if unplayed { Circle().fill(Brand.gold).frame(width: 8, height: 8) }
                 }
-                Text(VoicePlayerModel.rateLabel(center.rate)).font(.caption.bold())
-                if unplayed { Circle().fill(Brand.gold).frame(width: 8, height: 8) }
+                if !once, let t = media.transcript, !t.isEmpty {
+                    Text(t).font(.footnote).foregroundStyle(.secondary).lineLimit(3)
+                }
             }
-            if !once, let t = media.transcript, !t.isEmpty {
-                Text(t).font(.footnote).foregroundStyle(.secondary).lineLimit(3)
-            }
+            .padding(10)
+            .frame(minWidth: 200, alignment: .leading)
+            .background(Color.secondary.opacity(0.14), in: RoundedRectangle(cornerRadius: 16))
+            .contentShape(Rectangle())
         }
-        .padding(10)
-        .frame(minWidth: 200, alignment: .leading)
-        .background(Color.secondary.opacity(0.14), in: RoundedRectangle(cornerRadius: 16))
-        .contentShape(Rectangle())
-        .onTapGesture { toggle(once) }
+        .buttonStyle(.plain)
         .modifier(VoiceBubbleAccessibility(label: axLabel(once: once, unplayed: unplayed), value: axValue(current: current, isPlaying: isPlaying),
                                            hint: isPlaying ? "Double tap to pause" : (once ? "Double tap to play. It can be heard only once." : "Double tap to play"),
                                            isPlaying: isPlaying, current: current, once: once,

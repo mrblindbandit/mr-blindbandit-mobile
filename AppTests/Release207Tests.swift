@@ -35,15 +35,15 @@ final class Release207Tests: XCTestCase {
 
     func testAltRingtoneInPicker() {
         XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditAlt.rawValue, "ringtone_mrblindbandit_alt")
-        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditAlt.title, "Mr. BlindBandit Alt")
+        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditAlt.title, "Alt")
         XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditNight.rawValue, "ringtone_mrblindbandit_night")
-        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditNight.title, "Mr. BlindBandit Night")
+        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditNight.title, "Night")
         XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditPulse.rawValue, "ringtone_mrblindbandit_pulse")
-        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditPulse.title, "Mr. BlindBandit Pulse")
+        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditPulse.title, "Pulse")
         XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditHeat.rawValue, "ringtone_mrblindbandit_heat")
-        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditHeat.title, "Mr. BlindBandit Heat")
+        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditHeat.title, "Heat")
         XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditRise.rawValue, "ringtone_mrblindbandit_rise")
-        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditRise.title, "Mr. BlindBandit Rise")
+        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditRise.title, "Rise")
         XCTAssertEqual(CallSounds.Ringtone.mrBlindBandit.rawValue, "ringtone_mrblindbandit")
     }
 

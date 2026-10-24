@@ -65,15 +65,34 @@ struct Settings: View {
     private var settingsForm: some View {
         Form {
             accountSection
-            encryptionSection
-            messagesSection
-            notificationsSection
-            accessibilitySection
-                .id("accessibility")
-            audioSection
+            Section("Settings") {
+                NavigationLink { ChatsSettingsView() } label: {
+                    Label("Chats", systemImage: "bubble.left.and.bubble.right")
+                }
+                NavigationLink { PrivacySettingsView() } label: {
+                    Label("Privacy", systemImage: "hand.raised")
+                }
+                NavigationLink { NotificationsSettingsView() } label: {
+                    Label("Notifications", systemImage: "bell")
+                }
+                NavigationLink { VoiceCallsSettingsView() } label: {
+                    Label("Voice & calls", systemImage: "phone")
+                }
+                NavigationLink { AccessibilitySettingsView().id("accessibility") } label: {
+                    Label("Accessibility", systemImage: "accessibility")
+                }
+                NavigationLink { DataStorageSettingsView() } label: {
+                    Label("Data & storage", systemImage: "internaldrive")
+                }
+                NavigationLink { AppSecurityView() } label: {
+                    Label("Security & encryption", systemImage: "lock.shield")
+                }
+                NavigationLink { MessagesSettingsView() } label: {
+                    Label("Messages extras", systemImage: "text.bubble")
+                }
+            }
             appearanceSection
             safetySection
-            privacySection
             legalSection
             supportSection
             aboutSection
@@ -101,8 +120,8 @@ struct Settings: View {
     // MARK: Sections
 
     private var accountSection: some View {
+        ProfilePictureEditor()
         Section("Account & profile") {
-            NavigationLink("Edit username") { UsernameEditor().navigationTitle("Username") }
             if case .signedIn(let name, let email) = auth.state {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(name).font(.headline)
@@ -110,11 +129,18 @@ struct Settings: View {
                     if !communications.myHandle.isEmpty {
                         Text("@\(communications.myHandle)").foregroundStyle(.secondary)
                     }
+                    if !communications.myDisplayName.isEmpty {
+                        Text(communications.myDisplayName).font(.subheadline).foregroundStyle(.secondary)
+                    }
                 }
                 .accessibilityElement(children: .combine)
             }
+            NavigationLink { DisplayNameEditor() } label: {
+                Label("Edit display name", systemImage: "person.text.rectangle")
+            }
+            NavigationLink("Edit username") { UsernameEditor().navigationTitle("Username") }
             NavigationLink { Website(url: AppConfig.accountURL, title: "Profile & account") } label: {
-                Label("Edit profile, email and password", systemImage: "person.crop.circle")
+                Label("Edit email and password on the web", systemImage: "person.crop.circle")
             }
             Button {
                 confirmSignOut = true
@@ -353,10 +379,16 @@ struct Settings: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(AppConfig.appDisplayName).font(.headline)
                     Text(versionText).foregroundStyle(.secondary)
+                    Text("TestFlight builds include the latest features before App Store release.").font(.footnote).foregroundStyle(.secondary)
                     Text("© Blindbandit Records").font(.footnote).foregroundStyle(.secondary)
                 }
             }
             .accessibilityElement(children: .combine)
+            Link(destination: AppConfig.webBaseURL) { Label("Open website", systemImage: "globe") }
+            Link(destination: URL(string: "mailto:\(AppConfig.supportEmail)")!) {
+                Label("Email support", systemImage: "envelope")
+            }
+            NavigationLink("Open-source licenses") { LicensesView() }
         }
     }
 

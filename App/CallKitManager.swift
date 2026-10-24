@@ -157,7 +157,7 @@ final class CallKitManager: NSObject {
         update.localizedCallerName = identity.name
         update.hasVideo = call.isVideo
         update.supportsHolding = true
-        CallKitManager.donate(handle: identity.handle, name: identity.name, video: call.isVideo, incoming: true)
+        CallKitManager.donate(handle: identity.handle, name: identity.name, video: call.isVideo, incoming: true, avatarURL: call.from_avatar_url)
         update.supportsGrouping = false
         update.supportsUngrouping = false
         update.supportsDTMF = false
@@ -286,15 +286,20 @@ final class CallKitManager: NSObject {
     }
 
     /// Donates the call so Recents and Siri suggestions can call back by name.
-    static func donate(handle: String, name: String, video: Bool, incoming: Bool = false) {
-        let person = INPerson(personHandle: INPersonHandle(value: handle, type: .unknown, label: nil), nameComponents: nil,
-                              displayName: name, image: nil, contactIdentifier: nil, customIdentifier: handle)
-        let intent = INStartCallIntent(callRecordFilter: nil, callRecordToCallBack: nil, audioRoute: .unknown,
-                                       destinationType: .normal, contacts: [person],
-                                       callCapability: video ? .videoCall : .audioCall)
-        let interaction = INInteraction(intent: intent, response: nil)
-        interaction.direction = incoming ? .incoming : .outgoing
-        interaction.donate(completion: nil)
+    static func donate(handle: String, name: String, video: Bool, incoming: Bool = false, avatarURL: String? = nil) {
+        Task {
+            let image = await ProfilePhotoPrep.intentImage(from: avatarURL)
+            await MainActor.run {
+                let person = INPerson(personHandle: INPersonHandle(value: handle, type: .unknown, label: nil), nameComponents: nil,
+                                      displayName: name, image: image, contactIdentifier: nil, customIdentifier: handle)
+                let intent = INStartCallIntent(callRecordFilter: nil, callRecordToCallBack: nil, audioRoute: .unknown,
+                                               destinationType: .normal, contacts: [person],
+                                               callCapability: video ? .videoCall : .audioCall)
+                let interaction = INInteraction(intent: intent, response: nil)
+                interaction.direction = incoming ? .incoming : .outgoing
+                interaction.donate(completion: nil)
+            }
+        }
     }
 
     // MARK: VoIP payload
@@ -353,7 +358,8 @@ final class CallKitManager: NSObject {
             id: id, kind: str("kind") ?? "voice", from_handle: handle,
             from_name: str("from_name") ?? (handle.isEmpty ? "Someone" : "@\(handle)"),
             group_id: str("group_id"), group_name: str("group_name"),
-            created_at: createdMs
+            created_at: createdMs,
+            from_avatar_url: str("from_avatar_url") ?? str("avatar_url")
         )
         return (type, call)
     }

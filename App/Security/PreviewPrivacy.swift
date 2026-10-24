@@ -20,7 +20,20 @@ enum PreviewPrivacy {
     }
 
     static func hidePreviews(userInfo info: [AnyHashable: Any]) -> Bool {
-        lookup(prefix: "hidePreviews.", info: info)
+        if suite?.bool(forKey: "hidePreviews.global") == true { return true }
+        let style = suite?.string(forKey: "notify.previewStyle") ?? UserDefaults.standard.string(forKey: SettingsKey.notificationPreviewStyle)
+        if style == NotificationPreviewStyle.hidden.rawValue || style == NotificationPreviewStyle.nameOnly.rawValue {
+            // nameOnly still hides the body in the NSE; title can remain.
+            if style == NotificationPreviewStyle.hidden.rawValue { return true }
+        }
+        return lookup(prefix: "hidePreviews.", info: info)
+    }
+
+    /// True when only the sender name should show (body replaced with "Message").
+    static func nameOnlyPreviews() -> Bool {
+        let style = suite?.string(forKey: "notify.previewStyle")
+            ?? UserDefaults.standard.string(forKey: SettingsKey.notificationPreviewStyle)
+        return style == NotificationPreviewStyle.nameOnly.rawValue
     }
 
     static func muteSound(userInfo info: [AnyHashable: Any]) -> Bool {

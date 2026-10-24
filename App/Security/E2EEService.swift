@@ -419,7 +419,16 @@ final class E2EEService: ObservableObject {
 /// Last known settings per chat so sending never waits on the network.
 enum ChatSettingsCache {
     static func get(_ key: String) -> ChatSecuritySettings? {
-        UserDefaults.standard.data(forKey: "chatSettings.\(key)").flatMap { try? JSONDecoder().decode(ChatSecuritySettings.self, from: $0) }
+        if let data = UserDefaults.standard.data(forKey: "chatSettings.\(key)"),
+           let s = try? JSONDecoder().decode(ChatSecuritySettings.self, from: data) {
+            return s
+        }
+        // No per-chat settings yet: apply the global default disappearing timer if set.
+        let def = UserDefaults.standard.integer(forKey: SettingsKey.defaultDisappearingSeconds)
+        guard def > 0 else { return nil }
+        var s = ChatSecuritySettings()
+        s.disappearing_seconds = def
+        return s
     }
     static func set(_ s: ChatSecuritySettings, _ key: String) {
         if let d = try? JSONEncoder().encode(s) { UserDefaults.standard.set(d, forKey: "chatSettings.\(key)") }

@@ -313,7 +313,9 @@ final class VoicePlayback: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private func routeForProximity() {
         guard player != nil else { return }
         let near = UIDevice.current.proximityState
-        try? AVAudioSession.sharedInstance().overrideOutputAudioPort(near ? .none : .speaker)
+        let preferEar = UserDefaults.standard.object(forKey: SettingsKey.voicePreferEarpiece) as? Bool ?? false
+        let toSpeaker = near ? false : !preferEar
+        try? AVAudioSession.sharedInstance().overrideOutputAudioPort(toSpeaker ? .speaker : .none)
     }
 
     private func startTimer() {

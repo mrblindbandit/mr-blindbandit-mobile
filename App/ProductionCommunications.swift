@@ -11,11 +11,14 @@ struct BlindbanditSocialProfile: Decodable {
     let id: String
     let handle: String
     let display_name: String
+    /// Public HTTPS profile photo URL (not E2EE). Empty or nil = initials.
+    var avatar_url: String? = nil
     /// Real API field: SQLite 1/0 or true/false.
     var verified: Bool? = nil
 
-    init(id: String, handle: String, display_name: String, verified: Bool? = nil) {
-        self.id = id; self.handle = handle; self.display_name = display_name; self.verified = verified
+    init(id: String, handle: String, display_name: String, avatar_url: String? = nil, verified: Bool? = nil) {
+        self.id = id; self.handle = handle; self.display_name = display_name
+        self.avatar_url = avatar_url; self.verified = verified
     }
 
     init(from decoder: Decoder) throws {
@@ -23,9 +26,10 @@ struct BlindbanditSocialProfile: Decodable {
         id = try c.decode(String.self, forKey: .id)
         handle = try c.decode(String.self, forKey: .handle)
         display_name = (try? c.decode(String.self, forKey: .display_name)) ?? handle
+        avatar_url = try? c.decodeIfPresent(String.self, forKey: .avatar_url)
         verified = FlexibleBool.decode(c, .verified)
     }
-    enum CodingKeys: String, CodingKey { case id, handle, display_name, verified }
+    enum CodingKeys: String, CodingKey { case id, handle, display_name, avatar_url, verified }
 }
 
 struct BlindbanditConversation: Identifiable, Decodable, Equatable {
@@ -272,6 +276,47 @@ enum BlindbanditAPI {
         try decode(BlindbanditSocialProfile.self, from: try await request("v1/social/me"))
     }
 
+    /// PATCH /v1/social/me — public profile fields including avatar_url (absolute HTTPS).
+    @discardableResult
+    static func updateSocialProfile(_ fields: [String: Any]) async throws -> BlindbanditSocialProfile {
+        try decode(BlindbanditSocialProfile.self, from: try await request("v1/social/me", method: "PATCH", body: fields))
+    }
+
+    /// PUT /v1/social/me/avatar — raw JPEG body; server stores a public object and sets avatar_url.
+    static func uploadPublicAvatar(jpeg: Data) async throws -> String {
+        if StoreScreenshotMode.isActive { throw AuthServiceError.noActiveSession }
+        guard let token = await clerkTokenWithTimeout() else { throw AuthServiceError.noActiveSession }
+        var request = URLRequest(url: url("v1/social/me/avatar"))
+        request.httpMethod = "PUT"
+        request.timeoutInterval = 45
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+        request.setValue("\(jpeg.count)", forHTTPHeaderField: "Content-Length")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let device = IdentityStore.shared.deviceID { request.setValue(device, forHTTPHeaderField: "X-BB-Device-Id") }
+        request.setValue(Self.installationID, forHTTPHeaderField: "X-Installation-ID")
+        request.httpBody = jpeg
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw CommunicationsError.invalidResponse }
+        if http.statusCode == 404 {
+            throw CommunicationsError.server("Profile photo upload is not available on the server yet. Try again after the next Blindbandit update.")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let envelope = try? JSONDecoder().decode(APIErrorEnvelope.self, from: data)
+            throw CommunicationsError.server(envelope?.error?.message ?? "Could not upload profile picture (HTTP \(http.statusCode)).")
+        }
+        let profile = try decode(BlindbanditSocialProfile.self, from: data)
+        let trimmed = profile.avatar_url?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else {
+            throw CommunicationsError.server("Upload succeeded but no public avatar URL was returned.")
+        }
+        return trimmed
+    }
+
+    static func clearPublicAvatar() async throws {
+        _ = try await updateSocialProfile(["avatar_url": ""])
+    }
+
     static func conversations() async throws -> [BlindbanditConversation] {
         let d = try await request("v1/social/messages?limit=100")
         let items = try decode(ItemsPayload<BlindbanditConversation>.self, from: d).items
@@ -291,6 +336,8 @@ enum BlindbanditAPI {
     }
 
     static func sendTyping(conversationID: String) async {
+        let allow = UserDefaults.standard.object(forKey: SettingsKey.sendTypingIndicators) as? Bool ?? true
+        guard allow else { return }
         _ = try? await request("v1/social/messages/\(escape(conversationID))/typing", method: "POST", body: ["typing": true])
     }
 
@@ -331,6 +378,9 @@ enum BlindbanditAPI {
     }
 
     static func markRead(conversationID: String) async throws {
+        let allow = UserDefaults.standard.object(forKey: SettingsKey.sendReadReceipts) as? Bool ?? true
+        guard allow else { return }
+
         try await request("v1/social/messages/\(escape(conversationID))/read", method: "POST", body: [:])
     }
 
@@ -453,6 +503,9 @@ final class ProductionCommunicationsService: ObservableObject {
     @Published private(set) var myProfileID = ""
     @Published private(set) var myVerified = false
     @Published private(set) var myHandle = ""
+    @Published private(set) var myDisplayName = ""
+    /// Public HTTPS avatar URL from /v1/social/me (not E2EE).
+    @Published private(set) var myAvatarURL: String? = nil
     @Published private(set) var isLoading = false
     @Published private(set) var isInCall = false
     @Published private(set) var isVideoCall = false
@@ -512,6 +565,15 @@ final class ProductionCommunicationsService: ObservableObject {
         String(format: "%02d:%02d", callSeconds / 60, callSeconds % 60)
     }
 
+    func applyMyAvatarURL(_ url: String?) {
+        let t = url?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        myAvatarURL = t.isEmpty ? nil : t
+    }
+
+    func applyMyDisplayName(_ name: String) {
+        myDisplayName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     func bootstrap(force: Bool = false) async {
         guard force || !bootstrapped else { return }
         isLoading = true
@@ -521,6 +583,11 @@ final class ProductionCommunicationsService: ObservableObject {
             let profile = try await BlindbanditAPI.currentProfile()
             myProfileID = profile.id
             myHandle = profile.handle
+            myDisplayName = profile.display_name
+            myAvatarURL = {
+                let t = profile.avatar_url?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                return t.isEmpty ? nil : t
+            }()
             UserDefaults.standard.set(profile.id, forKey: CallKitManager.myIDKey)
             UserDefaults.standard.set(profile.handle, forKey: CallKitManager.myHandleKey)
             AIPersona.serverHandle = profile.handle
@@ -1194,6 +1261,11 @@ final class ProductionCommunicationsService: ObservableObject {
         callSeconds = 0
         startTicker()
         refreshParticipants()
+        if UserDefaults.standard.object(forKey: SettingsKey.liveCaptionsDefault) as? Bool ?? false, !captionsOn {
+            captionsOn = true
+            let tracks = newRoom.remoteParticipants.values.flatMap { $0.audioTracks.compactMap { $0.track as? RemoteAudioTrack } }
+            setCaptions(true, tracks: tracks)
+        }
         CallSounds.callConnected()
         AppHaptics.success()
         var connected = callGroupID == nil ? "Connected with \(callPeerName)." : "Joined \(callPeerName). \(participants.count) in the call."
@@ -1685,6 +1757,8 @@ final class ProductionCommunicationsService: ObservableObject {
         conversations = []
         messages = []
         myProfileID = ""
+        myDisplayName = ""
+        myAvatarURL = nil
         myHandle = ""
         UserDefaults.standard.removeObject(forKey: CallKitManager.myIDKey)
         UserDefaults.standard.removeObject(forKey: CallKitManager.myHandleKey)

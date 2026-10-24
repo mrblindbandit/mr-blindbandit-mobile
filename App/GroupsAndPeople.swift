@@ -114,15 +114,10 @@ struct GroupsTabView: View {
 
 struct GroupAvatar: View {
     let name: String
+    var urlString: String? = nil
     var size: CGFloat = 44
     var body: some View {
-        let letters = String(name.split(separator: " ").prefix(2).compactMap { $0.first }).uppercased()
-        ZStack {
-            Circle().fill(Brand.gold.opacity(0.3))
-            if letters.isEmpty { Image(systemName: "person.3.fill") } else { Text(letters).font(.headline) }
-        }
-        .frame(width: size, height: size)
-        .accessibilityHidden(true)
+        ProfileAvatar(urlString: urlString, displayName: name, size: size, decorative: true)
     }
 }
 
@@ -130,7 +125,7 @@ struct GroupRow: View {
     let group: BlindbanditGroup
     var body: some View {
         HStack(spacing: 12) {
-            GroupAvatar(name: group.name)
+            GroupAvatar(name: group.name, urlString: group.avatar_url)
             VStack(alignment: .leading, spacing: 2) {
                 Text(group.name).font(.headline)
                 Text(group.last_message_body ?? "\(group.member_count) members").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
@@ -636,7 +631,11 @@ struct GroupInfoView: View {
                     ForEach(members) { m in
                         HStack {
                             VStack(alignment: .leading) {
-                                HStack(spacing: 3) { Text(m.display_name); if m.verified { VerifiedBadge() } }
+                                HStack(spacing: 8) {
+                                    ProfileAvatar(urlString: m.avatar_url, displayName: m.display_name, size: 32, decorative: true)
+                                    Text(m.display_name)
+                                    if m.verified { VerifiedBadge() }
+                                }
                                 Text("@\(m.handle)").font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
@@ -719,6 +718,7 @@ struct PeopleDirectoryView: View {
             if !loading && people.isEmpty && error.isEmpty { Text(query.isEmpty ? "No one here yet." : "No one matches \(query).").foregroundStyle(.secondary) }
             ForEach(people) { p in
                 HStack {
+                    ProfileAvatar(urlString: p.avatar_url, displayName: p.display_name, size: 40, verified: false, decorative: true)
                     VStack(alignment: .leading) {
                         HStack(spacing: 3) { Text(p.display_name).font(.headline); if p.verified == true { VerifiedBadge() } }
                         Text("@\(p.handle)").font(.caption).foregroundStyle(.secondary)

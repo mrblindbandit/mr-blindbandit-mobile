@@ -1,3 +1,8 @@
+## 2026-10-25 — iOS 2.0.10 (26), branch `feat/ios-2010-public-profile-pictures`
+- Public profile pictures: ProfileAvatar + ProfilePictureEditor (Photos/camera), PATCH/PUT social me avatar client; avatars in conversation rows, thread header/info, people, group members, call history, incoming/active call UI, CallKit INImage donate.
+- Expanded Settings (Signal/WhatsApp-depth hubs): Chats, Privacy, Notifications, Voice & calls, Accessibility, Data & storage — wired to UserDefaults / NSE App Group / existing services (no stub toggles). Media auto-download + use-less-data, archive muted / keep archived, wallpaper, default disappearing, last-seen local pref, read/typing gates, announce caller, quiet hours, preview style → NSE, earpiece default, live captions default, announce send/delivery, clear caches + sizes, export safety-number help text.
+- Photo library usage strings; version 2.0.10 (26). Default ringtone untouched. Server PUT /v1/social/me/avatar may still 404 until site ships — client clears a VoiceOver error and still allows PATCH avatar_url when the CDN URL is known.
+
 ## 2026-10-25 — iOS 2.0.9 (25), branch `feat/ios-209-voice-encryption-calling`
 - Voice: MessageRowLabelModifier (no container label on voice rows); activateSession returns Bool + VO; play/resume retry + "Playing"; recorder/send failure announces; hasPlayableVoiceMedia; autoPlay gated by SettingsKey.autoPlayVoice.
 - Encryption settings: Restore from iCloud Keychain; forgot dialog prefers iCloud before destructive reset; Encryption + Messages sections in Settings.

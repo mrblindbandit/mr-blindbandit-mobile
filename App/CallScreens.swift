@@ -38,8 +38,12 @@ struct IncomingCallScreen: View {
             ZStack {
                 Circle().fill(Brand.gold.opacity(0.25)).frame(width: 170, height: 170)
                     .scaleEffect(pulse && !reduceMotion ? 1.12 : 1)
-                Image(systemName: call.group_id != nil ? "person.3.fill" : "person.crop.circle.fill")
-                    .font(.system(size: 92)).foregroundStyle(Brand.gold)
+                if call.group_id != nil {
+                    Image(systemName: "person.3.fill")
+                        .font(.system(size: 92)).foregroundStyle(Brand.gold)
+                } else {
+                    ProfileAvatar(urlString: call.from_avatar_url, displayName: call.from_name, size: 120, decorative: true)
+                }
             }
             .accessibilityHidden(true)
             VStack(spacing: 8) {
@@ -69,7 +73,9 @@ struct IncomingCallScreen: View {
         .accessibilityAction(named: "Answer") { answer(video: call.isVideo) }
         .accessibilityAction(named: "Decline") { communications.declineIncoming() }
         .onAppear {
-            UIAccessibility.post(notification: .screenChanged, argument: "Incoming call from \(call.callerLabel). Two-finger double tap to answer.")
+            let announceName = UserDefaults.standard.object(forKey: SettingsKey.announceCallerName) as? Bool ?? true
+            let who = announceName ? call.callerLabel : "someone"
+            UIAccessibility.post(notification: .screenChanged, argument: "Incoming call from \(who). Two-finger double tap to answer.")
             if !reduceMotion { withAnimation(.easeInOut(duration: 0.9).repeatForever()) { pulse = true } }
         }
     }
@@ -120,8 +126,18 @@ struct ActiveCallScreen: View {
             header
             if communications.participants.count <= 1 && !communications.isVideoCall {
                 Spacer()
-                Image(systemName: communications.callGroupID == nil ? "person.crop.circle.fill" : "person.3.fill")
-                    .font(.system(size: 96)).foregroundStyle(Brand.gold).accessibilityHidden(true)
+                if communications.callGroupID == nil {
+                    ProfileAvatar(
+                        urlString: communications.incomingCall?.from_avatar_url
+                            ?? communications.conversations.first(where: { $0.other?.handle.lowercased() == String(communications.callPeerName.dropFirst()).lowercased() })?.other?.avatar_url,
+                        displayName: communications.callPeerName.isEmpty ? "Call" : communications.callPeerName,
+                        size: 120,
+                        decorative: true
+                    )
+                } else {
+                    Image(systemName: "person.3.fill")
+                        .font(.system(size: 96)).foregroundStyle(Brand.gold).accessibilityHidden(true)
+                }
                 Spacer()
             } else {
                 grid

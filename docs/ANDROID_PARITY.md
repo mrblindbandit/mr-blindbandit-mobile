@@ -94,3 +94,16 @@ Continued the existing PR #66 rather than rebuilding or duplicating its work. PR
 This PR is **not complete feature parity** and is **not approved for production**. The remaining implementation list above is authoritative. In particular, frame-encrypted iOS calls, background calling, recovery, advanced chat controls, on-device model/translation, native profile editing and remaining creator tools are unfinished. Compiling an AAB does not establish that these work.
 
 Package remains `net.mrblindbandit.app`; candidate version is `2.0.8` / `13`. The highest code already uploaded to Play must still be checked in Play Console. No production signing identity was generated, and no backend or user data was changed.
+
+## Direct-call encryption follow-up — 2026-10-25
+
+- Added iOS `call_key` control parsing after successful p256-v1 decryption. Controls stay hidden from message rows.
+- Added a bounded call-key lookup bound to both call ID and authenticated sender profile ID; validates 32-byte keys, rejects backwards indexes, expires entries and clears the active call key on teardown.
+- Direct calls send a fresh key through the existing encrypted message route before joining LiveKit. Received keys configure LiveKit shared-key frame encryption before connecting/publishing. Caller identity comes from the authenticated invite/profile lookup. Keys are never sent as plaintext fallback messages.
+- Added an accessible in-call label distinguishing frame E2EE from transport-only media encryption, and accepted the newer flat `token`/`livekit_url` call grant shape. Only WSS call endpoints are accepted.
+- Fixed mixed legacy/encrypted group sends: a legacy recipient can no longer bypass the no-downgrade check for an already encrypted recipient based on recipient ordering. Normalize recipient handles before policy checks.
+- Added call-key validation, caller binding, monotonic index, expiration, tamper, hidden-control and mixed-recipient downgrade regression tests.
+
+This is **direct-call implementation**, not certified cross-platform call interoperability. Group frame-key distribution/rotation, screen sharing, background/Telecom calling and physical-device verification remain unfinished. A keyless legacy call retains transport encryption and is explicitly labelled as lacking E2EE. An authenticated two-account Android/iOS test must verify decoded audio/video before this implementation can be released.
+
+Validation for this follow-up is pending a clean build. Local instrumentation is blocked by unavailable Android UTP dependencies in offline mode, and no Android device/emulator is attached. No local upload-signing credentials are configured. The existing dedicated signed workflow remains the required release path; do not create a replacement identity.

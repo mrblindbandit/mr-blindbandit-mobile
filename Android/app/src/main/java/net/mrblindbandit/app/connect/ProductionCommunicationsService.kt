@@ -490,6 +490,8 @@ class ProductionCommunicationsService(
         if (token.isBlank() || url.isBlank()) error("The call server is unavailable right now. Please try again shortly.")
         activeCallId = response.lString("id", "call_id").ifBlank { null }
 
+        // FrameCryptorFactory uses native WebRTC; initialize it before constructing the provider.
+        LiveKit.init(appContext)
         val provider = frameKey?.let { key ->
             BaseKeyProvider(enableSharedKey = true).also { check(it.setSharedKey(key.secret, key.index % 16)) { "Call encryption could not be initialized" } }
         }

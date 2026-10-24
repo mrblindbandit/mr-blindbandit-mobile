@@ -88,6 +88,12 @@ fun CommsSettingsSection(communications: ProductionCommunicationsService, activi
     LaunchedEffect(Unit) { communications.loadSettings() }
     Column(Modifier.fillMaxWidth()) {
         Text("Messages & calls", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(vertical = 8.dp).semantics { heading() })
+        Text(communications.encryptionStatus)
+        var hidePreviews by remember { mutableStateOf(context.getSharedPreferences(net.mrblindbandit.app.AndroidAppPreferences.FILE, android.content.Context.MODE_PRIVATE).getBoolean("hideMessagePreviews", true)) }
+        SettingSwitch("Hide message previews in notifications", hidePreviews) { value ->
+            hidePreviews = value
+            context.getSharedPreferences(net.mrblindbandit.app.AndroidAppPreferences.FILE, android.content.Context.MODE_PRIVATE).edit().putBoolean("hideMessagePreviews", value).apply()
+        }
         SettingSwitch("Send read receipts", communications.shareReadReceipts) { on ->
             haptics.tap()
             scope.launch { communications.setShareReadReceipts(on); Announcer.announce(context, communications.statusMessage) }

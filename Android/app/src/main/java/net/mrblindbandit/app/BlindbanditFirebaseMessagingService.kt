@@ -24,28 +24,40 @@ class BlindbanditFirebaseMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
         val prefs = getSharedPreferences(AndroidAppPreferences.FILE, MODE_PRIVATE)
-        val kind = (message.data["type"] ?: message.data["category"]).orEmpty()
-        val isCall = kind.contains("call") || message.data["deep_link"].orEmpty().startsWith("/mobile/calls")
+        val payload = net.mrblindbandit.app.connect.PushPayload.parse(message.data)
+        val notificationId = payload.key.hashCode()
+        if (payload.endsCall) {
+            NotificationManagerCompat.from(this).cancel(payload.key, notificationId)
+            // App-scoped broadcast: other apps cannot forge a call-end event.
+            sendBroadcast(Intent(ACTION_CALL_ENDED).setPackage(packageName).putExtra("call_id", payload.callId))
+            return
+        }
+        val isCall = payload.isCall
         if (isCall && !prefs.getBoolean("notifyCalls", true)) return
         if (!isCall && !prefs.getBoolean("notifyMessages", true)) return
 
         val title = message.notification?.title ?: message.data["title"] ?: if (isCall) "Incoming call" else "New message"
-        val body = message.notification?.body ?: message.data["body"].orEmpty()
+        val hidePreview = prefs.getBoolean("hideMessagePreviews", true) || message.data["e2ee"] in setOf("true", "1")
+        val body = if (!isCall && hidePreview) "New message" else message.notification?.body ?: message.data["body"].orEmpty()
         val link = message.data["url"] ?: message.data["deep_link"]?.let { if (it.startsWith("/")) "https://mrblindbandit.net$it" else it }
 
         ensureChannels(this)
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             if (link != null && UrlPolicy.isFirstParty(link)) data = Uri.parse(link)
-            message.data["conversation_id"]?.takeIf { it.isNotBlank() }?.let { putExtra("conversation_id", it) }
-            message.data["call_id"]?.takeIf { it.isNotBlank() }?.let { putExtra("call_id", it) }
+            action = "net.mrblindbandit.app.OPEN.${payload.key}"
+            payload.conversationId?.let { putExtra("conversation_id", it) }
+            payload.groupId?.let { putExtra("group_id", it) }
+            payload.callId?.let { putExtra("call_id", it) }
         }
-        val pending = PendingIntent.getActivity(this, title.hashCode(), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val pending = PendingIntent.getActivity(this, notificationId, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val notification = NotificationCompat.Builder(this, if (isCall) CHANNEL_CALLS else CHANNEL_MESSAGES)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(title)
+            .setContentTitle(if (!isCall && hidePreview) "BlindBandit" else title)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setContentText(body)
             .setAutoCancel(true)
+            .setTimeoutAfter(if (isCall) 45_000L else 0L)
             .setContentIntent(pending)
             .setCategory(if (isCall) NotificationCompat.CATEGORY_CALL else NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(if (isCall) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
@@ -54,13 +66,14 @@ class BlindbanditFirebaseMessagingService : FirebaseMessagingService() {
             androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED
         if (!canNotify) return
         try {
-            NotificationManagerCompat.from(this).notify(title.hashCode(), notification)
+            NotificationManagerCompat.from(this).notify(payload.key, notificationId, notification)
         } catch (_: SecurityException) {
             // Permission was revoked between the check and the post.
         }
     }
 
     companion object {
+        const val ACTION_CALL_ENDED = "net.mrblindbandit.app.CALL_ENDED"
         const val CHANNEL_MESSAGES = "messages"
         const val CHANNEL_CALLS = "calls"
 

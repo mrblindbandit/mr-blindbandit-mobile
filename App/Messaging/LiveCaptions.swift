@@ -15,7 +15,12 @@ final class LiveCaptioner: NSObject, AudioRenderer, @unchecked Sendable {
     var onCaption: (@MainActor (String) -> Void)?
 
     func begin() {
-        guard let recognizer, recognizer.isAvailable else { return }
+        guard let recognizer, recognizer.isAvailable else {
+            DispatchQueue.main.async {
+                UIAccessibility.post(notification: .announcement, argument: "Captions speech failed. Speech recognition unavailable")
+            }
+            return
+        }
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
         if recognizer.supportsOnDeviceRecognition { req.requiresOnDeviceRecognition = true }
@@ -25,6 +30,16 @@ final class LiveCaptioner: NSObject, AudioRenderer, @unchecked Sendable {
             if let r = result {
                 let text = r.bestTranscription.formattedString
                 self.scheduleFlush(text, final: r.isFinal)
+            }
+            if let error {
+                let msg = error.localizedDescription
+                // Don't spam VoiceOver on routine end-of-utterance cancellations.
+                let cancel = (error as NSError).domain == "kAFAssistantErrorDomain" && (error as NSError).code == 216
+                if !cancel && !msg.isEmpty {
+                    DispatchQueue.main.async {
+                        UIAccessibility.post(notification: .announcement, argument: "Captions speech failed. \(msg)")
+                    }
+                }
             }
             if error != nil || result?.isFinal == true { self.restart() }
         }

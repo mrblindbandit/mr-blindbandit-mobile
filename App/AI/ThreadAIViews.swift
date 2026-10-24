@@ -100,8 +100,8 @@ enum ScheduledSender {
         guard !due.isEmpty else { return }
         LocalMessageStore.shared.mutate { s in s.scheduled.removeAll { $0.sendAt <= now } }
         for m in due {
-            if let h = m.handle { _ = await comms.sendMessage(recipient: h, body: m.body) }
-            else if let g = m.groupID { try? await BlindbanditAPI.sendGroupMessage(id: g, body: m.body) }
+            if let h = m.handle { _ = await comms.sendMessage(recipient: h, body: m.body, silent: m.silent) }
+            else if let g = m.groupID { try? await BlindbanditAPI.sendGroupMessage(id: g, body: m.body, silent: m.silent) }
         }
     }
 }

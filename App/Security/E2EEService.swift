@@ -423,5 +423,15 @@ enum ChatSettingsCache {
     }
     static func set(_ s: ChatSecuritySettings, _ key: String) {
         if let d = try? JSONEncoder().encode(s) { UserDefaults.standard.set(d, forKey: "chatSettings.\(key)") }
+        // Mirror hide_previews / mute_sound into the App Group for the Notification Service Extension.
+        var keys = [key]
+        if key.hasPrefix("dm:") { keys.append(String(key.dropFirst(3))) }
+        if key.hasPrefix("group:") { keys.append(String(key.dropFirst(6))) }
+        guard let suite = UserDefaults(suiteName: PreviewPrivacy.appGroup) else { return }
+        for k in Set(keys) {
+            suite.set(s.my.hide_previews, forKey: "hidePreviews." + k)
+            suite.set(s.my.mute_sound, forKey: "muteSound." + k)
+        }
+        suite.synchronize()
     }
 }

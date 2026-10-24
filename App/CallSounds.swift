@@ -9,6 +9,7 @@ enum CallSounds {
         /// 2.0.6 default: the owner's Mr. BlindBandit ringtone (ringtone_mrblindbandit.caf, 29.5 s IMA4).
         case mrBlindBandit = "ringtone_mrblindbandit"
         case mrBlindBanditClassic = "ringtone_mrblindbandit_classic"
+        case mrBlindBanditAlt = "ringtone_mrblindbandit_alt"
         case `default` = "ringtone"
         case gold = "ringtone_gold"
         case pulse = "ringtone_pulse"
@@ -31,6 +32,7 @@ enum CallSounds {
             switch self {
             case .mrBlindBandit: return "Mr. BlindBandit (Default)"
             case .mrBlindBanditClassic: return "Mr. BlindBandit Classic"
+            case .mrBlindBanditAlt: return "Mr. BlindBandit Alt"
             case .default: return "Original"
             case .gold: return "Gold"
             case .pulse: return "Pulse"

@@ -315,6 +315,24 @@ final class CallKitManager: NSObject {
         return true
     }
 
+    /// True when the push looks like the server's "answered on another device" echo (not a real hang-up).
+    nonisolated static func isAnsweredElsewhereEcho(_ payload: [AnyHashable: Any]) -> Bool {
+        let root = (payload["data"] as? [AnyHashable: Any]) ?? payload
+        var parts: [String] = []
+        for key in ["reason", "message", "body", "title", "alert"] {
+            if let s = root[key] as? String { parts.append(s) }
+        }
+        if let aps = root["aps"] as? [AnyHashable: Any] {
+            if let s = aps["alert"] as? String { parts.append(s) }
+            if let alert = aps["alert"] as? [AnyHashable: Any] {
+                if let s = alert["body"] as? String { parts.append(s) }
+                if let s = alert["title"] as? String { parts.append(s) }
+            }
+        }
+        let blobs = parts.joined(separator: " ").lowercased()
+        return blobs.contains("another device") || blobs.contains("answered elsewhere") || blobs.contains("answered on another")
+    }
+
     /// Parses `{type:'call'|'call_end', call_id, kind, from_handle, from_name, group_id?, group_name?}`.
     nonisolated static func parseVoIP(_ payload: [AnyHashable: Any]) -> (type: String, call: BlindbanditIncomingCall?) {
         let root = (payload["data"] as? [AnyHashable: Any]) ?? payload
@@ -326,11 +344,16 @@ final class CallKitManager: NSObject {
         let type = str("type") ?? "call"
         guard let id = str("call_id") ?? str("id") else { return (type, nil) }
         let handle = str("from_handle") ?? ""
+        let createdMs: Double = {
+            if let s = str("created_at"), let d = Double(s) { return d }
+            if let n = root["created_at"] as? NSNumber { return n.doubleValue }
+            return Date().timeIntervalSince1970 * 1000
+        }()
         let call = BlindbanditIncomingCall(
             id: id, kind: str("kind") ?? "voice", from_handle: handle,
             from_name: str("from_name") ?? (handle.isEmpty ? "Someone" : "@\(handle)"),
             group_id: str("group_id"), group_name: str("group_name"),
-            created_at: Date().timeIntervalSince1970 * 1000
+            created_at: createdMs
         )
         return (type, call)
     }
@@ -447,15 +470,26 @@ extension CallKitManager: PKPushRegistryDelegate {
                 return
             }
             if parsed.type == "call_end" {
-                // The server sends "answered on another device" to the answerer's own devices too.
-                // If THIS device answered, that push is about us: never tear the call down.
+                // The server historically sent "answered on another device" to the answering install too.
+                // Never tear down a call THIS device is joining / just joined / already answered when
+                // the push is that echo (or within the post-join grace window).
+                let echo = CallKitManager.isAnsweredElsewhereEcho(payload.dictionaryPayload)
+                    || (service?.shouldIgnoreAnswerEcho(callID: call.id) == true)
+                if echo && (answered.contains(call.id) || connected.contains(call.id)
+                            || service?.joiningCallID == call.id || service?.activeCallID == call.id) {
+                    CallTiming.log("ignored answered-elsewhere call_end for \(call.id)")
+                    completion(); return
+                }
                 if service?.joiningCallID == call.id {
                     completion(); return
                 }
                 if uuids[call.id] != nil {
                     let reason = CallKitManager.endReason(wasConnected: answered.contains(call.id) || connected.contains(call.id))
                     service?.remoteEnded(callID: call.id)
-                    reportEnded(callID: call.id, reason: reason)
+                    // remoteEnded may have no-op'd on echo; only reportEnded if we are no longer in that call.
+                    if service?.activeCallID != call.id && service?.joiningCallID != call.id {
+                        reportEnded(callID: call.id, reason: reason)
+                    }
                     completion()
                 } else {
                     // Never saw the ring (app was killed): log it as a missed call so it's in Recents.

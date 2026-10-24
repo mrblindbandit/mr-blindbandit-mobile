@@ -1,3 +1,9 @@
+## 2026-10-25 — iOS 2.0.9 (25), branch `feat/ios-209-voice-encryption-calling`
+- Voice: MessageRowLabelModifier (no container label on voice rows); activateSession returns Bool + VO; play/resume retry + "Playing"; recorder/send failure announces; hasPlayableVoiceMedia; autoPlay gated by SettingsKey.autoPlayVoice.
+- Encryption settings: Restore from iCloud Keychain; forgot dialog prefers iCloud before destructive reset; Encryption + Messages sections in Settings.
+- E2EE calling client: BlindbanditAPI.installationID + X-Installation-ID; join/end body installation_id; joinedAt + shouldIgnoreAnswerEcho (~8s); CallKit isAnsweredElsewhereEcho; parseVoIP created_at; awaitCallKey retries + late-key VO; connect announces encryption label. Server gaps (exclude_installation_id, expireRingingCalls caller_id, endCall push-all) documented for Tyrese — client workarounds ship anyway.
+- Default ringtone untouched.
+
 ## 2026-10-24 — iOS 2.0.7 (22), branch `feat/ios-207-app-fixes`
 - App-only: notification preview privacy (NSE + App Group), group VoiceOver/silent/schedule/optimistic/cache, live-caption speech-fail announce, screen-share DRM VO note, third ringtone CAF, AI gate audit (no code path change). Server batches still Tyrese.
 

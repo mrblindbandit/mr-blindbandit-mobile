@@ -30,6 +30,14 @@ struct Settings: View {
     @AppStorage(SettingsKey.notifyCalls) private var notifyCalls = true
     @AppStorage(SettingsKey.requireDeviceUnlock) private var requireDeviceUnlock = true
     @AppStorage(ContentFilter.settingKey) private var filterOffensiveLanguage = true
+    @AppStorage(SettingsKey.confirmBeforeSend) private var confirmBeforeSend = false
+    @AppStorage(SettingsKey.enterKeySends) private var enterKeySends = false
+    @AppStorage(SettingsKey.largeMessageBubbles) private var largeMessageBubbles = false
+    @AppStorage(SettingsKey.showLinkPreviews) private var showLinkPreviews = true
+    @AppStorage(SettingsKey.autoPlayVoice) private var autoPlayVoice = true
+    @AppStorage(SettingsKey.listenOnceDefault) private var listenOnceDefault = false
+    @AppStorage(MagicTapSetting.key) private var magicTapEndsCall = true
+    @ObservedObject private var e2ee = E2EEService.shared
 
     @State private var confirmSignOut = false
     @State private var confirmClearSessions = false
@@ -57,6 +65,8 @@ struct Settings: View {
     private var settingsForm: some View {
         Form {
             accountSection
+            encryptionSection
+            messagesSection
             notificationsSection
             accessibilitySection
                 .id("accessibility")
@@ -117,6 +127,44 @@ struct Settings: View {
                 Label("Delete account", systemImage: "trash")
             }
             .accessibilityHint("Permanently deletes your account and data after you confirm.")
+        }
+    }
+
+    private var encryptionSection: some View {
+        Section {
+            NavigationLink { AppSecurityView() } label: {
+                Label("Security and encryption", systemImage: "lock.shield")
+            }
+            NavigationLink { EncryptionPasscodeView() } label: {
+                Label(EncryptionPasscode.isSet(e2ee.myHandle) ? "Change encryption passcode" : "Create encryption passcode", systemImage: "key.fill")
+            }
+            LabeledContent("Message encryption", value: e2ee.ready ? "On" : "Setting up")
+            LabeledContent("iCloud Keychain", value: IdentityStore.shared.restoredFromICloud ? "Restored on this iPhone" : (IdentityStore.shared.exportIdentity() == nil ? "No keys yet" : "Synced"))
+            LabeledContent("This device", value: IdentityStore.shared.deviceID ?? "Not registered")
+        } header: {
+            Text("Encryption")
+        } footer: {
+            Text("Your identity key syncs through iCloud Keychain. An encryption passcode adds a recoverable server backup. Forgot passcode prefers iCloud restore over resetting keys.")
+        }
+    }
+
+    private var messagesSection: some View {
+        Section {
+            NavigationLink { MessagesSettingsView() } label: {
+                Label("Messages & calls settings", systemImage: "bubble.left.and.bubble.right")
+            }
+            Toggle("Confirm before sending", isOn: $confirmBeforeSend)
+            Toggle("Return key sends", isOn: $enterKeySends)
+            Toggle("Large message bubbles", isOn: $largeMessageBubbles)
+            Toggle("Link previews", isOn: $showLinkPreviews)
+            Toggle("Auto-play next voice message", isOn: $autoPlayVoice)
+                .accessibilityHint("When on, finishing a received voice note starts the next unplayed one.")
+            Toggle("Listen once by default", isOn: $listenOnceDefault)
+                .accessibilityHint("New voice notes you record can be heard only once by the other person.")
+            Toggle("Magic Tap ends the call", isOn: $magicTapEndsCall)
+                .accessibilityHint("Two-finger double tap during a call. Off: Magic Tap mutes instead.")
+        } header: {
+            Text("Messages & calls")
         }
     }
 

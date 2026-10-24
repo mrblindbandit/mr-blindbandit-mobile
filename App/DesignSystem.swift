@@ -56,6 +56,13 @@ enum SettingsKey {
     static let notifyMessages = "notifyMessages"
     static let notifyCalls = "notifyCalls"
     static let requireDeviceUnlock = "requireDeviceUnlock"
+    static let confirmBeforeSend = "comms.confirmBeforeSend"
+    static let enterKeySends = "comms.enterKeySends"
+    static let largeMessageBubbles = "comms.largeBubbles"
+    static let showLinkPreviews = "comms.linkPreviews"
+    static let autoPlayVoice = "voice.autoPlayNext"
+    static let listenOnceDefault = "voice.listenOnce"
+    static let callMagicTapEnds = "calls.magicTapEnds"
 }
 
 struct BrandCard<Content: View>: View {

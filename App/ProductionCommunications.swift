@@ -251,6 +251,7 @@ enum BlindbanditAPI {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let device = IdentityStore.shared.deviceID { request.setValue(device, forHTTPHeaderField: "X-BB-Device-Id") }
+        request.setValue(Self.installationID, forHTTPHeaderField: "X-Installation-ID")
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -310,7 +311,8 @@ enum BlindbanditAPI {
 
     static func joinCall(id: String) async throws -> BlindbanditCallResponse {
         try decode(BlindbanditCallResponse.self, from: try await request(
-            "v1/social/calls/\(escape(id))/join", method: "POST", body: [:]
+            "v1/social/calls/\(escape(id))/join", method: "POST",
+            body: ["installation_id": Self.installationID]
         ))
     }
 
@@ -320,7 +322,8 @@ enum BlindbanditAPI {
 
     /// One /end attempt. 404/409/410 mean the server already considers it over: success.
     static func endCallChecked(id: String) async -> Bool {
-        do { _ = try await request("v1/social/calls/\(escape(id))/end", method: "POST", body: [:]); return true }
+        do { _ = try await request("v1/social/calls/\(escape(id))/end", method: "POST",
+                                   body: ["installation_id": Self.installationID]); return true }
         catch {
             let text = "\(error)"
             return text.contains("404") || text.contains("409") || text.contains("410")
@@ -379,20 +382,23 @@ enum BlindbanditAPI {
         try await request("v1/privacy/delete", method: "POST", body: [:])
     }
 
+    /// Stable per-install id (UserDefaults). Sent on join/end so the server can exclude this device
+    /// from "answered elsewhere" / hang-up echo pushes (see /workspace/e2ee/tyrese-call-fix.md).
+    static var installationID: String {
+        let key = "blindbandit.installationID"
+        let defaults = UserDefaults.standard
+        if let existing = defaults.string(forKey: key), !existing.isEmpty { return existing }
+        let id = UUID().uuidString
+        defaults.set(id, forKey: key)
+        return id
+    }
+
     /// Registers the APNs alert token and, when PushKit has issued one, the VoIP token used for
     /// CallKit incoming calls (APNs topic net.mrblindbandit.app.voip, push type voip).
     static func registerPushToken(_ token: String) async throws {
         let voip = UserDefaults.standard.string(forKey: CallKitManager.voipTokenKey) ?? ""
         guard !token.isEmpty || !voip.isEmpty else { return }
-        let installationKey = "blindbandit.installationID"
-        let defaults = UserDefaults.standard
-        let installationID: String
-        if let existing = defaults.string(forKey: installationKey), !existing.isEmpty {
-            installationID = existing
-        } else {
-            installationID = UUID().uuidString
-            defaults.set(installationID, forKey: installationKey)
-        }
+        let installationID = Self.installationID
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? AppConfig.marketingVersion
         try await request(
             "v1/social/devices/register",
@@ -828,6 +834,9 @@ final class ProductionCommunicationsService: ObservableObject {
     private var announcedIncoming: Set<String> = []
     private var callIsIncoming = false
     private(set) var joiningCallID: String?
+    /// Wall-clock when this device successfully joined `activeCallID`. Used to ignore the server's
+    /// "answered elsewhere" call_end echo that can still arrive after joiningCallID is cleared.
+    private var joinedAt: [String: Date] = [:]
 
     func startCall(recipient: String, video: Bool) async {
         let handle = BlindbanditHandle.normalize(recipient)
@@ -1002,9 +1011,16 @@ final class ProductionCommunicationsService: ObservableObject {
         if let first = ringing.first(where: { $0.id != activeCallID }) { receiveIncoming(first) }
     }
 
+    /// True when this device just answered/joined and a late "answered elsewhere" echo would kill the call.
+    func shouldIgnoreAnswerEcho(callID: String) -> Bool {
+        if joiningCallID == callID { return true }
+        if let t = joinedAt[callID], Date().timeIntervalSince(t) < 8 { return true }
+        return false
+    }
+
     /// The caller hung up, someone answered on another device, or the server sent call_end.
     func remoteEnded(callID: String) {
-        if joiningCallID == callID { return } // our own "answered elsewhere" echo
+        if shouldIgnoreAnswerEcho(callID: callID) { return } // our own "answered elsewhere" echo
         if activeCallID != callID || callGroupID == nil { EndedCalls.mark(callID) }
         if incomingCall?.id == callID {
             let missed = incomingCall
@@ -1093,9 +1109,30 @@ final class ProductionCommunicationsService: ObservableObject {
             let peer = invite?.from_handle ?? callHistory.first(where: { $0.id == id })?.other?.handle
             callKeyIsMine = false
             callKeyPeerHandle = peer
-            let callKey = await awaitCallKey(callID: id, handle: peer, groupID: callGroupID)
+            // Prefer a quick key wait so CallKit audio isn't stalled for ~8 s; announce clearly if missing.
+            let callKey = await awaitCallKey(callID: id, handle: peer, groupID: callGroupID, attempts: 3)
+            if callKey == nil {
+                statusMessage = "Connecting without call encryption. Waiting for the other person's keys…"
+                UIAccessibility.post(notification: .announcement, argument: statusMessage)
+            }
             try await connect(response: response, video: !voiceOnly && ((invite?.isVideo ?? false) || response.kind == "video"), callKey: callKey)
+            joinedAt[id] = Date()
             if callKey != nil, callGroupID != nil { startCallKeyPolling(callID: id) }
+            // Keep polling briefly for a late key so we can surface encryption status.
+            if callKey == nil {
+                Task { [weak self] in
+                    guard let self else { return }
+                    if let late = await self.awaitCallKey(callID: id, handle: peer, groupID: self.callGroupID, attempts: 5) {
+                        guard self.activeCallID == id else { return }
+                        self.callEncryptionLabel = "End-to-end encrypted (key arrived late — reconnect for full protection)"
+                        UIAccessibility.post(notification: .announcement, argument: self.callEncryptionLabel)
+                        _ = late
+                    } else if self.activeCallID == id {
+                        self.markCallUnencrypted()
+                        UIAccessibility.post(notification: .announcement, argument: self.callEncryptionLabel)
+                    }
+                }
+            }
             return true
         } catch {
             incomingCall = nil
@@ -1159,7 +1196,9 @@ final class ProductionCommunicationsService: ObservableObject {
         refreshParticipants()
         CallSounds.callConnected()
         AppHaptics.success()
-        statusMessage = callGroupID == nil ? "Connected with \(callPeerName)." : "Joined \(callPeerName). \(participants.count) in the call."
+        var connected = callGroupID == nil ? "Connected with \(callPeerName)." : "Joined \(callPeerName). \(participants.count) in the call."
+        if !callEncryptionLabel.isEmpty { connected += " " + callEncryptionLabel + "." }
+        statusMessage = connected
         UIAccessibility.post(notification: .announcement, argument: statusMessage)
     }
 
@@ -1501,6 +1540,7 @@ final class ProductionCommunicationsService: ObservableObject {
         knownParticipantIDs = []
         hadRemote = false
         aloneSince = nil
+        if let id { joinedAt[id] = nil }
         guard wasActive else { return }
         CallSounds.hangup()
         statusMessage = announcement
@@ -1553,13 +1593,14 @@ final class ProductionCommunicationsService: ObservableObject {
         return msg
     }
 
-    /// Pulls the caller's key message for up to ~8 s. No key ⇒ the caller is on an old app ⇒ unencrypted fallback.
-    private func awaitCallKey(callID: String, handle: String?, groupID: String?) async -> CallKeyMessage? {
-        for attempt in 0..<8 {
+    /// Pulls the caller's key message. No key ⇒ the caller is on an old app / keys missing ⇒ unencrypted fallback.
+    private func awaitCallKey(callID: String, handle: String?, groupID: String?, attempts: Int = 3) async -> CallKeyMessage? {
+        let n = max(1, attempts)
+        for attempt in 0..<n {
             if let k = CallKeyStore.shared.keys[callID] { return k }
             await fetchCallKeyMessages(handle: handle, groupID: groupID)
             if let k = CallKeyStore.shared.keys[callID] { return k }
-            if attempt < 7 { try? await Task.sleep(nanoseconds: 1_000_000_000) }
+            if attempt < n - 1 { try? await Task.sleep(nanoseconds: 1_000_000_000) }
         }
         return nil
     }
@@ -1612,7 +1653,10 @@ final class ProductionCommunicationsService: ObservableObject {
     private func teardownRoom() {
         callKeyPoll?.cancel(); callKeyPoll = nil
         CallKeyStore.shared.onKey = nil
-        if let id = activeCallID { CallKeyStore.shared.clear(id) }
+        if let id = activeCallID {
+            CallKeyStore.shared.clear(id)
+            joinedAt[id] = nil
+        }
         callKeyProvider = nil; callKeyIndex = 0; callKeyIsMine = false
         callEncrypted = false; callEncryptionLabel = ""
         let closingRoom = room

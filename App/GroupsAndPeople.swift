@@ -263,7 +263,8 @@ struct GroupChatView: View {
                         VStack(alignment: mine ? .trailing : .leading, spacing: 2) {
                             VStack(alignment: mine ? .trailing : .leading, spacing: 2) {
                                 if !mine { HStack(spacing: 3) { Text(m.sender_name).font(.caption.bold()); if isVerified(m.sender_handle) { VerifiedBadge() } } }
-                                if let media = m.decrypted?.media, media.mime.hasPrefix("audio") {
+                                if let media = m.decrypted?.media,
+                                   VoiceRowPlayAction.hasPlayableVoiceMedia(media, kind: m.kind, decryptedType: m.decrypted?.t) {
                                     VoiceBubble(media: media, from: mine ? "You" : m.sender_name, msgID: m.id)
                                 } else if let poll = m.decrypted?.poll {
                                     PollCard(poll: poll, msgID: m.id, chat: chatRef, handle: "", me: communications.myHandle)
@@ -277,8 +278,10 @@ struct GroupChatView: View {
                                     }
                                 }
                             }
-                            .accessibilityElement(children: MessageRowAccessibility.children(isVoice: m.decrypted?.media?.mime.hasPrefix("audio") == true || m.kind == "voice"))
-                            .accessibilityLabel(groupBubbleLabel(m, mine: mine))
+                            .accessibilityElement(children: MessageRowAccessibility.children(isVoice: VoiceRowPlayAction.hasPlayableVoiceMedia(m.decrypted?.media, kind: m.kind, decryptedType: m.decrypted?.t) || m.kind == "voice"))
+                            .modifier(MessageRowLabelModifier(
+                                isVoice: VoiceRowPlayAction.hasPlayableVoiceMedia(m.decrypted?.media, kind: m.kind, decryptedType: m.decrypted?.t) || m.kind == "voice",
+                                label: groupBubbleLabel(m, mine: mine)))
                             .accessibilityActions { groupMessageActions(m, mine: mine) }
                             .contextMenu { groupMessageActions(m, mine: mine) }
                             MessageStatusCaption(text: mine ? (m.id.hasPrefix("local-") ? "Sending…" : MessageStatus.groupCaption(for: m)) : MessageStatus.stamp(m.created_at), mine: mine)
@@ -405,7 +408,7 @@ struct GroupChatView: View {
 
     @ViewBuilder
     private func groupMessageActions(_ m: BlindbanditGroupMessage, mine: Bool) -> some View {
-        if let media = m.decrypted?.media, VoiceRowPlayAction.isVoice(mime: media.mime, kind: m.kind, decryptedType: m.decrypted?.t) {
+        if let media = m.decrypted?.media, VoiceRowPlayAction.hasPlayableVoiceMedia(media, kind: m.kind, decryptedType: m.decrypted?.t) {
             VoiceRowPlayAction(item: .init(id: m.id, media: media, from: mine ? "You" : m.sender_name, mine: mine))
         }
         Button { quoting = m } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }

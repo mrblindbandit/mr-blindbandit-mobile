@@ -932,7 +932,8 @@ struct ConversationThreadView: View {
         VStack(alignment: mine ? .trailing : .leading, spacing: 3) {
             HStack {
                 if mine { Spacer(minLength: 48) }
-                if let media = message.decrypted?.media, media.mime.hasPrefix("audio") {
+                if let media = message.decrypted?.media,
+                   VoiceRowPlayAction.hasPlayableVoiceMedia(media, decryptedType: message.decrypted?.t) {
                     VoiceBubble(media: media, from: mine ? "You" : "@\(handle)", msgID: message.id)
                 } else if let poll = message.decrypted?.poll {
                     PollCard(poll: poll, msgID: message.client_msg_id ?? message.id, chat: chatRef, handle: handle, me: e2ee.myHandle)
@@ -949,10 +950,13 @@ struct ConversationThreadView: View {
                 }
                 if !mine { Spacer(minLength: 48) }
             }
-            // Voice bubbles are their own VoiceOver button (double tap = play/pause); ignoring children
-            // here made the row swallow them so double tap did nothing.
-            .accessibilityElement(children: MessageRowAccessibility.children(isVoice: message.decrypted?.media?.mime.hasPrefix("audio") == true))
-            .accessibilityLabel(bubbleLabel(message, shown: shown, mine: mine, translatedFrom: translatedFrom, starred: starred, encrypted: encrypted))
+            // Voice bubbles are their own VoiceOver button (double tap = play/pause). When voice,
+            // expose children and skip the row label so VO focuses the bubble (label on a .contain
+            // parent was swallowing activation). Play stays first in Actions as a fallback.
+            .accessibilityElement(children: MessageRowAccessibility.children(isVoice: VoiceRowPlayAction.hasPlayableVoiceMedia(message.decrypted?.media, decryptedType: message.decrypted?.t)))
+            .modifier(MessageRowLabelModifier(
+                isVoice: VoiceRowPlayAction.hasPlayableVoiceMedia(message.decrypted?.media, decryptedType: message.decrypted?.t),
+                label: bubbleLabel(message, shown: shown, mine: mine, translatedFrom: translatedFrom, starred: starred, encrypted: encrypted)))
             .accessibilityActions { messageActions(message, shown: shown, mine: mine) }
             .contextMenu { messageActions(message, shown: shown, mine: mine) }
             // Status is its own element directly under every message, so VoiceOver lands on it next.
@@ -990,7 +994,7 @@ struct ConversationThreadView: View {
 
     @ViewBuilder
     private func messageActions(_ message: BlindbanditServerMessage, shown: String, mine: Bool) -> some View {
-        if let media = message.decrypted?.media, VoiceRowPlayAction.isVoice(mime: media.mime) {
+        if let media = message.decrypted?.media, VoiceRowPlayAction.hasPlayableVoiceMedia(media, decryptedType: message.decrypted?.t) {
             VoiceRowPlayAction(item: .init(id: message.id, media: media, from: mine ? "You" : "@\(handle)", mine: mine))
         }
         Button { quoting = message; composerFocused = true } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
@@ -1290,6 +1294,14 @@ struct NotificationCenterView: View {
 struct MessagesSettingsView: View {
     @AppStorage("comms.readAloudRate") private var rate: Double = 0.5
     @AppStorage("comms.showReadReceipts") private var showReadReceipts = true
+    @AppStorage(SettingsKey.confirmBeforeSend) private var confirmBeforeSend = false
+    @AppStorage(SettingsKey.largeMessageBubbles) private var largeBubbles = false
+    @AppStorage(SettingsKey.showLinkPreviews) private var linkPreviews = true
+    @AppStorage(SettingsKey.autoPlayVoice) private var autoPlayVoice = true
+    @AppStorage(SettingsKey.listenOnceDefault) private var listenOnce = false
+    @AppStorage(MagicTapSetting.key) private var magicTapEnds = true
+    @ObservedObject private var e2ee = E2EEService.shared
+    @ObservedObject private var voice = VoicePlayback.shared
 
     var body: some View {
         Form {
@@ -1302,14 +1314,42 @@ struct MessagesSettingsView: View {
                 Toggle("Show read receipts", isOn: $showReadReceipts)
                     .onChange(of: showReadReceipts) { _, _ in AppHaptics.selection() }
                     .accessibilityHint("When off, messages you send show Sent or Delivered instead of Read on this iPhone.")
-            } header: { Text("Receipts").accessibilityAddTraits(.isHeader) } footer: {
+                Toggle("Confirm before sending", isOn: $confirmBeforeSend)
+                Toggle("Large message bubbles", isOn: $largeBubbles)
+                Toggle("Link previews", isOn: $linkPreviews)
+            } header: { Text("Receipts & composer").accessibilityAddTraits(.isHeader) } footer: {
                 Text("Each message you send shows Sent, then Delivered once the server confirms delivery, then Read. Hiding your own read status from others needs a server setting that is not available yet.")
             }
+            Section {
+                Toggle("Auto-play next voice message", isOn: $autoPlayVoice)
+                Toggle("Listen once by default", isOn: $listenOnce)
+                Picker("Voice playback speed", selection: Binding(
+                    get: { voice.rate },
+                    set: { voice.setRate($0) }
+                )) {
+                    Text("1x").tag(Float(1))
+                    Text("1.5x").tag(Float(1.5))
+                    Text("2x").tag(Float(2))
+                }
+            } header: { Text("Voice messages").accessibilityAddTraits(.isHeader) }
+            Section {
+                Toggle("Magic Tap ends the call", isOn: $magicTapEnds)
+                NavigationLink { EncryptionPasscodeView() } label: {
+                    Label(EncryptionPasscode.isSet(e2ee.myHandle) ? "Encryption passcode" : "Create encryption passcode", systemImage: "key.fill")
+                }
+                LabeledContent("Encryption", value: e2ee.ready ? "On, iCloud Keychain" : "Setting up")
+            } header: { Text("Calls & encryption").accessibilityAddTraits(.isHeader) }
             Section {
                 NavigationLink { BlockedAccountsView() } label: { Label("Blocked accounts", systemImage: "hand.raised") }
                 NavigationLink { AppSecurityView() } label: { Label("Security and encryption", systemImage: "lock.shield") }
                 NavigationLink { AISettingsView() } label: { Label("AI", systemImage: "sparkles") }
             } header: { Text("Safety").accessibilityAddTraits(.isHeader) }
+            if !VoiceLog.lastError.isEmpty {
+                Section {
+                    Text(VoiceLog.lastError).font(.caption).foregroundStyle(.secondary)
+                    Button("Clear voice debug log") { VoiceLog.lastError = "" }
+                } header: { Text("Voice message debug").accessibilityAddTraits(.isHeader) }
+            }
         }
         .navigationTitle("Messages & calls")
     }
@@ -1502,4 +1542,14 @@ enum MessageRowAccessibility {
     static func exposesChildren(isVoice: Bool) -> Bool { isVoice }
     /// First VoiceOver Actions rotor name on a voice row (Play, or Pause when that note is current + playing).
     static func voicePlayActionName(isPlayingCurrent: Bool) -> String { VoiceRowPlayAction.actionName(isPlayingCurrent: isPlayingCurrent) }
+}
+
+/// Applies an accessibilityLabel only for non-voice rows. Voice rows must not label the container
+/// or VoiceOver treats the whole HStack as one non-activating element.
+struct MessageRowLabelModifier: ViewModifier {
+    let isVoice: Bool
+    let label: String
+    func body(content: Content) -> some View {
+        if isVoice { content } else { content.accessibilityLabel(label) }
+    }
 }

@@ -1,5 +1,6 @@
 package net.mrblindbandit.app.androidonly
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
@@ -17,14 +18,19 @@ class AssistantTileService : TileService() {
             updateTile()
         }
     }
+
+    @SuppressLint("StartActivityAndCollapseDeprecated")
     override fun onClick() {
         val intent = Intent(this, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             .putExtra("open_assistant", true)
-        val pi = PendingIntent.getActivity(this, 42, intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        if (Build.VERSION.SDK_INT >= 34) startActivityAndCollapse(pi)
-        else {
+        val pi = PendingIntent.getActivity(
+            this, 42, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        if (Build.VERSION.SDK_INT >= 34) {
+            startActivityAndCollapse(pi)
+        } else {
             @Suppress("DEPRECATION")
             startActivityAndCollapse(intent)
         }

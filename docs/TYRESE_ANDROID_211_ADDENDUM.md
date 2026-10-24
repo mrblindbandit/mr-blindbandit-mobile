@@ -27,6 +27,15 @@ Branch: `feat/android-full-parity`. Continues after 2.0.10 (14) / PR #69.
 - Extra notification channels: AI, Music, Security (+ existing Messages/Calls).
 - Optional notification listener service so MediaSession now-playing can be read (user must enable).
 
+### BanditBites + Profile + Social Admin (native Compose)
+- Bottom tab **Bites** (replaced Listen in the bar; Listen still from Home + More → Music).
+- `BitesScreen`: Bites | Feed tabs, TalkBack LazyColumn + collection semantics, composer (caption + video URL), like/view/remove (owner), Admin entry for `@kheck`.
+- `ProfileScreen`: cache-first `SocialCache`, followers/following lists, follow/unfollow, `VerifiedBadge`.
+- `AdminScreen` (`@kheck` client gate; server `platform_role`): verify/unverify by username, search manage, ban/mute/reinstate, remove Bite by id, open reports, pending verification review.
+- APIs: `/v1/social/bites|newsfeed|posts|profiles/...` and `/v1/social/admin/*` (not `/v1/admin/*`).
+- `VerifiedBadge` on Bites, Feed, Profile, followers/following, PeoplePicker, Admin search hits.
+- `SocialRepository` + local-first `SocialCache`.
+
 ### Version
 - `versionName` 2.0.11 / `versionCode` 15.
 
@@ -36,7 +45,9 @@ Branch: `feat/android-full-parity`. Continues after 2.0.10 (14) / PR #69.
 - FGS / MEDIA_PROJECTION remain stripped for Play.
 - Telecom background calling, full group invite/role UI, on-device LLM: not in this cut.
 - Physical-device TalkBack + two-account Android↔iOS call verification still required for certification.
+- BanditBites: URL-based publish MVP (no in-app camera/upload picker yet); video playback opens external/intent.
+- Social Admin client gate is handle==kheck only; other platform staff need server role + future UI gate.
 
 ## Validation
-- Unit tests: MusicIntent, DeviceActions parse, EncryptionPasscode round-trip (+ existing suite).
+- Unit tests: MusicIntent, DeviceActions parse, EncryptionPasscode round-trip, absoluteMediaUrl, isOwnerAdmin, BanditBite/SocialAuthor parse (+ existing suite).
 - Local: `./gradlew :app:testDebugUnitTest :app:assembleDebug` then CI; signed AAB via `release-aab.yml`.

@@ -1,7 +1,6 @@
 package net.mrblindbandit.app
 
 import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,16 +14,19 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.SupportAgent
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -42,17 +44,24 @@ import androidx.compose.ui.unit.dp
 import net.mrblindbandit.app.auth.AuthState
 import net.mrblindbandit.app.auth.ClerkAuthService
 import net.mrblindbandit.app.brand.BlindbanditLogo
+import net.mrblindbandit.app.social.SocialRepository
 import net.mrblindbandit.app.ui.Spacing
 
 @Composable
 fun MoreHubScreen(
     auth: ClerkAuthService,
+    myHandle: String = "",
     onOpenSite: (String) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenCreator: () -> Unit = {},
+    onOpenProfile: () -> Unit = {},
+    onOpenBites: () -> Unit = {},
+    onOpenAdmin: () -> Unit = {},
+    onOpenListen: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val base = BuildConfig.WEB_BASE_URL
+    val isAdmin = SocialRepository.isOwnerAdmin(myHandle)
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
         item {
             Row(Modifier.fillMaxWidth().padding(top = Spacing.md), verticalAlignment = Alignment.CenterVertically) {
@@ -70,8 +79,17 @@ fun MoreHubScreen(
         item {
             Group("Your account") {
                 Entry(Icons.Default.Settings, "Settings", onOpenSettings)
+                Entry(Icons.Default.AccountCircle, "My profile", onOpenProfile)
+                Entry(Icons.Default.Videocam, "BanditBites", onOpenBites)
                 Entry(Icons.Default.Build, "Creator tools", onOpenCreator)
-                Entry(Icons.Default.AccountCircle, "Profile & account") { onOpenSite("$base/account") }
+                Entry(Icons.Default.Headphones, "Listen", onOpenListen)
+            }
+        }
+        if (isAdmin) {
+            item {
+                Group("Owner tools") {
+                    Entry(Icons.Default.AdminPanelSettings, "Admin", onOpenAdmin)
+                }
             }
         }
         item {

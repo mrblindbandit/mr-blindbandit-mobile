@@ -8,6 +8,7 @@ import FoundationModels
 #endif
 
 // MARK: - Personas (owner-only Hood style, checked against the signed-in server account)
+// 2.0.7 audit: Hood/unfiltered stay @kheck-only via AIPersona.isOwner; shared @AI uses AIPersona.professional; no StoreKit/IAP AI paths exist.
 
 enum AIPersona: String, CaseIterable {
     case hood, professional
@@ -379,4 +380,16 @@ enum ChatCache {
     static let listURL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("conversations.cache.json")
     static func saveList(_ d: Data) { try? d.write(to: listURL, options: [.atomic, .completeFileProtection]) }
     static func loadList() -> Data? { AppPIN.decoyActive ? nil : try? Data(contentsOf: listURL) }
+}
+
+@MainActor
+enum GroupCache {
+    private static var threads: [String: [BlindbanditGroupMessage]] = [:]
+    static func put(_ id: String, _ m: [BlindbanditGroupMessage]) { threads[id] = Array(m.suffix(50)) }
+    static func get(_ id: String) -> [BlindbanditGroupMessage]? { threads[id] }
+    static func clear() { threads = [:] }
+
+    private static var listMem: [BlindbanditGroup] = []
+    static func putList(_ g: [BlindbanditGroup]) { listMem = g }
+    static func getList() -> [BlindbanditGroup]? { listMem.isEmpty ? nil : listMem }
 }

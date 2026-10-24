@@ -95,13 +95,19 @@ struct GroupsTabView: View {
     }
 
     private func load() async {
-        loading = true
+        if groups.isEmpty, let cached = GroupCache.getList() {
+            groups = cached
+            loading = false
+        } else {
+            loading = true
+        }
         defer { loading = false }
         do {
             groups = try await BlindbanditAPI.groups().sorted { ($0.last_message_at ?? $0.updated_at) > ($1.last_message_at ?? $1.updated_at) }
+            GroupCache.putList(groups)
             error = ""
         } catch {
-            self.error = error.localizedDescription
+            if groups.isEmpty { self.error = error.localizedDescription }
         }
     }
 }
@@ -219,6 +225,7 @@ struct GroupChatView: View {
     let groupID: String
     let initial: BlindbanditGroup?
     @EnvironmentObject private var communications: ProductionCommunicationsService
+    @ObservedObject private var e2ee = E2EEService.shared
     @State private var group: BlindbanditGroup?
     @State private var members: [BlindbanditGroupMember] = []
     @State private var messages: [BlindbanditGroupMessage] = []
@@ -230,6 +237,9 @@ struct GroupChatView: View {
     @State private var showInfo = false
     @State private var showPoll = false
     @State private var aiNote: String?
+    @State private var quoting: BlindbanditGroupMessage?
+    @State private var reactions: [String: String] = [:]
+    @State private var reportTarget: ReportTarget?
     @StateObject private var recorder = VoiceRecorder()
 
     private var title: String { group?.name ?? initial?.name ?? "Group" }
@@ -260,19 +270,18 @@ struct GroupChatView: View {
                                 } else {
                                 Text(m.body).padding(10)
                                     .background(mine ? Brand.gold.opacity(0.35) : Color.secondary.opacity(0.15), in: RoundedRectangle(cornerRadius: 14))
+                                    .overlay(alignment: mine ? .bottomLeading : .bottomTrailing) {
+                                        if let r = reactions[m.id] {
+                                            Text(r).font(.caption).padding(3).background(.regularMaterial, in: Capsule()).offset(y: 10)
+                                        }
+                                    }
                                 }
                             }
-                            .accessibilityElement(children: m.decrypted?.poll != nil || m.decrypted?.media != nil ? .contain : .ignore)
-                            .accessibilityLabel("\(mine ? "You" : m.sender_name)\(isVerified(m.sender_handle) && !mine ? ", Verified" : ""): \(m.body)")
-                            .accessibilityActions {
-                                Button("Copy") { UIPasteboard.general.string = m.body }
-                                Button("Read aloud") { MessageReader.shared.speak(m.body) }
-                            }
-                            .contextMenu {
-                                Button { UIPasteboard.general.string = m.body } label: { Label("Copy", systemImage: "doc.on.doc") }
-                                Button { MessageReader.shared.speak(m.body) } label: { Label("Read aloud", systemImage: "speaker.wave.2") }
-                            }
-                            MessageStatusCaption(text: mine ? MessageStatus.groupCaption(for: m) : MessageStatus.stamp(m.created_at), mine: mine)
+                            .accessibilityElement(children: MessageRowAccessibility.children(isVoice: m.decrypted?.media?.mime.hasPrefix("audio") == true || m.kind == "voice"))
+                            .accessibilityLabel(groupBubbleLabel(m, mine: mine))
+                            .accessibilityActions { groupMessageActions(m, mine: mine) }
+                            .contextMenu { groupMessageActions(m, mine: mine) }
+                            MessageStatusCaption(text: mine ? (m.id.hasPrefix("local-") ? "Sending…" : MessageStatus.groupCaption(for: m)) : MessageStatus.stamp(m.created_at), mine: mine)
                         }
                         .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
                         .listRowSeparator(.hidden)
@@ -294,6 +303,13 @@ struct GroupChatView: View {
                     Button { aiNote = nil } label: { Image(systemName: "xmark.circle.fill") }.accessibilityLabel("Dismiss AI note")
                 }.padding(.horizontal)
             }
+            if let q = quoting {
+                HStack {
+                    Text("Replying to \(q.sender_name): \(q.body)").font(.caption).lineLimit(2)
+                    Spacer()
+                    Button { quoting = nil } label: { Image(systemName: "xmark.circle.fill") }.accessibilityLabel("Cancel reply")
+                }.padding(.horizontal)
+            }
             HStack {
                 TextField("Message \(title)", text: $draft, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
@@ -306,12 +322,26 @@ struct GroupChatView: View {
                         Button("Catch me up") { Task { await catchUp() } }
                         Button("Ask AI in this group") { draft = "@AI " + draft }
                         Button("Ask AI privately") { draft = "/ai " + draft }
+                        Button("Send silently") { Task { await send(silent: true) } }
+                        Button("Schedule for 1 hour") { schedule(3600) }
                         Button("Insert emoji") { draft += "🙂" }
                         Button("Group settings") { showInfo = true }
                     }
                 VoiceMicButton(handle: "", chat: chatRef, recorder: recorder)
+                Menu {
+                    Button("Send silently") { Task { await send(silent: true) } }
+                    Menu("Schedule") {
+                        Button("In 1 hour") { schedule(3600) }
+                        Button("Tonight at 8 PM") { schedule(Self.secondsUntil(hour: 20)) }
+                        Button("Tomorrow at 9 AM") { schedule(Self.secondsUntil(hour: 9)) }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .accessibilityLabel("More send options")
                 Button { Task { await send() } } label: { Image(systemName: "arrow.up.circle.fill").font(.title) }
                     .accessibilityLabel("Send")
+                    .accessibilityAction(named: "Send silently") { Task { await send(silent: true) } }
                     .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .padding()
@@ -347,7 +377,85 @@ struct GroupChatView: View {
                     }
             }
         }
+        .sheet(item: $reportTarget) { target in
+            ReportSheet(target: target) { reason, details in
+                await communications.report(targetType: target.type, targetID: target.id, reason: reason, details: details)
+            }
+        }
         .task { await poll() }
+    }
+
+    private func groupBubbleLabel(_ m: BlindbanditGroupMessage, mine: Bool) -> String {
+        let who = (mine ? "You" : m.sender_name) + (isVerified(m.sender_handle) && !mine ? ", Verified" : "")
+        let isVoice = m.decrypted?.media?.mime.hasPrefix("audio") == true || m.kind == "voice" || m.decrypted?.t == "voice"
+        if isVoice {
+            let body = m.body.trimmingCharacters(in: .whitespacesAndNewlines)
+            if body.isEmpty || body == "🎤 Voice message" || body.hasPrefix("🎤 Voice message") {
+                return "\(who): Voice message"
+            }
+            return "\(who): Voice message. \(body)"
+        }
+        if m.decrypted?.poll != nil {
+            return "\(who): Poll. \(m.body)"
+        }
+        let body = m.body.trimmingCharacters(in: .whitespacesAndNewlines)
+        if body.isEmpty { return "\(who): Message" }
+        return "\(who): \(body)"
+    }
+
+    @ViewBuilder
+    private func groupMessageActions(_ m: BlindbanditGroupMessage, mine: Bool) -> some View {
+        Button { quoting = m } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
+        ForEach(["👍", "❤️", "😂", "😮", "😢"], id: \.self) { emoji in
+            Button("React \(MessageReactions.name(emoji))") { react(m, emoji) }
+        }
+        if mine, !m.id.hasPrefix("local-") {
+            Button(role: .destructive) {
+                Task {
+                    do {
+                        try await e2ee.unsend(chat: chatRef, serverID: m.id, envelopeMsgID: m.envelope?.msg_id)
+                        messages.removeAll { $0.id == m.id }
+                        UIAccessibility.post(notification: .announcement, argument: "Unsent")
+                    } catch {
+                        UIAccessibility.post(notification: .announcement, argument: error.localizedDescription)
+                    }
+                }
+            } label: { Label("Unsend", systemImage: "arrow.uturn.backward") }
+        }
+        Button {
+            LocalMessageStore.shared.mutate { s in
+                if s.starred.contains(m.id) { s.starred.remove(m.id) } else { s.starred.insert(m.id) }
+            }
+            AppHaptics.light()
+            UIAccessibility.post(notification: .announcement, argument: LocalMessageStore.shared.snapshot.starred.contains(m.id) ? "Starred" : "Unstarred")
+        } label: { Label("Star", systemImage: "star") }
+        let isPinned = LocalMessageStore.shared.snapshot.pinned[chatRef.key]?.contains(m.id) ?? false
+        Button {
+            let k = chatRef.key, id = m.id, nowPinned = !isPinned
+            LocalMessageStore.shared.mutate { s in
+                var l = s.pinned[k] ?? []
+                if let i = l.firstIndex(of: id) { l.remove(at: i) } else { l.append(id) }
+                s.pinned[k] = l
+            }
+            AppHaptics.light()
+            Task {
+                let synced = await SecurityAPI.syncPin(chatRef, messageID: id, pinned: nowPinned)
+                UIAccessibility.post(notification: .announcement, argument: (nowPinned ? "Pinned" : "Unpinned") + (synced ? "" : " on this iPhone"))
+            }
+        } label: { Label(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash" : "pin") }
+        Button { UIPasteboard.general.string = m.body } label: { Label("Copy", systemImage: "doc.on.doc") }
+        Button { MessageReader.shared.speak(m.body.isEmpty ? "Voice message" : m.body) } label: { Label("Read aloud", systemImage: "speaker.wave.2") }
+        Button { reportTarget = ReportTarget(type: "message", id: m.id, title: "this message") } label: {
+            Label("Report", systemImage: "exclamationmark.bubble")
+        }
+    }
+
+    private func react(_ m: BlindbanditGroupMessage, _ emoji: String) {
+        let removing = reactions[m.id] == emoji
+        reactions[m.id] = removing ? nil : emoji
+        AppHaptics.light()
+        UIAccessibility.post(notification: .announcement, argument: removing ? "Reaction removed" : "Reacted \(MessageReactions.name(emoji))")
+        Task { await BlindbanditAPI.reactGroup(groupID: groupID, messageID: m.id, emoji: removing ? nil : emoji) }
     }
 
     private func call(video: Bool) {
@@ -366,9 +474,36 @@ struct GroupChatView: View {
         UIAccessibility.post(notification: .announcement, argument: aiNote ?? "")
     }
 
-    private func send() async {
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func schedule(_ seconds: Int) {
+        let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { return }
+        draft = ""
+        LocalMessageStore.shared.mutate {
+            $0.scheduled.append(.init(chatKey: chatRef.key, handle: nil, groupID: groupID, body: body,
+                                      sendAt: Date().addingTimeInterval(Double(seconds)).timeIntervalSince1970, silent: false))
+        }
+        UIAccessibility.post(notification: .announcement, argument: "Scheduled")
+        AppHaptics.success()
+    }
+
+    private static func secondsUntil(hour: Int) -> Int {
+        var cal = Calendar.current
+        cal.timeZone = .current
+        var c = cal.dateComponents([.year, .month, .day], from: Date())
+        c.hour = hour; c.minute = 0
+        var target = cal.date(from: c) ?? Date()
+        if target <= Date() { target = cal.date(byAdding: .day, value: 1, to: target) ?? target }
+        return max(60, Int(target.timeIntervalSinceNow))
+    }
+
+    private func send(silent: Bool = false) async {
+        var text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        if let q = quoting {
+            let quoted = q.body.split(separator: "\n").prefix(3).map { "> " + $0 }.joined(separator: "\n")
+            text = quoted + "\n" + text
+            quoting = nil
+        }
         draft = ""
         if let r = AIAssistant.parse(text) {
             guard AIAssistant.allowed(chatKey: chatRef.key) else { UIAccessibility.post(notification: .announcement, argument: "@AI is turned off in this chat"); return }
@@ -388,11 +523,21 @@ struct GroupChatView: View {
             }
             return
         }
+        let localID = "local-\(UUID().uuidString)"
+        let optimistic = BlindbanditGroupMessage.local(
+            id: localID, handle: communications.myHandle,
+            name: "You",
+            body: text
+        )
+        messages.append(optimistic)
+        GroupCache.put(groupID, messages)
+        UIAccessibility.post(notification: .announcement, argument: silent ? "Sending silently" : "Sending")
         do {
-            try await BlindbanditAPI.sendGroupMessage(id: groupID, body: text)
-            UIAccessibility.post(notification: .announcement, argument: "Sent")
+            try await BlindbanditAPI.sendGroupMessage(id: groupID, body: text, silent: silent)
+            UIAccessibility.post(notification: .announcement, argument: silent ? "Sent silently" : "Sent")
             await refresh()
         } catch {
+            messages.removeAll { $0.id == localID }
             draft = text
             self.error = error.localizedDescription
             UIAccessibility.post(notification: .announcement, argument: "Not sent. \(self.error)")
@@ -415,20 +560,29 @@ struct GroupChatView: View {
         do {
             let fresh = try await BlindbanditAPI.groupMessages(id: groupID)
             let mineLower = communications.myHandle.lowercased()
-            if !messages.isEmpty, let newest = fresh.last, newest.id != messages.last?.id, newest.sender_handle.lowercased() != mineLower {
-                UIAccessibility.post(notification: .announcement, argument: "\(newest.sender_name): \(newest.body)")
+            let optimistic = messages.filter { m in
+                m.id.hasPrefix("local-") && !fresh.contains(where: { f in f.sender_handle.lowercased() == mineLower && f.body == m.body })
             }
-            messages = fresh
+            if !messages.isEmpty, let newest = fresh.last, newest.id != messages.filter({ !$0.id.hasPrefix("local-") }).last?.id,
+               newest.sender_handle.lowercased() != mineLower {
+                UIAccessibility.post(notification: .announcement, argument: "\(newest.sender_name): \(newest.body.isEmpty ? "Voice message" : newest.body)")
+            }
+            messages = fresh + optimistic
+            GroupCache.put(groupID, fresh)
             error = ""
             await BlindbanditAPI.markGroupRead(id: groupID)
             updateTyping(await BlindbanditAPI.groupTyping(id: groupID))
         } catch {
-            self.error = error.localizedDescription
+            if messages.isEmpty { self.error = error.localizedDescription }
         }
         loading = false
     }
 
     private func poll() async {
+        if let cached = GroupCache.get(groupID) {
+            messages = cached
+            loading = false
+        }
         if let detail = try? await BlindbanditAPI.groupDetail(id: groupID) {
             group = detail.group
             members = detail.members

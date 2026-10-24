@@ -174,6 +174,28 @@ struct BlindbanditGroupMessage: Identifiable, Decodable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey { case id, sender_id, sender_handle, sender_display_name, sender_name, body, created_at, sent_at, author_id, handle, display_name, delivered_at, read_at, last_read_at, read_by, read_count, e2ee, envelope, kind, edited_at }
+
+    /// Optimistic / local-only row before the server echoes the send.
+    static func local(id: String, handle: String, name: String, body: String, kind: String = "text") -> BlindbanditGroupMessage {
+        BlindbanditGroupMessage(
+            id: id, sender_id: "local", sender_handle: handle, sender_name: name,
+            body: body, created_at: Date().timeIntervalSince1970 * 1000, e2ee: false,
+            envelopeJSON: nil, kind: kind, edited_at: nil, decrypted: nil,
+            delivered_at: nil, read_at: nil, read_by: [], read_count: 0
+        )
+    }
+
+    init(id: String, sender_id: String, sender_handle: String, sender_name: String, body: String,
+         created_at: Double, e2ee: Bool = false, envelopeJSON: String? = nil, kind: String = "text",
+         edited_at: Double? = nil, decrypted: E2EEPayload? = nil, delivered_at: Double? = nil,
+         read_at: Double? = nil, read_by: [String] = [], read_count: Int = 0) {
+        self.id = id; self.sender_id = sender_id; self.sender_handle = sender_handle
+        self.sender_name = sender_name; self.body = body; self.created_at = created_at
+        self.e2ee = e2ee; self.envelopeJSON = envelopeJSON; self.kind = kind
+        self.edited_at = edited_at; self.decrypted = decrypted
+        self.delivered_at = delivered_at; self.read_at = read_at
+        self.read_by = read_by; self.read_count = read_count
+    }
 }
 
 /// Server timestamps: epoch milliseconds (number or string), epoch seconds, or ISO 8601.
@@ -317,9 +339,20 @@ extension BlindbanditAPI {
             .resolvedE2EE(groupID: id)
     }
 
-    static func sendGroupMessage(id: String, body: String) async throws {
-        if try await E2EEService.shared.sendGroup(id: id, payload: E2EEPayload(t: "text", body: body)) { return }
-        try await request("v1/social/groups/\(escape(id))/messages", method: "POST", body: ["body": body])
+    static func sendGroupMessage(id: String, body: String, silent: Bool = false) async throws {
+        let payload = E2EEPayload(t: "text", body: body, silent: silent ? true : nil)
+        if try await E2EEService.shared.sendGroup(id: id, payload: payload) { return }
+        var fields: [String: Any] = ["body": body]
+        if silent { fields["silent"] = true }
+        try await request("v1/social/groups/\(escape(id))/messages", method: "POST", body: fields)
+    }
+
+    /// Best-effort group reaction (404/405 → kept on device only).
+    static func reactGroup(groupID: String, messageID: String, emoji: String?) async {
+        var body: [String: Any] = [:]
+        if let emoji { body["emoji"] = emoji } else { body["emoji"] = NSNull() }
+        _ = try? await request("v1/social/groups/\(escape(groupID))/messages/\(escape(messageID))/reactions",
+                               method: "POST", body: body)
     }
 
     /// Contract: POST /v1/social/calls {kind, group_id}.

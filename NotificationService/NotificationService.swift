@@ -16,8 +16,16 @@ final class NotificationService: UNNotificationServiceExtension {
         best = content
         let info = content.userInfo
         let category = (info["category"] as? String) ?? (info["type"] as? String) ?? ""
+        let hidePreviews = PreviewPrivacyLookup.hidePreviews(info)
+        let muteSound = PreviewPrivacyLookup.muteSound(info)
 
-        if let text = PushDecryptor.decrypt(info) {
+        if hidePreviews {
+            // Never surface decrypted body when the chat has Hide notification previews on.
+            content.body = "Message"
+            if content.title.isEmpty {
+                content.title = PushDecryptor.senderName(info) ?? content.title
+            }
+        } else if let text = PushDecryptor.decrypt(info) {
             content.body = text
             if (info["is_group"] as? Bool) != true, content.title.isEmpty { content.title = PushDecryptor.senderName(info) ?? content.title }
         }
@@ -28,6 +36,8 @@ final class NotificationService: UNNotificationServiceExtension {
         if category.contains("call"), !category.contains("end"), !category.contains("missed") {
             let file = UserDefaults(suiteName: PushDecryptor.appGroup)?.string(forKey: "ringtoneFile") ?? "ringtone_mrblindbandit.caf"
             content.sound = UNNotificationSound(named: UNNotificationSoundName(file))
+        } else if muteSound {
+            content.sound = nil
         }
 
         Task {
@@ -61,6 +71,40 @@ final class NotificationService: UNNotificationServiceExtension {
         interaction.direction = .incoming
         try? await interaction.donate()
         return (try? content.updating(from: intent)) ?? content
+    }
+}
+
+/// NSE-side App Group lookup (mirrors App/Security/PreviewPrivacy.swift write keys).
+enum PreviewPrivacyLookup {
+    private static let suite = UserDefaults(suiteName: "group.net.mrblindbandit.app")
+
+    static func hidePreviews(_ info: [AnyHashable: Any]) -> Bool { lookup(prefix: "hidePreviews.", info: info) }
+    static func muteSound(_ info: [AnyHashable: Any]) -> Bool { lookup(prefix: "muteSound.", info: info) }
+
+    private static func lookup(prefix: String, info: [AnyHashable: Any]) -> Bool {
+        guard let suite else { return false }
+        for k in candidateKeys(info) where suite.bool(forKey: prefix + k) { return true }
+        return false
+    }
+
+    private static func candidateKeys(_ info: [AnyHashable: Any]) -> [String] {
+        var out: [String] = []
+        func add(_ s: String?) {
+            guard let s, !s.isEmpty else { return }
+            out.append(s)
+        }
+        add(info["chat_id"] as? String)
+        add(info["conversation_id"] as? String)
+        add(info["conversationId"] as? String)
+        add(info["thread_id"] as? String)
+        if let c = info["conversation_id"] as? String ?? info["conversationId"] as? String {
+            add("dm:\(c)")
+        }
+        if let g = info["group_id"] as? String ?? info["groupId"] as? String {
+            add(g)
+            add("group:\(g)")
+        }
+        return out
     }
 }
 

@@ -1356,7 +1356,9 @@ final class ProductionCommunicationsService: ObservableObject {
                 }
                 screenSharing = enable
                 statusMessage = enable
-                    ? (whole ? "Choose Mr. BlindBandit, then Start Broadcast. Everyone in the call will see your whole screen." : "Sharing your screen. Everyone in the call sees this app.")
+                    ? (whole
+                       ? "Choose Mr. BlindBandit, then Start Broadcast. Everyone in the call will see your whole screen. Note: Apple Music, Netflix, Spotify and other protected apps can block their audio from screen share. That is an iOS limit."
+                       : "Sharing your screen. Everyone in the call sees this app. Note: Apple Music, Netflix, Spotify and other protected apps can block their audio from screen share. That is an iOS limit.")
                     : "Stopped sharing your screen."
             } catch {
                 statusMessage = "Screen sharing failed: \(error.localizedDescription)"

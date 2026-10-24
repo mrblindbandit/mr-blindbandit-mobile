@@ -7,6 +7,16 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 ---
 
 
+## 2.0.7 (22)
+- Hide notification previews: Security & Privacy toggle syncs to the App Group; NotificationService shows generic "Message" / sender-only and never a decrypted body. Mute notification sound clears the alert sound locally.
+- Groups VoiceOver: voice/poll rows use `.contain` like DMs; empty E2EE voice announces as "Voice message". Actions parity: reply, react, report, unsend, star/pin where APIs exist.
+- Group composer: silent send and schedule (1 hour / tonight 8 PM / tomorrow 9 AM), matching DMs.
+- Live call captions: VoiceOver announces on/off; announces when speech recognition fails or is unavailable.
+- Groups feel faster: optimistic send ("Sending…") plus in-memory group chat/list cache like DMs in 2.0.3+.
+- AI/Hood gate audit: Hood/unfiltered remain @kheck-only; shared @AI stays Professional; no paid AI paths in the app.
+- Screen-share DRM honesty: in-call VoiceOver note that Apple Music/Netflix/Spotify can block audio (OS limit).
+- Third ringtone: "Mr. BlindBandit Alt" (29 s CAF from source2 @0:59 with fade-out) added to the ringtone picker.
+
 ## 2.0.6 (21)
 - Calls start instantly: the iPhone call screen appears as soon as you press Call, while the call is set up in the background. Step timings are logged.
 - Hanging up now ends the call everywhere and it no longer calls you back: the end is sent with retries, and this iPhone ignores any late ring for a call that already ended.

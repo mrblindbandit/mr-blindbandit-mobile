@@ -1,3 +1,6 @@
+## 2026-10-24 — iOS 2.0.7 (22), branch `feat/ios-207-app-fixes`
+- App-only: notification preview privacy (NSE + App Group), group VoiceOver/silent/schedule/optimistic/cache, live-caption speech-fail announce, screen-share DRM VO note, third ringtone CAF, AI gate audit (no code path change). Server batches still Tyrese.
+
 # AI_CHANGELOG.md
 
 > **For other AIs:** this is the work-history file. Also read `AGENTS.md`. Never commit secrets.

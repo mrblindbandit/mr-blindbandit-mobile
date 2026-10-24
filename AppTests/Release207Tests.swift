@@ -42,6 +42,8 @@ final class Release207Tests: XCTestCase {
         XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditPulse.title, "Mr. BlindBandit Pulse")
         XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditHeat.rawValue, "ringtone_mrblindbandit_heat")
         XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditHeat.title, "Mr. BlindBandit Heat")
+        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditRise.rawValue, "ringtone_mrblindbandit_rise")
+        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditRise.title, "Mr. BlindBandit Rise")
         XCTAssertEqual(CallSounds.Ringtone.mrBlindBandit.rawValue, "ringtone_mrblindbandit")
     }
 

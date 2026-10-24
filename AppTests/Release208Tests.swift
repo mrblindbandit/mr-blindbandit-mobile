@@ -12,7 +12,7 @@ final class Release208Tests: XCTestCase {
         XCTAssertFalse(VoiceRowPlayAction.isVoice(mime: "text/plain", kind: "text", decryptedType: "text"))
     }
 
-    func testHeatRingtoneInPicker() {
+    func testHeatAndRiseRingtonesInPicker() {
         XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditHeat.rawValue, "ringtone_mrblindbandit_heat")
         XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditHeat.title, "Mr. BlindBandit Heat")
         XCTAssertEqual(CallSounds.Ringtone.mrBlindBandit.rawValue, "ringtone_mrblindbandit")
@@ -20,5 +20,7 @@ final class Release208Tests: XCTestCase {
         XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditAlt.rawValue, "ringtone_mrblindbandit_alt")
         XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditNight.rawValue, "ringtone_mrblindbandit_night")
         XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditPulse.rawValue, "ringtone_mrblindbandit_pulse")
+        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditRise.rawValue, "ringtone_mrblindbandit_rise")
+        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditRise.title, "Mr. BlindBandit Rise")
     }
 }

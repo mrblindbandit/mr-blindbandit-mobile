@@ -9,7 +9,7 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 
 ## 2.0.8 (24)
 - VoiceOver: on a voice message in a DM or group chat, swipe up/down in the Actions rotor now includes **Play** (or **Pause** when that note is playing) as the first action on the message row, so you can play without hunting into the bubble. Double-tap on the bubble still toggles play/pause.
-- Ringtone: **Mr. BlindBandit Heat** (`ringtone_mrblindbandit_heat.caf`, 29 s from 1:00 of source with fade-out). Classic / Alt / Night / Pulse remain. Default stays Mr. BlindBandit.
+- Ringtones: **Mr. BlindBandit Heat** (`ringtone_mrblindbandit_heat.caf`, 29 s from 1:00 with fade-out) and **Mr. BlindBandit Rise** (`ringtone_mrblindbandit_rise.caf`, 29 s from 0:00 with fade-out). Classic / Alt / Night / Pulse remain. Default stays Mr. BlindBandit.
 
 ## 2.0.7 (22)
 - Hide notification previews: Security & Privacy toggle syncs to the App Group; NotificationService shows generic "Message" / sender-only and never a decrypted body. Mute notification sound clears the alert sound locally.

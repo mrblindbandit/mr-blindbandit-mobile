@@ -45,6 +45,8 @@ class AndroidAppPreferences(context: Context) {
     // Appearance
     private val appearanceState = mutableStateOf(Appearance.fromKey(prefs.getString("appearance", null)))
     val appearance get() = appearanceState.value
+    private val dynamicColorState = bool("dynamicColor", true)
+    val dynamicColor get() = dynamicColorState.value
 
     // Sounds & calls
     private val uiSoundsState = bool("uiSounds", true)
@@ -53,6 +55,8 @@ class AndroidAppPreferences(context: Context) {
     val startCallsWithCameraOff get() = startCallsWithCameraOffState.value
     private val speakerphoneByDefaultState = bool("speakerphoneByDefault", false)
     val speakerphoneByDefault get() = speakerphoneByDefaultState.value
+    private val preferBluetoothHeadsetState = bool("preferBluetoothHeadset", true)
+    val preferBluetoothHeadset get() = preferBluetoothHeadsetState.value
     private val echoCancellationState = bool("echoCancellation", true)
     val echoCancellation get() = echoCancellationState.value
     private val noiseSuppressionState = bool("noiseSuppression", true)
@@ -76,9 +80,11 @@ class AndroidAppPreferences(context: Context) {
     fun setHighContrast(value: Boolean) { highContrastState.value = value; putBool("highContrast", value) }
     fun setSpeechRate(value: Float) { speechRateState.value = value.coerceIn(0.5f, 2.0f); prefs.edit().putFloat("speechRate", speechRate).apply() }
     fun setAppearance(value: Appearance) { appearanceState.value = value; prefs.edit().putString("appearance", value.storageKey).apply() }
+    fun setDynamicColor(value: Boolean) { dynamicColorState.value = value; putBool("dynamicColor", value) }
     fun setUiSounds(value: Boolean) { uiSoundsState.value = value; putBool("uiSounds", value) }
     fun setStartCallsWithCameraOff(value: Boolean) { startCallsWithCameraOffState.value = value; putBool("startCallsWithCameraOff", value) }
     fun setSpeakerphoneByDefault(value: Boolean) { speakerphoneByDefaultState.value = value; putBool("speakerphoneByDefault", value) }
+    fun setPreferBluetoothHeadset(value: Boolean) { preferBluetoothHeadsetState.value = value; putBool("preferBluetoothHeadset", value) }
     fun setEchoCancellation(value: Boolean) { echoCancellationState.value = value; putBool("echoCancellation", value) }
     fun setNoiseSuppression(value: Boolean) { noiseSuppressionState.value = value; putBool("noiseSuppression", value) }
     fun setNotifyMessages(value: Boolean) { notifyMessagesState.value = value; putBool("notifyMessages", value) }
@@ -106,9 +112,11 @@ class AndroidAppPreferences(context: Context) {
         highContrastState.value = prefs.getBoolean("highContrast", false)
         speechRateState.value = prefs.getFloat("speechRate", 1.0f).coerceIn(0.5f, 2.0f)
         appearanceState.value = Appearance.fromKey(prefs.getString("appearance", null))
+        dynamicColorState.value = prefs.getBoolean("dynamicColor", true)
         uiSoundsState.value = prefs.getBoolean("uiSounds", true)
         startCallsWithCameraOffState.value = prefs.getBoolean("startCallsWithCameraOff", false)
         speakerphoneByDefaultState.value = prefs.getBoolean("speakerphoneByDefault", false)
+        preferBluetoothHeadsetState.value = prefs.getBoolean("preferBluetoothHeadset", true)
         echoCancellationState.value = prefs.getBoolean("echoCancellation", true)
         noiseSuppressionState.value = prefs.getBoolean("noiseSuppression", true)
         notifyMessagesState.value = prefs.getBoolean("notifyMessages", true)

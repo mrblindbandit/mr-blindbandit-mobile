@@ -27,8 +27,8 @@ android {
         applicationId = "net.mrblindbandit.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 12
-        versionName = "1.8.0"
+        versionCode = 14
+        versionName = "2.0.10"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("String", "WEB_BASE_URL", "\"https://mrblindbandit.net\"")
@@ -94,6 +94,8 @@ android {
             "META-INF/versions/**/OSGI-INF/MANIFEST.MF",
         )
     }
+
+    sourceSets.getByName("test").resources.srcDir("../../vectors")
 
     testOptions {
         unitTests.isIncludeAndroidResources = true

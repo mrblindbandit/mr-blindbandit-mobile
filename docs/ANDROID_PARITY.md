@@ -63,7 +63,7 @@ No server changes have been made. Android uses the existing production backend a
 ## Remaining implementation before parity/release
 
 - Android Telecom/foreground-service integration for reliable locked/background calls, with device and Play-policy validation.
-- LiveKit frame E2EE / `call_key` handling, screen share and phone-audio capture.
+- Direct-call frame E2EE interoperability/device verification; group frame-key distribution/rotation, screen share and phone-audio capture.
 - Group call UI/invite/role/join-request/invite-link management and complete group typing/receipt states.
 - Passcode-based key backup/restore, key rotation/revocation UI, session management UI and cross-device history recovery.
 - Signed deletion/edit controls, relay-only queues, disappearing chat settings, view-once consumption, polls, scheduling and complete reaction rendering.
@@ -106,4 +106,13 @@ Package remains `net.mrblindbandit.app`; candidate version is `2.0.8` / `13`. Th
 
 This is **direct-call implementation**, not certified cross-platform call interoperability. Group frame-key distribution/rotation, screen sharing, background/Telecom calling and physical-device verification remain unfinished. A keyless legacy call retains transport encryption and is explicitly labelled as lacking E2EE. An authenticated two-account Android/iOS test must verify decoded audio/video before this implementation can be released.
 
-Validation for this follow-up is pending a clean build. Local instrumentation is blocked by unavailable Android UTP dependencies in offline mode, and no Android device/emulator is attached. No local upload-signing credentials are configured. The existing dedicated signed workflow remains the required release path; do not create a replacement identity.
+Validation of code commit `b82a591fca79b60559b3b5e11dd7c571b05fcf7a`:
+
+- [Android CI passed](https://github.com/mrblindbandit/mr-blindbandit-mobile/actions/runs/40110833516): unit tests, lintDebug, debug APK, release AAB and four API 34 emulator tests.
+- Local unit suite: **34 passed, zero failures/errors/skips**. Both debug/release Kotlin compilation passed; local lintDebug/lintRelease reported **0 errors and 155 warnings each**. Placeholder gate passed.
+- Local offline instrumentation could not resolve Android UTP host dependencies; CI supplied the emulator verification. These four emulator tests cover settings/secure storage, not live calls or account-to-account messaging.
+- R8 still reports Kotlin metadata compatibility warnings. Align/validate the toolchain before certifying a minified production build.
+- [Latest code AAB artifact](https://github.com/mrblindbandit/mr-blindbandit-mobile/actions/runs/40110833516/artifacts/12566319061): **UNSIGNED**, not suitable for Play upload. CI explicitly logged "No signing secrets configured: building an unsigned release bundle" and skipped signer verification. Artifact ZIP SHA-256: `b01f5a5e6dfdb6b97a9e027b0629e7248b58e51d6279aa5673585e26e2b1b8d1` (this is the ZIP digest, not the AAB file digest).
+- No physical Android device or authenticated two-account Android/iOS test was available. No release-signing identity was created or replaced.
+
+Follow [ANDROID_RELEASE_QA.md](ANDROID_RELEASE_QA.md) for device scenarios and the exact publication gates. Full parity and production readiness remain incomplete. The existing dedicated signed workflow remains the required release path.

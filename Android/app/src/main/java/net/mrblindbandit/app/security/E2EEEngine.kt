@@ -100,15 +100,24 @@ class E2EEEngine(private val store: SecretStore) {
             .put("msg_id", messageId).put("nonce", c.b64(nonce)).put("ciphertext", c.b64(ciphertext)).put("keys", entries)
         cache(state, env, payload); save(); return env
     }
-    private fun cache(root: JSONObject, env: JSONObject, payload: JSONObject) {
+    private fun canonical(value: Any?): String = when (value) {
+        is JSONObject -> value.keys().asSequence().toList().sorted().joinToString(",", "{", "}") { JSONObject.quote(it) + ":" + canonical(value.get(it)) }
+        is JSONArray -> (0 until value.length()).joinToString(",", "[", "]") { canonical(value.get(it)) }
+        else -> JSONArray().put(value).toString().let { it.substring(1, it.length - 1) }
+    }
+    private fun envelopeDigest(env: JSONObject) = c.b64(c.sha256(canonical(env).toByteArray(Charsets.UTF_8)))
+    private fun cache(root: JSONObject, env: JSONObject, payload: JSONObject, senderProfileId: String? = null) {
         root.getJSONObject("cache").put(env.getString("msg_id"), JSONObject().put("payload", payload)
-            .put("digest", c.b64(c.sha256(env.getString("ciphertext").toByteArray()))))
+            .put("envelope_digest", envelopeDigest(env)).put("sender_profile", senderProfileId))
     }
     fun decrypt(env: JSONObject, senderProfileId: String): JSONObject {
         require(env.getInt("v") == 1 && env.getString("suite") == P256Crypto.SUITE && env.optString("type", "msg") == "msg")
         val mid = env.getString("msg_id")
         state.getJSONObject("cache").optJSONObject(mid)?.let { cached ->
-            require(cached.getString("digest") == c.b64(c.sha256(env.getString("ciphertext").toByteArray()))) { "Modified encrypted message" }
+            require(cached.optString("envelope_digest") == envelopeDigest(env)) { "Modified encrypted message" }
+            if (env.getString("sender_device_id") != deviceId) {
+                require(cached.getString("sender_profile") == senderProfileId) { "Encrypted sender changed" }
+            }
             return cached.getJSONObject("payload")
         }
         val entries = env.getJSONArray("keys")
@@ -156,7 +165,7 @@ class E2EEEngine(private val store: SecretStore) {
         val payload = JSONObject(plain.toString(Charsets.UTF_8))
         pins.put(pinKey, sign); sessions.put(sessionKey, session)
         opkId?.let { next.getJSONObject("opks").remove(it) }
-        cache(next, env, payload); save(next)
+        cache(next, env, payload, senderProfileId); save(next)
         return payload
     }
 }

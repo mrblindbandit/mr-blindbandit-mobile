@@ -48,9 +48,43 @@ class P256InteropTest {
         bob = E2EEEngine(bStore)
         assertEquals("Kumusta 🌍", bob.decrypt(env, "alice").getString("body"))
         assertThrows(Exception::class.java) { bob.decrypt(damaged, "alice") }
+        val changedHeader = JSONObject(env.toString()).put("sender_device_id", "someone-else")
+        assertThrows(Exception::class.java) { bob.decrypt(changedHeader, "alice") }
+        assertThrows(Exception::class.java) { bob.decrypt(env, "mallory") }
         // A changed signing identity on the same registered device is rejected.
         val changed = JSONObject(registration.toString()).put("identity_key", alice.registration().getString("identity_key"))
         assertThrows(Exception::class.java) { alice.bundle(changed, "bob") }
+    }
+    @Test fun engineReadsIosVectorOutOfOrderAndRejectsReusedChainKey() {
+        val v = vectors(); val b = v.getJSONObject("keys").getJSONObject("bob")
+        val a = v.getJSONObject("keys").getJSONObject("alice")
+        fun pair(name: String) = JSONObject().put("priv", c.b64(c.privateKey(c.hex(b.getString(name + "_priv_hex"))).encoded))
+            .put("pub", b.getString(name + "_pub"))
+        val memory = Memory()
+        memory.put("state", JSONObject().put("device", b.getString("device_id"))
+            .put("sign", pair("sign")).put("dh", pair("dh")).put("spk", pair("spk"))
+            .put("spk_id", b.getInt("spk_id")).put("opks", JSONObject().put(b.getInt("opk_id").toString(), pair("opk")))
+            .put("next_opk", 1000).put("inbound", JSONObject()).put("pins", JSONObject()).put("cache", JSONObject()).toString())
+        var bob = E2EEEngine(memory)
+        val vectorEnvelope = v.getJSONObject("message").getJSONObject("envelope")
+        val payload = JSONObject(v.getJSONObject("message").getString("payload_json"))
+        val cek = c.unb64(v.getJSONObject("message").getString("cek"))
+        fun envelope(index: Int, id: String): JSONObject {
+            val env = JSONObject(vectorEnvelope.toString()).put("msg_id", id)
+            val entry = env.getJSONArray("keys").getJSONObject(0)
+            var chain = c.unb64(v.getJSONObject("x3dh").getString("sk"))
+            repeat(index) { chain = c.step(chain).second }
+            val wrapAD = "bb1".toByteArray() + c.unb64(a.getString("sign_pub")) + c.unb64(b.getString("sign_pub"))
+            entry.put("n", index).put("wrapped", c.b64(c.seal(cek, c.step(chain).first, c.unb64(entry.getString("nonce")), wrapAD)))
+            env.put("ciphertext", c.b64(c.seal(c.pad(payload.toString().toByteArray()), cek, c.unb64(env.getString("nonce")),
+                ("bb1:" + id + ":" + env.getString("sender_device_id")).toByteArray())))
+            return env
+        }
+        assertEquals(payload.toString(), bob.decrypt(envelope(2, "out-of-order"), "alice-profile").toString())
+        bob = E2EEEngine(memory)
+        assertEquals(payload.getString("body"), bob.decrypt(vectorEnvelope, "alice-profile").getString("body"))
+        assertThrows(Exception::class.java) { bob.decrypt(envelope(0, "replayed-index"), "alice-profile") }
+        assertEquals(0, JSONObject(memory.get("state")!!).getJSONObject("opks").length())
     }
     @Test fun safetyNumberMatchesIos() {
         val v = vectors(); val keys = v.getJSONObject("keys")

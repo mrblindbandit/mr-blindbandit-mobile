@@ -163,12 +163,24 @@ sealed interface CommsDestination {
         fun parse(link: String?, conversationId: String? = null, callId: String? = null): CommsDestination? {
             if (!conversationId.isNullOrBlank()) return Thread(conversationId)
             if (!callId.isNullOrBlank()) return Call(callId)
-            val path = link?.substringBefore('?')?.substringBefore('#') ?: return null
+            val raw = link ?: return null
+            val path = raw.substringBefore('?').substringBefore('#')
+            // Match iOS PushRoute: production uses /mobile/messages/?c=<id> or ?id=<id>.
+            val params = runCatching {
+                val uri = android.net.Uri.parse(raw)
+                uri.queryParameterNames.associateWith { uri.getQueryParameter(it).orEmpty() }
+            }.getOrDefault(emptyMap())
+            fun parameter(vararg names: String): String? =
+                names.firstNotNullOfOrNull { params[it]?.takeIf(String::isNotBlank) }
+            if (path.contains("/calls")) parameter("call_id", "id")?.let { return Call(it) }
+            if (path.contains("/messages") || path.contains("/inbox") || path.contains("/conversations")) {
+                parameter("conversation_id", "id", "c")?.let { return Thread(it) }
+            }
             call.find(path)?.let { m -> m.groupValues[1].takeIf { it != "history" }?.let { return Call(it) } }
             thread.find(path)?.let { m -> m.groupValues[1].takeIf { it != "unread-count" }?.let { return Thread(it) } }
             return when {
                 path.contains("/calls") -> Calls
-                path.contains("/messages") || path.contains("/inbox") -> Messages
+                path.contains("/messages") || path.contains("/inbox") || path.contains("/conversations") -> Messages
                 else -> null
             }
         }

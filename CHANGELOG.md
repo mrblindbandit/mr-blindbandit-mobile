@@ -15,7 +15,7 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 - Groups feel faster: optimistic send ("Sending…") plus in-memory group chat/list cache like DMs in 2.0.3+.
 - AI/Hood gate audit: Hood/unfiltered remain @kheck-only; shared @AI stays Professional; no paid AI paths in the app.
 - Screen-share DRM honesty: in-call VoiceOver note that Apple Music/Netflix/Spotify can block audio (OS limit).
-- Third ringtone: "Mr. BlindBandit Alt" (29 s CAF from source2 @0:59 with fade-out) added to the ringtone picker.
+- Ringtones: "Mr. BlindBandit Alt", "Mr. BlindBandit Night", and "Mr. BlindBandit Pulse" (29 s CAF each, fade-in/out) in the picker. Default stays "Mr. BlindBandit"; classic stays "Mr. BlindBandit Classic". Build 23 adds Night + Pulse after 22.
 
 ## 2.0.6 (21)
 - Calls start instantly: the iPhone call screen appears as soon as you press Call, while the call is set up in the background. Step timings are logged.

@@ -9,7 +9,7 @@
 - Added authenticated p256-v1 `call_key` control handling and direct-call LiveKit frame-key wiring with caller-bound key lookup and accessible encryption state. Group frame E2EE/rotation remains incomplete.
 - Accepted flat call-grant token/livekit_url fields and rejected non-WSS endpoints.
 - Fixed mixed-recipient plaintext downgrade depending on ordering; normalized handles before policy checks. Added security regression tests.
-- Clean local validation in progress. No attached Android device or local release-signing identity. Draft only: no backend changes, user data removal, merge or publication.
+- Code `b82a591`: Android CI 40110833516 passed unit/lint/APK/AAB and four emulator tests; 34 local unit tests passed, local debug/release lint each 0 errors/155 warnings. R8 metadata warnings remain. CI AAB is explicitly unsigned (no signing secrets); physical cross-platform/TalkBack QA remains open. See docs/ANDROID_PARITY.md and docs/ANDROID_RELEASE_QA.md. Draft only: no backend changes, user data removal, merge or publication.
 
 
 ## 2026-10-24 — iOS 2.0.7 (22), branch `feat/ios-207-app-fixes`

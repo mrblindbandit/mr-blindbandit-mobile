@@ -91,6 +91,7 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import java.util.Locale
 import kotlinx.coroutines.launch
+import androidx.lifecycle.repeatOnLifecycle
 import java.util.UUID
 import net.mrblindbandit.app.auth.AuthGatewayScreen
 import net.mrblindbandit.app.auth.AuthState
@@ -149,14 +150,11 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     private fun resolveDeepLink(intent: Intent?): String? {
         if (intent == null) return null
         val link = intent.dataString ?: intent.getStringExtra("url") ?: intent.getStringExtra("deep_link") ?: intent.getStringExtra("link")
-        val conversationId = intent.getStringExtra("conversation_id")
-        val callId = intent.getStringExtra("call_id")
-        val isComms = !conversationId.isNullOrBlank() || !callId.isNullOrBlank() ||
-            (link != null && Regex("^(https?://[^/]*mrblindbandit\\.net)?/(mobile/)?(messages|calls|inbox)(/|$|\\?)").containsMatchIn(link)) ||
-            (link?.startsWith("mrblindbandit://") == true && (link.contains("messages") || link.contains("calls")))
-        if (isComms) {
-            CommsDestination.parse(link, conversationId, callId)?.let { commsDestinationState.value = it; return null }
-        }
+        CommsDestination.parse(link,
+            conversationId = intent.getStringExtra("conversation_id"),
+            callId = intent.getStringExtra("call_id"),
+            groupId = intent.getStringExtra("group_id"),
+        )?.let { commsDestinationState.value = it; return null }
         val raw = intent.dataString
             ?: intent.getStringExtra("url")
             ?: intent.getStringExtra("deep_link")
@@ -264,7 +262,7 @@ enum class AppTab(val label: String, val icon: ImageVector, val description: Str
 fun BlindbanditAndroidApp(activity: MainActivity, deepLinkState: MutableState<String?>) {
     val context = LocalContext.current
     val prefs = remember { AndroidAppPreferences(context) }
-    BlindbanditTheme(appearance = prefs.appearance, highContrast = prefs.highContrast) {
+    BlindbanditTheme(appearance = prefs.appearance, highContrast = prefs.highContrast, dynamicColor = prefs.dynamicColor) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             AppRoot(activity, deepLinkState, prefs)
         }
@@ -280,6 +278,7 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
     var currentUrl by rememberSaveable { mutableStateOf(BuildConfig.WEB_BASE_URL + (screenshot?.webPath ?: "/")) }
     var showSettings by rememberSaveable { mutableStateOf(screenshot?.settings == true) }
     var showWeb by rememberSaveable { mutableStateOf(screenshot?.webPath != null) }
+    var showAssistant by remember { mutableStateOf(false) }
     var showCreator by rememberSaveable { mutableStateOf(false) }
     var showChronicle by rememberSaveable { mutableStateOf(screenshot?.chronicle == true) }
     var chronicleArticle by rememberSaveable { mutableStateOf<String?>(screenshot?.articleUrl) }
@@ -314,21 +313,43 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
             val communications = rememberCommunications(auth)
             communications.startWithCameraOff = prefs.startCallsWithCameraOff
             communications.speakerByDefault = prefs.speakerphoneByDefault
+            communications.preferBluetoothHeadset = prefs.preferBluetoothHeadset
             val haptics = rememberHaptics { prefs.hapticsEnabled }
             var locked by remember { mutableStateOf(screenshot == null && communications.local.appLockEnabled && !AppLock.unlockedThisProcess) }
             var pendingThread by remember { mutableStateOf<String?>(null) }
             var dialRequest by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
             LaunchedEffect(state.email) { if (screenshot == null) communications.bootstrap() }
+            DisposableEffect(communications) {
+                val receiver = object : android.content.BroadcastReceiver() {
+                    override fun onReceive(ctx: android.content.Context?, event: Intent?) {
+                        val ended = event?.getStringExtra("call_id") ?: return
+                        communications.remoteEnded(ended)
+                    }
+                }
+                ContextCompat.registerReceiver(context, receiver, android.content.IntentFilter(BlindbanditFirebaseMessagingService.ACTION_CALL_ENDED), ContextCompat.RECEIVER_NOT_EXPORTED)
+                onDispose { context.unregisterReceiver(receiver); communications.endCall() }
+            }
+
+            val appLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+            LaunchedEffect(communications) {
+                appLifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+                    while (true) { communications.refreshIncomingCalls(); kotlinx.coroutines.delay(5_000) }
+                }
+            }
+            LaunchedEffect(communications.incomingCallId) {
+                if (communications.incomingCallId != null) { tab = AppTab.CALLS; showAssistant = false; showWeb = false; showSettings = false }
+            }
             val destination = activity.commsDestinationState.value
             LaunchedEffect(destination) {
                 when (destination) {
                     is CommsDestination.Thread -> { pendingThread = destination.conversationId; tab = AppTab.MESSAGES }
+                    is CommsDestination.Group -> { communications.openGroupId = destination.groupId; tab = AppTab.MESSAGES }
                     is CommsDestination.Call -> { communications.incomingCallId = destination.callId; tab = AppTab.CALLS }
                     CommsDestination.Calls -> tab = AppTab.CALLS
                     CommsDestination.Messages -> tab = AppTab.MESSAGES
                     null -> Unit
                 }
-                if (destination != null) { showSettings = false; showWeb = false; showChronicle = false; showCreator = false; activity.commsDestinationState.value = null }
+                if (destination != null) { showAssistant = false; showSettings = false; showWeb = false; showChronicle = false; showCreator = false; activity.commsDestinationState.value = null }
             }
             if (locked) {
                 AppLockScreen(activity) { AppLock.unlockedThisProcess = true; locked = false }
@@ -344,6 +365,7 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
                     onRequestNotifications = { activity.requestNotificationPermission() },
                     commsSection = { net.mrblindbandit.app.connect.CommsSettingsSection(communications, activity, haptics) },
                 )
+                showAssistant -> net.mrblindbandit.app.ai.AssistantScreen(communications) { showAssistant = false }
                 showCreator -> {
                     BackHandler { showCreator = false }
                     Box(Modifier.fillMaxSize().safeDrawingPadding()) { NativeCreatorToolkitScreen() }
@@ -379,6 +401,7 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
                             when (tab) {
                                 AppTab.HOME -> HomeScreen(
                                     displayName = state.displayName,
+                                    onAssistant = { showAssistant = true },
                                     onCreator = { showCreator = true },
                                     onConnect = { tab = AppTab.MESSAGES },
                                     onListen = { tab = AppTab.LISTEN },
@@ -431,6 +454,7 @@ private fun registerPushToken(context: android.content.Context, communications: 
 @Composable
 private fun HomeScreen(
     displayName: String,
+    onAssistant: () -> Unit,
     onCreator: () -> Unit,
     onConnect: () -> Unit,
     onListen: () -> Unit,
@@ -471,6 +495,7 @@ private fun HomeScreen(
         }
         item { HomeCard(Icons.Default.Language, "The Chronicle", "Read the latest Blindbandit Chronicle stories natively. Saved for offline reading.", onChronicle, highlighted = notificationsOn) }
         item { HomeCard(Icons.Default.Phone, "Calls & messages", "Voice calls, video calls, and chat with people on Blindbandit.", onConnect) }
+        item { HomeCard(Icons.Default.Build, "AI assistant", "Cloud chat, translation, images and on-device speech.", onAssistant) }
         item { HomeCard(Icons.Default.Build, "Creator tools", "Metronome, BPM tapper, royalty splits, release checklist, and more. Works offline.", onCreator) }
         item { HomeCard(Icons.Default.Headphones, "Listen", "Mr. Blindbandit on your favourite music services.", onListen) }
         item { HomeCard(Icons.Default.Language, "Music & releases", "Releases and news from mrblindbandit.net.", { onWeb(BuildConfig.WEB_BASE_URL + "/music/") }) }

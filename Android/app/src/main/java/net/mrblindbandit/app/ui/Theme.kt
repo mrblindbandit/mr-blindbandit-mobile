@@ -1,13 +1,17 @@
 package net.mrblindbandit.app.ui
 
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -119,6 +123,7 @@ fun brandColorScheme(dark: Boolean, highContrast: Boolean): ColorScheme = when {
 fun BlindbanditTheme(
     appearance: Appearance = Appearance.SYSTEM,
     highContrast: Boolean = false,
+    dynamicColor: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val dark = when (appearance) {
@@ -126,8 +131,16 @@ fun BlindbanditTheme(
         Appearance.LIGHT -> false
         Appearance.DARK -> true
     }
+    val context = LocalContext.current
+    val scheme = when {
+        highContrast -> brandColorScheme(dark, highContrast = true)
+        dynamicColor && Build.VERSION.SDK_INT >= 31 -> {
+            if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        }
+        else -> brandColorScheme(dark, highContrast = false)
+    }
     MaterialTheme(
-        colorScheme = brandColorScheme(dark, highContrast),
+        colorScheme = scheme,
         typography = BrandTypography,
         content = content,
     )

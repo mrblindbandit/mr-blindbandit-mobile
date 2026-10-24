@@ -3,6 +3,7 @@ name: Release AAB (Google Play) — Mr. Blindbandit
 #   ANDROID_UPLOAD_KEYSTORE_BASE64, ANDROID_UPLOAD_KEYSTORE_PASSWORD,
 #   ANDROID_UPLOAD_KEY_ALIAS, ANDROID_UPLOAD_KEY_PASSWORD.
 # Runs on demand only. The job fails if the bundle is not signed by the expected upload key.
+# Optional auto-upload to Play internal track when PLAY_SERVICE_ACCOUNT_JSON is set.
 on:
   workflow_dispatch:
 permissions:
@@ -96,6 +97,31 @@ jobs:
             echo "- versionCode $vc, versionName $vn, targetSdk $tsdk"
             echo "- Upload key SHA-256: $actual"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload to Play Console (internal testing)
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          AAB=$(ls dist/*.aab | head -1)
+          VN=$(basename "$AAB" .aab | sed 's/^MrBlindbandit-//')
+          echo "AAB=$AAB versionName=$VN"
+          if [ -z "${PLAY_SERVICE_ACCOUNT_JSON:-}" ]; then
+            echo "::notice::PLAY_SERVICE_ACCOUNT_JSON not set — signed AAB is the workflow artifact for manual Play Console upload (Testing → Internal testing)."
+            {
+              echo "### Play Console"
+              echo "- Auto-upload skipped (no PLAY_SERVICE_ACCOUNT_JSON secret)."
+              echo "- Artifact: $(basename "$AAB") (versionName $VN)"
+              echo "- Manual: https://play.google.com/console → net.mrblindbandit.app → Testing → Internal testing → Create new release"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          umask 077
+          printf '%s' "$PLAY_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/play.json"
+          python3 -m pip install -q google-api-python-client google-auth
+          VERSION_NAME="$VN" python3 scripts/upload-play-internal.py "$RUNNER_TEMP/play.json" "dist/*.aab"
+          rm -f "$RUNNER_TEMP/play.json"
+
       - name: Remove decoded keystore
         if: always()
         run: rm -f "$RUNNER_TEMP/upload.jks"

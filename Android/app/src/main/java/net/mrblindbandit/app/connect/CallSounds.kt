@@ -9,6 +9,13 @@ import android.media.SoundPool
 class CallSounds(private val context: Context) {
     enum class Ringtone(val resName: String, val title: String) {
         DEFAULT("ringtone", "Default"),
+        MR_BLINDBANDIT("ringtone_mrblindbandit", "Mr. BlindBandit"),
+        MR_CLASSIC("ringtone_mrblindbandit_classic", "Classic"),
+        MR_ALT("ringtone_mrblindbandit_alt", "Alternative"),
+        MR_NIGHT("ringtone_mrblindbandit_night", "Night"),
+        MR_PULSE("ringtone_mrblindbandit_pulse", "Mr. BlindBandit Pulse"),
+        MR_HEAT("ringtone_mrblindbandit_heat", "Heat"),
+        MR_RISE("ringtone_mrblindbandit_rise", "Rise"),
         GOLD("ringtone_gold", "Gold"),
         PULSE("ringtone_pulse", "Pulse"),
         CHIME("ringtone_chime", "Chime"),
@@ -17,7 +24,13 @@ class CallSounds(private val context: Context) {
         AMBIENT_GLASS("ringtone_ambient_glass", "Ambient · Glass"),
         AMBIENT_NIGHT("ringtone_ambient_night", "Ambient · Night"),
         AMBIENT_RAIN("ringtone_ambient_rain", "Ambient · Rain"),
-        AMBIENT_SPACE("ringtone_ambient_space", "Ambient · Space")
+        AMBIENT_SPACE("ringtone_ambient_space", "Ambient · Space"),
+        AMBIENT_DAWN("ringtone_ambient_dawn", "Ambient · Dawn"),
+        AMBIENT_LAGOON("ringtone_ambient_lagoon", "Ambient · Lagoon"),
+        AMBIENT_EMBER("ringtone_ambient_ember", "Ambient · Ember"),
+        AMBIENT_HORIZON("ringtone_ambient_horizon", "Ambient · Horizon"),
+        AMBIENT_VELVET("ringtone_ambient_velvet", "Ambient · Velvet"),
+        AMBIENT_CROWN("ringtone_ambient_crown", "Ambient · Crown")
     }
 
     enum class NotificationTone(val resName: String, val title: String) {
@@ -29,7 +42,15 @@ class CallSounds(private val context: Context) {
         AMBIENT_GLOW("notif_ambient_glow", "Ambient · Glow"),
         AMBIENT_DROP("notif_ambient_drop", "Ambient · Drop"),
         AMBIENT_PETAL("notif_ambient_petal", "Ambient · Petal"),
-        AMBIENT_WIND("notif_ambient_wind", "Ambient · Wind")
+        AMBIENT_WIND("notif_ambient_wind", "Ambient · Wind"),
+        AMBIENT_HALO("notif_ambient_halo", "Ambient · Halo"),
+        AMBIENT_RIPPLE("notif_ambient_ripple", "Ambient · Ripple"),
+        AMBIENT_SPARK("notif_ambient_spark", "Ambient · Spark"),
+        AMBIENT_MOSS("notif_ambient_moss", "Ambient · Moss"),
+        AMBIENT_LANTERN("notif_ambient_lantern", "Ambient · Lantern"),
+        AMBIENT_TIDE("notif_ambient_tide", "Ambient · Tide"),
+        AMBIENT_BELL("notif_ambient_bell", "Ambient · Bell"),
+        AMBIENT_MIST("notif_ambient_mist", "Ambient · Mist")
     }
 
     var playUISounds: Boolean = true
@@ -40,6 +61,7 @@ class CallSounds(private val context: Context) {
     private var pool: SoundPool? = null
     private val ids = mutableMapOf<String, Int>()
     private var ringbackPlayer: MediaPlayer? = null
+    private var previewPlayer: MediaPlayer? = null
 
     init {
         playUISounds = prefs.getBoolean("playUISounds", true)
@@ -53,7 +75,6 @@ class CallSounds(private val context: Context) {
             .build()
         pool = SoundPool.Builder().setMaxStreams(4).setAudioAttributes(attrs).build()
         val names = buildList {
-            addAll(Ringtone.values().map { it.resName })
             addAll(NotificationTone.values().map { it.resName })
             addAll(
                 listOf(
@@ -130,6 +151,18 @@ class CallSounds(private val context: Context) {
     }
     fun delivered() { play("notif_delivered", 0.4f); CallHaptics.delivered(context) }
     fun read() { play("notif_read", 0.35f); CallHaptics.read(context) }
-    fun previewRingtone(tone: Ringtone) = play(tone.resName, 0.65f)
+    fun stopPreview() { previewPlayer?.release(); previewPlayer = null }
+    fun release() { stopPreview(); stopRingback(); pool?.release(); pool = null }
+    fun previewRingtone(tone: Ringtone) {
+        stopPreview()
+        val id = context.resources.getIdentifier(tone.resName, "raw", context.packageName)
+        if (id == 0) return
+        previewPlayer = MediaPlayer.create(context, id)?.apply {
+            setVolume(0.65f, 0.65f)
+            setOnCompletionListener { stopPreview() }
+            setOnErrorListener { _, _, _ -> stopPreview(); true }
+            start()
+        }
+    }
     fun previewNotification(tone: NotificationTone) = play(tone.resName, 0.6f)
 }

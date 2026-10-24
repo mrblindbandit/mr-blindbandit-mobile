@@ -207,6 +207,7 @@ private fun SettingsRoot(
                 TonePickers()
                 ToggleRow("Start video calls with camera off", prefs.startCallsWithCameraOff, "Turn your camera on when you are ready", prefs::setStartCallsWithCameraOff)
                 ToggleRow("Use speakerphone by default", prefs.speakerphoneByDefault, "Route call audio to the loudspeaker", prefs::setSpeakerphoneByDefault)
+                ToggleRow("Prefer Bluetooth headset", prefs.preferBluetoothHeadset, "Use a connected Bluetooth headset instead of the earpiece when speaker is off", prefs::setPreferBluetoothHeadset)
                 ToggleRow("Echo cancellation", prefs.echoCancellation, "Reduce echo during calls", prefs::setEchoCancellation)
                 ToggleRow("Noise suppression", prefs.noiseSuppression, "Reduce background noise during calls", prefs::setNoiseSuppression)
             }
@@ -227,6 +228,7 @@ private fun SettingsRoot(
                         }
                     }
                 }
+                ToggleRow("Material You colors", prefs.dynamicColor, "Use your Android wallpaper colors (Android 12+). High contrast overrides this.", prefs::setDynamicColor)
             }
         }
 
@@ -436,6 +438,7 @@ private fun safeStart(context: Context, intent: Intent) {
 private fun TonePickers() {
     val context = LocalContext.current
     val sounds = remember { net.mrblindbandit.app.connect.CallSounds(context) }
+    androidx.compose.runtime.DisposableEffect(sounds) { onDispose { sounds.release() } }
     var ringtone by remember { mutableStateOf(sounds.selectedRingtone) }
     var notifTone by remember { mutableStateOf(sounds.selectedNotificationTone) }
     var picker by remember { mutableStateOf<String?>(null) }
@@ -446,7 +449,7 @@ private fun TonePickers() {
         var pendingRing by remember { mutableStateOf(ringtone) }
         var pendingNotif by remember { mutableStateOf(notifTone) }
         androidx.compose.material3.AlertDialog(
-            onDismissRequest = { picker = null },
+            onDismissRequest = { sounds.stopPreview(); picker = null },
             title = { Text(if (isRing) "Ringtone" else "Message tone") },
             text = {
                 LazyColumn(Modifier.selectableGroup()) {
@@ -467,10 +470,10 @@ private fun TonePickers() {
                 TextButton(onClick = {
                     if (isRing) { sounds.selectedRingtone = pendingRing; ringtone = pendingRing }
                     else { sounds.selectedNotificationTone = pendingNotif; notifTone = pendingNotif }
-                    sounds.persist(); picker = null
+                    sounds.persist(); sounds.stopPreview(); picker = null
                 }) { Text("Done") }
             },
-            dismissButton = { TextButton(onClick = { picker = null }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { sounds.stopPreview(); picker = null }) { Text("Cancel") } },
         )
     }
 }

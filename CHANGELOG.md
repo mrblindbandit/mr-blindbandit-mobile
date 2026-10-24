@@ -7,6 +7,11 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 ---
 
 
+## 2.0.8 (24)
+- VoiceOver: on a voice message in a DM or group chat, swipe up/down in the Actions rotor now includes **Play** (or **Pause** when that note is playing) as the first action on the message row. Double-tap on the bubble still toggles play/pause.
+- Sighted: single tap on a voice bubble plays/pauses (same toggle as VoiceOver).
+- Ringtones: **Heat** and **Rise** added (29 s CAF each). Picker shows short names only — Classic, Alt, Night, Pulse, Heat, Rise, Aurora… — never filenames. Stock "Pulse" renamed **Pulse Tone** so BlindBandit Pulse can be **Pulse**. Default stays **Mr. BlindBandit** (file/key unchanged).
+
 ## 2.0.7 (22)
 - Hide notification previews: Security & Privacy toggle syncs to the App Group; NotificationService shows generic "Message" / sender-only and never a decrypted body. Mute notification sound clears the alert sound locally.
 - Groups VoiceOver: voice/poll rows use `.contain` like DMs; empty E2EE voice announces as "Voice message". Actions parity: reply, react, report, unsend, star/pin where APIs exist.

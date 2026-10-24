@@ -420,25 +420,29 @@ struct VoiceBubble: View {
         let progress: Double = current ? min(center.elapsed, total) : 0
         let timeText: String = current ? VoicePlayback.clock(center.elapsed) + " / " + duration : duration
         let icon: String = loading ? "hourglass" : (isPlaying ? "pause.circle.fill" : "play.circle.fill")
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 12) {
-                Image(systemName: icon).font(.largeTitle)
-                VStack(alignment: .leading, spacing: 2) {
-                    ProgressView(value: progress, total: total)
-                    Text(timeText).font(.caption)
+        // Plain Button so a sighted single tap plays/pauses; parent contextMenu was eating onTapGesture.
+        // VoiceOver still uses accessibilityAction / Actions rotor (hint stays "Double tap…").
+        return Button(action: { toggle(once) }) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 12) {
+                    Image(systemName: icon).font(.largeTitle)
+                    VStack(alignment: .leading, spacing: 2) {
+                        ProgressView(value: progress, total: total)
+                        Text(timeText).font(.caption)
+                    }
+                    Text(VoicePlayerModel.rateLabel(center.rate)).font(.caption.bold())
+                    if unplayed { Circle().fill(Brand.gold).frame(width: 8, height: 8) }
                 }
-                Text(VoicePlayerModel.rateLabel(center.rate)).font(.caption.bold())
-                if unplayed { Circle().fill(Brand.gold).frame(width: 8, height: 8) }
+                if !once, let t = media.transcript, !t.isEmpty {
+                    Text(t).font(.footnote).foregroundStyle(.secondary).lineLimit(3)
+                }
             }
-            if !once, let t = media.transcript, !t.isEmpty {
-                Text(t).font(.footnote).foregroundStyle(.secondary).lineLimit(3)
-            }
+            .padding(10)
+            .frame(minWidth: 200, alignment: .leading)
+            .background(Color.secondary.opacity(0.14), in: RoundedRectangle(cornerRadius: 16))
+            .contentShape(Rectangle())
         }
-        .padding(10)
-        .frame(minWidth: 200, alignment: .leading)
-        .background(Color.secondary.opacity(0.14), in: RoundedRectangle(cornerRadius: 16))
-        .contentShape(Rectangle())
-        .onTapGesture { toggle(once) }
+        .buttonStyle(.plain)
         .modifier(VoiceBubbleAccessibility(label: axLabel(once: once, unplayed: unplayed), value: axValue(current: current, isPlaying: isPlaying),
                                            hint: isPlaying ? "Double tap to pause" : (once ? "Double tap to play. It can be heard only once." : "Double tap to play"),
                                            isPlaying: isPlaying, current: current, once: once,
@@ -518,4 +522,32 @@ struct VoiceBubbleAccessibility: ViewModifier {
                 }
             }
     }
+}
+
+
+/// Shared Play/Pause for VoiceOver Actions on the message *row* (swipe up/down).
+/// Bubble-level actions stay on VoiceBubble; Kaeleb often focuses the row, so Play must be first here too.
+struct VoiceRowPlayAction: View {
+    let item: VoicePlayback.Item
+    @ObservedObject private var center = VoicePlayback.shared
+
+    var body: some View {
+        Button(center.isCurrent(item.id) && center.playing ? "Pause" : "Play") {
+            center.register(item)
+            Task { await center.toggle(item) }
+        }
+    }
+
+    /// Build an Item the same way VoiceBubble does (id = message id).
+    static func item(id: String, media: E2EEPayload.Media, from: String, mine: Bool) -> VoicePlayback.Item {
+        .init(id: id, media: media, from: from, mine: mine)
+    }
+
+    /// True when this row is a voice note (DM or group).
+    static func isVoice(mime: String?, kind: String? = nil, decryptedType: String? = nil) -> Bool {
+        mime?.hasPrefix("audio") == true || kind == "voice" || decryptedType == "voice"
+    }
+
+    /// Documented action name for tests / callers that need the label without a live player.
+    static func actionName(isPlayingCurrent: Bool) -> String { isPlayingCurrent ? "Pause" : "Play" }
 }

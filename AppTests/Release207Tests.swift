@@ -35,11 +35,15 @@ final class Release207Tests: XCTestCase {
 
     func testAltRingtoneInPicker() {
         XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditAlt.rawValue, "ringtone_mrblindbandit_alt")
-        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditAlt.title, "Mr. BlindBandit Alt")
+        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditAlt.title, "Alt")
         XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditNight.rawValue, "ringtone_mrblindbandit_night")
-        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditNight.title, "Mr. BlindBandit Night")
+        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditNight.title, "Night")
         XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditPulse.rawValue, "ringtone_mrblindbandit_pulse")
-        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditPulse.title, "Mr. BlindBandit Pulse")
+        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditPulse.title, "Pulse")
+        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditHeat.rawValue, "ringtone_mrblindbandit_heat")
+        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditHeat.title, "Heat")
+        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditRise.rawValue, "ringtone_mrblindbandit_rise")
+        XCTAssertEqual(CallSounds.Ringtone.mrBlindBanditRise.title, "Rise")
         XCTAssertEqual(CallSounds.Ringtone.mrBlindBandit.rawValue, "ringtone_mrblindbandit")
     }
 
@@ -51,5 +55,15 @@ final class Release207Tests: XCTestCase {
         XCTAssertFalse(AIPersona.isOwner)
         XCTAssertEqual(AIPersona.forPrivate, .professional)
         AIPersona.serverHandle = prev
+    }
+
+    func testVoiceRowPlayActionName() {
+        XCTAssertEqual(MessageRowAccessibility.voicePlayActionName(isPlayingCurrent: false), "Play")
+        XCTAssertEqual(MessageRowAccessibility.voicePlayActionName(isPlayingCurrent: true), "Pause")
+        XCTAssertEqual(VoiceRowPlayAction.actionName(isPlayingCurrent: false), "Play")
+        XCTAssertTrue(VoiceRowPlayAction.isVoice(mime: "audio/m4a"))
+        XCTAssertTrue(VoiceRowPlayAction.isVoice(mime: nil, kind: "voice"))
+        XCTAssertTrue(VoiceRowPlayAction.isVoice(mime: nil, decryptedType: "voice"))
+        XCTAssertFalse(VoiceRowPlayAction.isVoice(mime: "image/jpeg"))
     }
 }

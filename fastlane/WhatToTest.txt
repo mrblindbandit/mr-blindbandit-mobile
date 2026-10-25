@@ -1,14 +1,7 @@
-2.2.0 (34): ASC ITMS-90626 — scrub "apple" from App Intent / Focus filter description.
+2.2.0 (35) — send/call speed
 
-What's new:
-- App Intents / Shortcuts (Feed + AI), TipKit, Focus filters, Handoff, Spotlight, Passkeys, Writing Tools hooks
-- Live Activities / Home widgets / Watch: source ready; TF ships without ActivityKit / those embeds until ASC App IDs exist
-- Call + Edit display name / picture on native profiles; Settings → Open native profile
-- Prior 2.1.0: Bites tab, native Profile, Admin verify, voice/translate/settings
+• Relay poll no longer stalls the 5s message/call loop (device_id query + parallel poll).
+• VoiceOver announces "Sending" immediately on send; "Sent" after the network succeeds.
+• Pairs with server fix: relay/pending returns empty instead of ~6s DEVICE_NOT_FOUND 404; startCall pushes before LiveKit mint.
 
-Please test:
-1) Cold launch + sign-in; Bites feed load / New Bite / like / comment.
-2) Profile → Edit display name + Edit profile picture; other profile → Call + Message.
-3) Settings → Open native profile; Voice & calls tones.
-4) Start/receive a call — CallKit + in-app UI.
-5) Regression: Chats, People, Auto-translate, Admin (owner).
+Please try: send a DM (should feel instant in VO), place a voice call (callee should ring sooner).

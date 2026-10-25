@@ -522,6 +522,7 @@ enum CommunicationsError: LocalizedError {
         guard case .notFound(let message) = self else { return false }
         let m = message.lowercased()
         return m.isEmpty || m.contains("route") || m == "not found" || m.contains("no handler") || m.contains("unknown endpoint")
+            || m.contains("device not found") || m.contains("device_not_found") || m.contains("e2ee device")
     }
 
     static let serverUpdateMessage = "This feature needs a Blindbandit server update that isn't live yet. Everything else keeps working. Please try again after the next server update."
@@ -914,11 +915,13 @@ final class ProductionCommunicationsService: ObservableObject {
             messages.append(m)
         }
         AppHaptics.light()
+        // VoiceOver: announce immediately so send does not feel blocked by network/poll.
+        UIAccessibility.post(notification: .announcement, argument: "Sending")
         do {
             let response = try await BlindbanditAPI.sendMessage(handle: handle, body: String(text.prefix(4000)), silent: silent)
             CallSounds.messageSent()
             statusMessage = "Message sent to @\(handle)."
-            UIAccessibility.post(notification: .announcement, argument: statusMessage)
+            UIAccessibility.post(notification: .announcement, argument: "Sent")
             // Reconcile off the critical path so Send feels instant (optimistic bubble already shown).
             let convID = response.conversation_id
             Task { [weak self] in

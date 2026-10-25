@@ -1,9 +1,9 @@
-2.2.0 (38) — Outgoing call: US dial tone then US ringback
+2.2.0 (38) — Landline Dialer + dial→ringback + DTMF + Messages soft timeout
 
-• Outgoing call progress (two phases):
-  1) Dial / connecting: classic US dial tone (continuous 350 Hz + 440 Hz) via ringback_us_dialtone as soon as you tap Call.
-  2) Remote ringing: switches to US ringback (440 Hz + 480 Hz, 2 seconds on / 4 seconds off) via ringback_us_ringback once the server call is created / callee is ringing.
-• Both tones stop on answer, hang-up, or fail. Build 37 dial-only path corrected — owner wanted ringback while the other phone rings, not continuous dial for the whole wait.
-• Messages cache-first + Sending→Sent receipts from build 37 unchanged.
+• More → Dialer (native landline keypad): opens with continuous US dial tone (350+440). First digit kills dial tone; every key plays classic ITU DTMF. Call resolves an assigned BlindBandit call number → places a native call (connecting dial tone, then US ringback while ringing). Unknown number → clear not-found + busy tone. End/leave stops all tones; reopen → dial tone again.
+• Outgoing call progress (any Call button): (1) dial/connecting = US dial tone; (2) remote ringing = US ringback (440+480, 2s on / 4s off). No legacy ringback_outgoing / call_initiated oneshot during outbound wait.
+• In-call keypad: DTMF beeps on 0–9 * #.
+• Messages: soft reconnect banner on timeout (“Still connecting…”) instead of full-screen “The request timed out.” Cache-first inbox/thread kept.
+• Settings → Messages & calls → BlindBandit call numbers: assign your number and map people ↔ dialable numbers (local + iCloud KVS; server sync next).
 
-Please try (VoiceOver): place a voice call — hear dial tone immediately, then US ringback (ring… pause… ring…) until answer/no-answer; hang up mid-dial and mid-ring (tones stop).
+Please try (VoiceOver): More → Dialer — hear dial tone on open; dial digits (DTMF); Call to an assigned number; hang up mid-dial and mid-ring. Place a normal voice call from a profile — dial then ringback. Open Messages offline/slow network — soft banner, not full-screen timeout.

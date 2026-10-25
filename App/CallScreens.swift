@@ -310,7 +310,7 @@ struct ActiveCallScreen: View {
     }
 }
 
-/// Soft in-call dial pad — announces digits for VO; useful for IVR menus even without carrier DTMF.
+/// Soft in-call dial pad — classic ITU DTMF beep per key + VO announce (local cue; not carrier DTMF signaling).
 struct InCallKeypadSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var digits = ""
@@ -327,6 +327,7 @@ struct InCallKeypadSheet: View {
                         ForEach(row, id: \.self) { k in
                             Button {
                                 digits.append(k)
+                                CallSounds.playDTMF(k)
                                 UIAccessibility.post(notification: .announcement, argument: k == "*" ? "Star" : (k == "#" ? "Pound" : k))
                                 AppHaptics.light()
                             } label: {

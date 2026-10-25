@@ -47,7 +47,7 @@ struct BlindbanditConversation: Identifiable, Decodable, Equatable {
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            handle = try c.decode(String.self, forKey: .handle)
+            handle = (try? c.decode(String.self, forKey: .handle)) ?? ""
             display_name = (try? c.decode(String.self, forKey: .display_name)) ?? handle
             avatar_url = try? c.decodeIfPresent(String.self, forKey: .avatar_url)
             verified = FlexibleBool.decode(c, .verified)
@@ -82,6 +82,28 @@ struct BlindbanditConversation: Identifiable, Decodable, Equatable {
     let updated_at: Double
     let other: Other?
     let last_message: LastMessage?
+
+    /// Soft-decode: one bad/missing field must not blank the whole inbox list.
+    init(id: String, updated_at: Double, other: Other?, last_message: LastMessage?) {
+        self.id = id; self.updated_at = updated_at; self.other = other; self.last_message = last_message
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? c.decode(String.self, forKey: .id))
+            ?? (try? c.decode(Int.self, forKey: .id)).map(String.init)
+            ?? ""
+        guard !id.isEmpty else {
+            throw DecodingError.dataCorruptedError(forKey: .id, in: c, debugDescription: "conversation id required")
+        }
+        updated_at = (try? c.decode(Double.self, forKey: .updated_at))
+            ?? (try? c.decode(Int.self, forKey: .updated_at)).map(Double.init)
+            ?? 0
+        other = try? c.decode(Other.self, forKey: .other)
+        last_message = try? c.decode(LastMessage.self, forKey: .last_message)
+    }
+
+    enum CodingKeys: String, CodingKey { case id, updated_at, other, last_message }
 }
 
 struct BlindbanditServerMessage: Identifiable, Decodable, Equatable {
@@ -205,13 +227,46 @@ struct BlindbanditThreadPayload: Decodable {
     var items: [BlindbanditServerMessage]
     let otherTyping: Bool
 
+    init(items: [BlindbanditServerMessage], otherTyping: Bool) {
+        self.items = items; self.otherTyping = otherTyping
+    }
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        items = try c.decode([BlindbanditServerMessage].self, forKey: .items)
+        // Prefer strict array; fall back to per-row so one bad message cannot blank the thread.
+        if let all = try? c.decode([BlindbanditServerMessage].self, forKey: .items) {
+            items = all
+        } else {
+            var arr = try c.nestedUnkeyedContainer(forKey: .items)
+            var out: [BlindbanditServerMessage] = []
+            while !arr.isAtEnd {
+                if let m = try? arr.decode(BlindbanditServerMessage.self) {
+                    out.append(m)
+                } else {
+                    // Advance past the bad element by decoding a generic JSON value.
+                    _ = try? arr.decode(BlindbanditJSONSkip.self)
+                }
+            }
+            items = out
+        }
         otherTyping = FlexibleBool.decode(c, .other_typing) ?? false
     }
 
     enum CodingKeys: String, CodingKey { case items, other_typing }
+}
+
+/// Decodes (and discards) any JSON value so lossy array parsing can skip a bad row.
+private struct BlindbanditJSONSkip: Decodable {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if c.decodeNil() { return }
+        if (try? c.decode(Bool.self)) != nil { return }
+        if (try? c.decode(Int.self)) != nil { return }
+        if (try? c.decode(Double.self)) != nil { return }
+        if (try? c.decode(String.self)) != nil { return }
+        if (try? c.decode([BlindbanditJSONSkip].self)) != nil { return }
+        if (try? c.decode([String: BlindbanditJSONSkip].self)) != nil { return }
+    }
 }
 
 /// Every API response is wrapped as `{ "success": true, "data": …, "meta": … }`.
@@ -242,10 +297,66 @@ enum BlindbanditHandle {
     }
 }
 
+/// Friendly copy for transient network failures — never show raw "The request timed out." full-screen.
+enum CommsNetwork {
+    static func friendly(_ error: Error) -> String {
+        if let url = error as? URLError {
+            switch url.code {
+            case .timedOut, .cancelled:
+                return "Still connecting…"
+            case .notConnectedToInternet, .networkConnectionLost:
+                return "You're offline. Showing saved chats when available."
+            case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed:
+                return "Can't reach Blindbandit. Retrying…"
+            default:
+                break
+            }
+        }
+        if error is DecodingError { return "Updating chats…" }
+        if let auth = error as? AuthServiceError { return auth.errorDescription ?? "Signing in…" }
+        return "Still connecting…"
+    }
+
+    static func isTransient(_ error: Error) -> Bool {
+        if let url = error as? URLError {
+            return [
+                .timedOut, .cancelled, .notConnectedToInternet, .networkConnectionLost,
+                .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed
+            ].contains(url.code)
+        }
+        if error is DecodingError { return true }
+        if case AuthServiceError.noActiveSession = error { return true }
+        if case AuthServiceError.sdkNotReady = error { return true }
+        return false
+    }
+}
+
 @MainActor
 enum BlindbanditAPI {
     static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
         try JSONDecoder().decode(BlindbanditEnvelope<T>.self, from: data).data
+    }
+
+    /// Decode envelope `items` one-by-one so a single bad row cannot blank the inbox/thread.
+    static func softDecodeItems<T: Decodable>(_ type: T.Type, from data: Data) throws -> [T] {
+        if let items = try? decode(ItemsPayload<T>.self, from: data).items { return items }
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw CommunicationsError.invalidResponse
+        }
+        let payload = (root["data"] as? [String: Any]) ?? root
+        let raw = (payload["items"] as? [Any]) ?? []
+        var out: [T] = []
+        for item in raw {
+            guard JSONSerialization.isValidJSONObject(item),
+                  let d = try? JSONSerialization.data(withJSONObject: item),
+                  let decoded = try? JSONDecoder().decode(T.self, from: d) else { continue }
+            out.append(decoded)
+        }
+        if out.isEmpty, !raw.isEmpty {
+            // Surface the original decode error rather than silently empty.
+            return try decode(ItemsPayload<T>.self, from: data).items
+        }
+        return out
     }
 
     private static func url(_ path: String) -> URL {
@@ -299,7 +410,8 @@ enum BlindbanditAPI {
     static func request(
         _ path: String,
         method: String = "GET",
-        body: [String: Any]? = nil
+        body: [String: Any]? = nil,
+        timeout: TimeInterval = 12
     ) async throws -> Data {
         // Store screenshot mode never configures Clerk, so never touch Clerk.shared there.
         if StoreScreenshotMode.isActive { throw AuthServiceError.noActiveSession }
@@ -308,7 +420,7 @@ enum BlindbanditAPI {
         }
         var request = URLRequest(url: url(path))
         request.httpMethod = method
-        request.timeoutInterval = 12
+        request.timeoutInterval = timeout
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let device = IdentityStore.shared.deviceID { request.setValue(device, forHTTPHeaderField: "X-BB-Device-Id") }
@@ -375,8 +487,9 @@ enum BlindbanditAPI {
     }
 
     static func conversations() async throws -> [BlindbanditConversation] {
-        let d = try await request("v1/social/messages?limit=100")
-        let items = try decode(ItemsPayload<BlindbanditConversation>.self, from: d).items
+        // Inbox GET gets a longer timeout; UI still paints from ChatCache instantly.
+        let d = try await request("v1/social/messages?limit=100", timeout: 20)
+        let items = try softDecodeItems(BlindbanditConversation.self, from: d)
         await ChatCache.saveList(d)
         return items
     }
@@ -387,7 +500,21 @@ enum BlindbanditAPI {
 
     /// The thread payload also carries `other_typing` (set for six seconds after the other person types).
     static func thread(conversationID: String) async throws -> BlindbanditThreadPayload {
-        var payload = try decode(BlindbanditThreadPayload.self, from: try await request("v1/social/messages/\(escape(conversationID))?limit=100"))
+        let d = try await request("v1/social/messages/\(escape(conversationID))?limit=100", timeout: 20)
+        var payload: BlindbanditThreadPayload
+        if let decoded = try? decode(BlindbanditThreadPayload.self, from: d) {
+            payload = decoded
+        } else {
+            let items = try softDecodeItems(BlindbanditServerMessage.self, from: d)
+            let typing: Bool = {
+                guard let root = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+                      let data = root["data"] as? [String: Any] else { return false }
+                if let b = data["other_typing"] as? Bool { return b }
+                if let i = data["other_typing"] as? Int { return i != 0 }
+                return false
+            }()
+            payload = BlindbanditThreadPayload(items: items, otherTyping: typing)
+        }
         payload.items = await E2EEService.shared.resolve(payload.items, conversationID: conversationID)
         return payload
     }
@@ -580,6 +707,8 @@ final class ProductionCommunicationsService: ObservableObject {
     @Published private(set) var remoteVideoTrack: VideoTrack?
     @Published var statusMessage = ""
     @Published private(set) var loadError = ""
+    /// Inline reconnect copy — never drives the full-screen CommsErrorView.
+    @Published private(set) var softBanner = ""
     @Published private(set) var callHistory: [BlindbanditCallRecord] = []
     @Published private(set) var historyError = ""
     @Published private(set) var blockedProfiles: [BlindbanditBlockedProfile] = []
@@ -622,6 +751,9 @@ final class ProductionCommunicationsService: ObservableObject {
     static let ringTimeoutSeconds: UInt64 = 45
     private var ticker: Timer?
     private var bootstrapped = false
+    private var softRetryTask: Task<Void, Never>?
+    private var softRetryAttempt = 0
+    private var threadSoftRetryTask: Task<Void, Never>?
 
     var callTimeLabel: String {
         String(format: "%02d:%02d", callSeconds / 60, callSeconds % 60)
@@ -642,56 +774,97 @@ final class ProductionCommunicationsService: ObservableObject {
         defer { isLoading = false }
         // Instant inbox: render on-device cache before any network so a slow/transient failure never shows "Couldn't load".
         loadCachedConversations()
-        if !conversations.isEmpty { loadError = "" }
-        do {
-            // GET /v1/social/me creates the profile on first use; other social endpoints require it.
-            let profile = try await BlindbanditAPI.currentProfile()
-            myProfileID = profile.id
-            myHandle = profile.handle
-            myDisplayName = profile.display_name
+        if !conversations.isEmpty {
+            loadError = ""
+            softBanner = ""
+        }
+
+        // Parallel: /me must never block the inbox. Profile failure keeps cached chats visible.
+        async let profileOutcome: Result<BlindbanditSocialProfile, Error> = {
+            do { return .success(try await BlindbanditAPI.currentProfile()) }
+            catch { return .failure(error) }
+        }()
+        async let inboxOutcome: Result<[BlindbanditConversation], Error> = {
+            do { return .success(try await BlindbanditAPI.conversations()) }
+            catch {
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                do { return .success(try await BlindbanditAPI.conversations()) }
+                catch { return .failure(error) }
+            }
+        }()
+
+        let profile = await profileOutcome
+        let inbox = await inboxOutcome
+
+        if case .success(let p) = profile {
+            myProfileID = p.id
+            myHandle = p.handle
+            myDisplayName = p.display_name
             myAvatarURL = {
-                let t = profile.avatar_url?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let t = p.avatar_url?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 return t.isEmpty ? nil : t
             }()
-            UserDefaults.standard.set(profile.id, forKey: CallKitManager.myIDKey)
-            UserDefaults.standard.set(profile.handle, forKey: CallKitManager.myHandleKey)
-            AIPersona.serverHandle = profile.handle
-            myVerified = profile.verified == true
-            E2EEService.shared.myUserID = profile.id
+            UserDefaults.standard.set(p.id, forKey: CallKitManager.myIDKey)
+            UserDefaults.standard.set(p.handle, forKey: CallKitManager.myHandleKey)
+            AIPersona.serverHandle = p.handle
+            myVerified = p.verified == true
+            E2EEService.shared.myUserID = p.id
             Task { await HistoryBackup.restoreIfNeeded(); await AIChatBackup.restoreIfNeeded() }
-            Task { await E2EEService.shared.bootstrap(handle: profile.handle) }
-            do {
-                conversations = try await BlindbanditAPI.conversations()
-            } catch {
-                // One quick retry for transient token-refresh / network blips before surfacing an error.
-                try? await Task.sleep(nanoseconds: 600_000_000)
-                conversations = try await BlindbanditAPI.conversations()
-            }
-            bootstrapped = true
-            statusMessage = ""
+            Task { await E2EEService.shared.bootstrap(handle: p.handle) }
+        }
+
+        bootstrapped = true
+        startPolling()
+
+        switch inbox {
+        case .success(let items):
+            announceNewIncoming(old: conversations, new: items)
+            conversations = items
             loadError = ""
-            startPolling()
+            softBanner = ""
+            softRetryAttempt = 0
+            softRetryTask?.cancel()
+            softRetryTask = nil
+            statusMessage = ""
+            prefetchThreads()
             await flushPendingMessages()
-        } catch {
-            // Keep showing cached threads; only show the Retry screen when there is truly nothing to show.
+        case .failure(let error):
+            // Never leave the owner on full-screen "The request timed out." Keep cache; soft-retry.
+            loadError = ""
             if conversations.isEmpty {
-                loadError = error.localizedDescription
-                statusMessage = error.localizedDescription
+                softBanner = CommsNetwork.friendly(error)
+                statusMessage = softBanner
             } else {
-                loadError = ""
-                Task { [weak self] in
-                    try? await Task.sleep(nanoseconds: 3_000_000_000)
-                    await self?.bootstrap(force: true)
-                }
+                softBanner = ""
             }
+            scheduleSoftRetry()
+            // If /me failed too, still retry — inbox soft-retry refreshes both.
+            if case .failure = profile { /* covered by scheduleSoftRetry */ }
+        }
+    }
+
+    private func scheduleSoftRetry() {
+        softRetryTask?.cancel()
+        softRetryAttempt += 1
+        let exp = min(softRetryAttempt, 5)
+        let delay = min(30.0, pow(2.0, Double(exp))) // 2,4,8,16,32 → cap 30
+        softRetryTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await self?.bootstrap(force: true)
         }
     }
 
     /// Renders the inbox instantly from the on-device cache, then refreshes from the server.
     func loadCachedConversations() {
-        guard conversations.isEmpty, let d = ChatCache.loadList(),
-              let items = try? BlindbanditAPI.decode(ItemsPayload<BlindbanditConversation>.self, from: d).items else { return }
-        conversations = items
+        guard conversations.isEmpty, let d = ChatCache.loadList() else { return }
+        if let items = try? BlindbanditAPI.softDecodeItems(BlindbanditConversation.self, from: d), !items.isEmpty {
+            conversations = items
+            return
+        }
+        if let items = try? BlindbanditAPI.decode(ItemsPayload<BlindbanditConversation>.self, from: d).items, !items.isEmpty {
+            conversations = items
+        }
     }
 
     private var prefetched = false
@@ -718,8 +891,16 @@ final class ProductionCommunicationsService: ObservableObject {
             conversations = fresh
             prefetchThreads()
             loadError = ""
+            softBanner = ""
+            softRetryAttempt = 0
+            softRetryTask?.cancel()
+            softRetryTask = nil
         } catch {
-            if conversations.isEmpty { loadError = error.localizedDescription }
+            loadError = ""
+            if conversations.isEmpty {
+                softBanner = CommsNetwork.friendly(error)
+                scheduleSoftRetry()
+            }
         }
     }
 
@@ -772,7 +953,11 @@ final class ProductionCommunicationsService: ObservableObject {
             return "@\(other.handle)"
         }()
         FeatureBehaviors220.onChatOpened(id: conversation.id, title: title, handle: handle)
-        if let cached = ChatCache.get(conversation.id) { messages = cached }
+        // Always paint cache first so a timeout never blanks an already-seen thread.
+        if let cached = ChatCache.get(conversation.id), !cached.isEmpty {
+            messages = cached
+            loadError = ""
+        }
         await reloadThread(conversation.id)
         markLocallyRead(conversation)
         try? await BlindbanditAPI.markRead(conversationID: conversation.id)
@@ -804,6 +989,10 @@ final class ProductionCommunicationsService: ObservableObject {
     }
 
     private func reloadThread(_ id: String) async {
+        if messages.isEmpty, let cached = ChatCache.get(id), !cached.isEmpty {
+            messages = cached
+            loadError = ""
+        }
         do {
             let payload = try await BlindbanditAPI.thread(conversationID: id)
             let fresh = payload.items.sorted { $0.created_at < $1.created_at }
@@ -847,9 +1036,22 @@ final class ProductionCommunicationsService: ObservableObject {
                 try? await BlindbanditAPI.markRead(conversationID: id)
             }
             loadError = ""
+            softBanner = ""
+            threadSoftRetryTask?.cancel()
+            threadSoftRetryTask = nil
         } catch {
-            // Keep cached/optimistic rows; only show Retry when the thread is truly empty.
-            if messages.isEmpty { loadError = error.localizedDescription }
+            // Keep cached/optimistic rows. Never wipe; never full-screen timeout on empty thread.
+            loadError = ""
+            if messages.isEmpty {
+                softBanner = CommsNetwork.friendly(error)
+                threadSoftRetryTask?.cancel()
+                threadSoftRetryTask = Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    guard !Task.isCancelled else { return }
+                    guard let self, self.openConversationID == id else { return }
+                    await self.reloadThread(id)
+                }
+            }
         }
     }
 

@@ -32,6 +32,10 @@ struct MoreHubView: View {
                 NavigationLink { ListenHubView() } label: { Label("Listen to Blindbandit Records", systemImage: "headphones") }
             }
 
+            Section("Phone") {
+                NavigationLink { DialerView() } label: { Label("Dialer", systemImage: "phone.circle.fill") }
+            }
+
             Section("Discover") {
                 NavigationLink { PeopleSearchView() } label: { Label("Search people", systemImage: "person.crop.circle.badge.magnifyingglass") }
                 NavigationLink { NotificationsInboxView() } label: { Label("Notifications", systemImage: "bell") }

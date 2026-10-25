@@ -178,8 +178,27 @@ struct MessagesTabView: View {
                     NavigationLink { DigestView() } label: { Label("Today's digest", systemImage: "newspaper") }
                 }
                 Section {
-                    if communications.isLoading && communications.conversations.isEmpty {
+                    if communications.isLoading && communications.conversations.isEmpty && communications.softBanner.isEmpty {
                         ProgressView("Loading conversations")
+                    } else if communications.conversations.isEmpty && !communications.softBanner.isEmpty {
+                        // Soft reconnect — never full-screen "The request timed out." / Couldn't load.
+                        VStack(spacing: 10) {
+                            ProgressView()
+                            Text(communications.softBanner)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                            Text("Retrying automatically…")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                            Button("Retry now") { Task { AppHaptics.light(); await communications.bootstrap(force: true) } }
+                                .buttonStyle(.bordered)
+                                .frame(minHeight: Brand.minTouch)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("\(communications.softBanner). Retrying automatically.")
                     } else if !communications.loadError.isEmpty && communications.conversations.isEmpty {
                         CommsErrorView(message: communications.loadError) { await communications.bootstrap(force: true) }
                     } else if communications.conversations.isEmpty {
@@ -736,7 +755,21 @@ struct ConversationThreadView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 10) {
-                    if communications.messages.isEmpty && !communications.loadError.isEmpty {
+                    if communications.messages.isEmpty && !communications.softBanner.isEmpty {
+                        VStack(spacing: 8) {
+                            ProgressView()
+                            Text(communications.softBanner)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                            Text("Retrying…")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                        .accessibilityElement(children: .combine)
+                    } else if communications.messages.isEmpty && !communications.loadError.isEmpty {
                         CommsErrorView(message: communications.loadError) {
                             if let c = conversation { await communications.openConversation(c) }
                         }
@@ -1406,6 +1439,12 @@ struct MessagesSettingsView: View {
             } header: { Text("Voice messages").accessibilityAddTraits(.isHeader) }
             Section {
                 Toggle("Magic Tap ends the call", isOn: $magicTapEnds)
+                NavigationLink { CallNumberSettingsView() } label: {
+                    Label("BlindBandit call numbers", systemImage: "phone.badge.plus")
+                }
+                NavigationLink { DialerView() } label: {
+                    Label("Dialer", systemImage: "circle.grid.3x3.fill")
+                }
                 NavigationLink { EncryptionPasscodeView() } label: {
                     Label(EncryptionPasscode.isSet(e2ee.myHandle) ? "Encryption passcode" : "Create encryption passcode", systemImage: "key.fill")
                 }

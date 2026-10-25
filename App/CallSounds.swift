@@ -162,7 +162,12 @@ enum CallSounds {
     }
 
     private static func url(named name: String) -> URL? {
-        if ambientUITheme, !name.hasPrefix("ringtone"), !name.hasPrefix("notif_ambient"), !name.hasPrefix("ambient_"),
+        // Outbound US progress tones must never swap to ambient_ringback_outgoing.
+        if ambientUITheme,
+           !name.hasPrefix("ringtone"),
+           !name.hasPrefix("notif_ambient"),
+           !name.hasPrefix("ambient_"),
+           !name.hasPrefix("ringback_us_"),
            let themed = url(named: "ambient_" + name) { return themed }
         for ext in ["caf"] {
             if let u = Bundle.main.url(forResource: name, withExtension: ext) ?? Bundle.main.url(forResource: name, withExtension: ext, subdirectory: "Sounds") { return u }
@@ -220,30 +225,123 @@ enum CallSounds {
     }
     private static var outgoingProgress: OutgoingProgress = .idle
 
-    /// Phase 1 — dialing / connecting: continuous US dial tone (350 Hz + 440 Hz).
+    /// Phase 1 — connecting / pre-ring: continuous US dial tone only (350 Hz + 440 Hz).
+    /// No fallback to legacy ringback_outgoing / ambient_ringback_outgoing.
     static func startDialTone() {
         if outgoingProgress == .dialTone, loopPlayer?.isPlaying == true { return }
-        let name = url(named: "ringback_us_dialtone") != nil ? "ringback_us_dialtone" : "ringback_outgoing"
-        playLoop(named: name, volume: 0.42)
+        guard url(named: "ringback_us_dialtone") != nil else { return }
+        playLoop(named: "ringback_us_dialtone", volume: 0.42)
         outgoingProgress = .dialTone
     }
 
-    /// Phase 2 — remote ringing: US ringback (440 Hz + 480 Hz, 2 s on / 4 s off).
+    /// Phase 2 — callee ringing: US ringback only (440 Hz + 480 Hz, 2 s on / 4 s off).
     static func startRingback() {
         if outgoingProgress == .ringback, loopPlayer?.isPlaying == true { return }
-        let name = url(named: "ringback_us_ringback") != nil ? "ringback_us_ringback"
-            : (url(named: "ringback_us_dialtone") != nil ? "ringback_us_dialtone" : "ringback_outgoing")
-        playLoop(named: name, volume: 0.42)
+        guard url(named: "ringback_us_ringback") != nil else { return }
+        playLoop(named: "ringback_us_ringback", volume: 0.42)
         outgoingProgress = .ringback
     }
 
     static func stopRingback() {
+        dialerIdle = false
         outgoingProgress = .idle
         stopLoop()
     }
 
     /// Stops dial tone and/or ringback (answer / hangup / fail).
     static func stopOutgoingProgress() { stopRingback() }
+
+    // MARK: DTMF (in-call keypad) — ITU Q.23 dual-tone, ~140 ms beep
+
+    private static let dtmfPairs: [String: (Double, Double)] = [
+        "1": (697, 1209), "2": (697, 1336), "3": (697, 1477),
+        "4": (770, 1209), "5": (770, 1336), "6": (770, 1477),
+        "7": (852, 1209), "8": (852, 1336), "9": (852, 1477),
+        "*": (941, 1209), "0": (941, 1336), "#": (941, 1477),
+    ]
+    private static var dtmfPlayer: AVAudioPlayer?
+
+    /// Classic telephone DTMF for in-call keypad taps (0–9, *, #).
+    static func playDTMF(_ key: String) {
+        guard playUISounds else { return }
+        guard let (lo, hi) = dtmfPairs[key] else { return }
+        prepareSession()
+        let sr = 44100.0
+        let duration = 0.14
+        let n = Int(duration * sr)
+        var samples = [Int16](repeating: 0, count: n)
+        let amp = 0.32
+        let fade = Int(0.006 * sr)
+        for i in 0..<n {
+            let t = Double(i) / sr
+            var v = amp * (sin(2 * .pi * lo * t) + sin(2 * .pi * hi * t))
+            if i < fade { v *= Double(i) / Double(fade) }
+            else if i > n - fade { v *= Double(n - i) / Double(fade) }
+            samples[i] = Int16(max(-1, min(1, v)) * 32000)
+        }
+        var data = Data()
+        // Minimal WAV header + PCM
+        let dataSize = samples.count * 2
+        let fileSize = 36 + dataSize
+        func le32(_ x: Int) { data.append(contentsOf: withUnsafeBytes(of: UInt32(x).littleEndian) { Array($0) }) }
+        func le16(_ x: Int) { data.append(contentsOf: withUnsafeBytes(of: UInt16(x).littleEndian) { Array($0) }) }
+        data.append(contentsOf: [0x52,0x49,0x46,0x46]) // RIFF
+        le32(fileSize)
+        data.append(contentsOf: [0x57,0x41,0x56,0x45,0x66,0x6D,0x74,0x20]) // WAVEfmt 
+        le32(16); le16(1); le16(1); le32(Int(sr)); le32(Int(sr) * 2); le16(2); le16(16)
+        data.append(contentsOf: [0x64,0x61,0x74,0x61]) // data
+        le32(dataSize)
+        for s in samples { le16(Int(s)) }
+        do {
+            dtmfPlayer = try AVAudioPlayer(data: data)
+            dtmfPlayer?.volume = 0.7
+            dtmfPlayer?.prepareToPlay()
+            dtmfPlayer?.play()
+        } catch {}
+    }
+
+    // MARK: Dialer landline session (More → Dialer)
+
+    /// True while Dialer is open waiting for the first digit (idle dial tone).
+    private static var dialerIdle = false
+
+    /// Open Dialer → continuous US dial tone until a digit or Call/End.
+    static func openDialerIdleTone() {
+        dialerIdle = true
+        startDialTone()
+    }
+
+    /// Each keypad press: kill idle dial tone on first digit, then ITU DTMF.
+    static func dialerKeyPress(_ key: String) {
+        if dialerIdle || outgoingProgress == .dialTone {
+            dialerIdle = false
+            stopOutgoingProgress()
+        }
+        playDTMF(key)
+    }
+
+    /// Leave Dialer / End — stop dial, ringback, howler, reorder.
+    static func closeDialer() {
+        dialerIdle = false
+        stopOutgoingProgress()
+        stopLoop()
+    }
+
+    /// Off-hook howler (ROH) — optional landline cue after long idle or failed End.
+    static func startHowler() {
+        dialerIdle = false
+        guard url(named: "ringback_us_howler") != nil else { return }
+        playLoop(named: "ringback_us_howler", volume: 0.32)
+        outgoingProgress = .idle
+    }
+
+    /// Reorder / all-circuits-busy (480/620 alternate) — optional.
+    static func startReorderTone() {
+        dialerIdle = false
+        guard url(named: "ringback_us_reorder") != nil else { return }
+        playLoop(named: "ringback_us_reorder", volume: 0.36)
+        outgoingProgress = .idle
+    }
 
     static func playRingtone(preview: Bool = false) {
         if preview {
@@ -254,9 +352,9 @@ enum CallSounds {
         }
     }
 
+    /// Outbound tap: dial tone only (connecting). No legacy call_initiated / ringback_outgoing cue.
     static func callInitiated() {
         startDialTone()
-        playOneShot(named: "call_initiated", volume: 0.55)
         CallHaptics.outgoingStart()
         CallHaptics.startRingingPulse()
     }

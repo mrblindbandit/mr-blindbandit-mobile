@@ -405,7 +405,8 @@ enum ChatCache {
     static func clear() { threads = [:]; try? FileManager.default.removeItem(at: listURL) }
 
     static let listURL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("conversations.cache.json")
-    static func saveList(_ d: Data) { try? d.write(to: listURL, options: [.atomic, .completeFileProtection]) }
+    /// Until-first-unlock so bootstrap after relaunch can read the inbox before the phone is unlocked again.
+    static func saveList(_ d: Data) { try? d.write(to: listURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]) }
     static func loadList() -> Data? { AppPIN.decoyActive ? nil : try? Data(contentsOf: listURL) }
 }
 

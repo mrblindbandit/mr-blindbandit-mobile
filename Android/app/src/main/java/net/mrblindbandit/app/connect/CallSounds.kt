@@ -80,7 +80,7 @@ class CallSounds(private val context: Context) {
                 listOf(
                     "call_initiated", "call_connected", "hangup", "busy_tone",
                     "message_sent", "voicenote_sent", "attachment_sent",
-                    "typing_ping", "ringback_outgoing"
+                    "typing_ping"
                 )
             )
         }.distinct()
@@ -149,7 +149,32 @@ class CallSounds(private val context: Context) {
 
     fun stopOutgoingProgress() = stopRingback()
 
-    fun callInitiated() { startDialTone(); play("call_initiated", 0.55f) }
+    /** Classic telephone DTMF (ITU) for in-call keypad. */
+    fun playDTMF(key: String) {
+        if (!playUISounds) return
+        val tone = when (key) {
+            "0" -> android.media.ToneGenerator.TONE_DTMF_0
+            "1" -> android.media.ToneGenerator.TONE_DTMF_1
+            "2" -> android.media.ToneGenerator.TONE_DTMF_2
+            "3" -> android.media.ToneGenerator.TONE_DTMF_3
+            "4" -> android.media.ToneGenerator.TONE_DTMF_4
+            "5" -> android.media.ToneGenerator.TONE_DTMF_5
+            "6" -> android.media.ToneGenerator.TONE_DTMF_6
+            "7" -> android.media.ToneGenerator.TONE_DTMF_7
+            "8" -> android.media.ToneGenerator.TONE_DTMF_8
+            "9" -> android.media.ToneGenerator.TONE_DTMF_9
+            "*" -> android.media.ToneGenerator.TONE_DTMF_S
+            "#" -> android.media.ToneGenerator.TONE_DTMF_P
+            else -> return
+        }
+        try {
+            val tg = android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 80)
+            tg.startTone(tone, 140)
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ tg.release() }, 200)
+        } catch (_: Exception) {}
+    }
+
+    fun callInitiated() { startDialTone() /* dial tone only — no legacy call_initiated oneshot */ }
     fun callConnecting() = CallHaptics.connecting(context)
     fun callConnected() {
         stopRingback()

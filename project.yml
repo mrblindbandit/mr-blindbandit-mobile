@@ -40,8 +40,7 @@ targets:
         # CallKit: incoming calls arrive as PushKit VoIP pushes; Recents/Siri redial via INStartCallIntent.
         UIBackgroundModes: [audio, remote-notification, voip]
         NSUserActivityTypes: [INStartCallIntent, INSendMessageIntent, net.mrblindbandit.app.handoff.chat, net.mrblindbandit.app.handoff.ai, net.mrblindbandit.app.handoff.bites]
-        NSSupportsLiveActivities: true
-        NSSupportsLiveActivitiesFrequentUpdates: true
+        # NSSupportsLiveActivities*: omit until BlindbanditWidgets is re-embedded (Apple rejects LA without WidgetKit extension).
         NSAppleMusicUsageDescription: The AI can play, search and queue Apple Music and your library inside Mr. BlindBandit when you ask it to.
         BBKeychainGroup: $(AppIdentifierPrefix)net.mrblindbandit.shared
         RTCAppGroupIdentifier: group.net.mrblindbandit.app
@@ -74,7 +73,7 @@ targets:
         INFOPLIST_KEY_UIBackgroundModes: [audio, remote-notification, voip]
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         MARKETING_VERSION: '2.2.0'
-        CURRENT_PROJECT_VERSION: '31'
+        CURRENT_PROJECT_VERSION: '32'
     dependencies:
       - package: LiveKitClient
         product: LiveKit
@@ -104,7 +103,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: net.mrblindbandit.app.widgets
         CODE_SIGN_ENTITLEMENTS: Widgets/BlindbanditWidgets/BlindbanditWidgets.entitlements
         MARKETING_VERSION: '2.2.0'
-        CURRENT_PROJECT_VERSION: '31'
+        CURRENT_PROJECT_VERSION: '32'
         TARGETED_DEVICE_FAMILY: '1'
         APPLICATION_EXTENSION_API_ONLY: YES
         GENERATE_INFOPLIST_FILE: YES
@@ -126,7 +125,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: net.mrblindbandit.app.watchkitapp
         CODE_SIGN_ENTITLEMENTS: WatchApp/BlindbanditWatch/BlindbanditWatch.entitlements
         MARKETING_VERSION: '2.2.0'
-        CURRENT_PROJECT_VERSION: '31'
+        CURRENT_PROJECT_VERSION: '32'
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_FILE: WatchApp/BlindbanditWatch/Info.plist
         SDKROOT: watchos
@@ -150,7 +149,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: net.mrblindbandit.app.ScreenShare
         CODE_SIGN_ENTITLEMENTS: ScreenShare/ScreenShare.entitlements
         MARKETING_VERSION: '2.2.0'
-        CURRENT_PROJECT_VERSION: '31'
+        CURRENT_PROJECT_VERSION: '32'
         TARGETED_DEVICE_FAMILY: '1'
         APPLICATION_EXTENSION_API_ONLY: YES
     dependencies:
@@ -182,7 +181,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: net.mrblindbandit.app.NotificationService
         CODE_SIGN_ENTITLEMENTS: NotificationService/NotificationService.entitlements
         MARKETING_VERSION: '2.2.0'
-        CURRENT_PROJECT_VERSION: '31'
+        CURRENT_PROJECT_VERSION: '32'
         TARGETED_DEVICE_FAMILY: '1'
   BlindbanditTests:
     type: bundle.unit-test

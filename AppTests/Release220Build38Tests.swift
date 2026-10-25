@@ -52,4 +52,43 @@ final class Release220Build38Tests: XCTestCase {
             XCTAssertEqual(build, "38")
         }
     }
+
+    // MARK: - Messages timeout soft-recover (build 38)
+
+    func testCommsNetworkFriendlyTimeoutCopy() {
+        let text = CommsNetwork.friendly(URLError(.timedOut))
+        XCTAssertFalse(text.lowercased().contains("timed out"), text)
+        XCTAssertFalse(text.isEmpty)
+        XCTAssertTrue(CommsNetwork.isTransient(URLError(.timedOut)))
+        XCTAssertTrue(CommsNetwork.isTransient(URLError(.notConnectedToInternet)))
+    }
+
+    func testSoftDecodeItemsSkipsCorruptRows() throws {
+        let payload: [String: Any] = [
+            "success": true,
+            "data": [
+                "items": [
+                    [
+                        "id": "c1",
+                        "updated_at": 1,
+                        "other": ["handle": "alice", "display_name": "Alice", "avatar_url": "", "verified": true],
+                        "last_message": NSNull(),
+                        "unread_count": 0
+                    ],
+                    ["id": 123, "broken": true]
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let items = try BlindbanditAPI.softDecodeItems(BlindbanditConversation.self, from: data)
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items.first?.id, "c1")
+        XCTAssertEqual(items.first?.other.handle, "alice")
+    }
+
+    func testSoftBannerKeyPathExists() {
+        _ = \ProductionCommunicationsService.softBanner
+        XCTAssertTrue(true)
+    }
+
 }

@@ -40,10 +40,10 @@ struct ListenHubView: View {
             }
 
             Section("Official site") {
-                NavigationLink { Website(path: "/music/", title: "Music") } label: {
+                NavigationLink { NativeMusicHubView() } label: {
                     Label("Music on mrblindbandit.net", systemImage: "globe")
                 }
-                NavigationLink { Website(path: "/", title: "Latest") } label: {
+                NavigationLink { ChronicleView() } label: {
                     Label("Latest drops", systemImage: "sparkles")
                 }
             }
@@ -83,7 +83,7 @@ struct ListenHubView: View {
                                 .accessibilityHint("Opens \(service.name) in its app or browser.")
                             }
                             if let path = service.webPath {
-                                NavigationLink("Browse site") { Website(path: path, title: service.name) }
+                                Link("Open in Safari", destination: AppConfig.webBaseURL.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))))
                                     .buttonStyle(.borderedProminent)
                                     .tint(.yellow)
                                     .foregroundStyle(.black)

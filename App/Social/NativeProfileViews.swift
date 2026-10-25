@@ -106,11 +106,29 @@ struct NativeProfileView: View {
                                 Label("Message", systemImage: "message.fill")
                             }
                             .buttonStyle(.bordered)
+                            Button {
+                                Task {
+                                    await communications.startCall(recipient: profile.handle, video: false)
+                                }
+                            } label: {
+                                Label("Call", systemImage: "phone.fill")
+                            }
+                            .buttonStyle(.bordered)
+                            .accessibilityHint("Start a voice call with @\(profile.handle)")
                         }
                         .buttonStyle(.borderless)
                     }
+                    Section {
+                        ProfileShareBlockBar(handle: profile.handle, displayName: profile.display_name)
+                    }
                 } else {
                     Section("Your account") {
+                        ShareLink(item: "https://mrblindbandit.net/@\(profile.handle)") {
+                            Label("Share my profile", systemImage: "square.and.arrow.up")
+                        }
+                        NavigationLink("Edit display name") { DisplayNameEditor() }
+                        NavigationLink("Edit bio") { BioEditorView() }
+                        NavigationLink("Edit profile picture") { ProfilePictureEditor() }
                         NavigationLink("Edit username") { UsernameEditor().navigationTitle("Username") }
                         NavigationLink("Settings") { Settings() }
                         if AdminGate.isAdmin(handle: communications.myHandle, profileID: communications.myProfileID) {
@@ -305,6 +323,74 @@ struct ProfileTabView: View {
             NativeProfileView(handle: "", isMe: true)
                 .navigationTitle("Profile")
                 .navigationBarTitleDisplayMode(.large)
+        }
+    }
+}
+
+
+// MARK: - Bio editor (native)
+
+struct BioEditorView: View {
+    @EnvironmentObject private var communications: ProductionCommunicationsService
+    @Environment(\.dismiss) private var dismiss
+    @State private var bio = ""
+    @State private var saving = false
+    @State private var error = ""
+    private let limit = 300
+
+    var body: some View {
+        Form {
+            Section {
+                TextField("Bio", text: $bio, axis: .vertical)
+                    .lineLimit(3...8)
+                    .accessibilityLabel("Profile bio")
+            } footer: {
+                Text("\(bio.count) / \(limit)")
+            }
+            if !error.isEmpty {
+                Text(error).foregroundStyle(.red)
+            }
+        }
+        .navigationTitle("Edit bio")
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button(saving ? "Saving…" : "Save") { Task { await save() } }
+                    .disabled(saving || bio.count > limit)
+            }
+        }
+        .task {
+            if let p = try? await BitesAPI.profileFull(handle: communications.myHandle) {
+                bio = p.bio ?? ""
+            }
+        }
+    }
+
+    private func save() async {
+        saving = true
+        defer { saving = false }
+        do {
+            _ = try await BlindbanditAPI.request(
+                "v1/social/profiles/me",
+                method: "PATCH",
+                body: ["bio": String(bio.prefix(limit))]
+            )
+            AppHaptics.success()
+            UIAccessibility.post(notification: .announcement, argument: "Bio saved")
+            dismiss()
+        } catch {
+            // Try alternate path
+            do {
+                _ = try await BlindbanditAPI.request(
+                    "api/v1/users/me",
+                    method: "PATCH",
+                    body: ["bio": String(bio.prefix(limit))]
+                )
+                AppHaptics.success()
+                dismiss()
+            } catch {
+                self.error = error.localizedDescription
+                AppHaptics.error()
+            }
         }
     }
 }

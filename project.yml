@@ -69,8 +69,8 @@ targets:
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         INFOPLIST_KEY_UIBackgroundModes: [audio, remote-notification, voip]
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        MARKETING_VERSION: '2.0.10'
-        CURRENT_PROJECT_VERSION: '29'
+        MARKETING_VERSION: '2.1.0'
+        CURRENT_PROJECT_VERSION: '30'
     dependencies:
       - package: LiveKitClient
         product: LiveKit
@@ -99,8 +99,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.mrblindbandit.app.ScreenShare
         CODE_SIGN_ENTITLEMENTS: ScreenShare/ScreenShare.entitlements
-        MARKETING_VERSION: '2.0.10'
-        CURRENT_PROJECT_VERSION: '29'
+        MARKETING_VERSION: '2.1.0'
+        CURRENT_PROJECT_VERSION: '30'
         TARGETED_DEVICE_FAMILY: '1'
         APPLICATION_EXTENSION_API_ONLY: YES
     dependencies:
@@ -131,8 +131,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.mrblindbandit.app.NotificationService
         CODE_SIGN_ENTITLEMENTS: NotificationService/NotificationService.entitlements
-        MARKETING_VERSION: '2.0.10'
-        CURRENT_PROJECT_VERSION: '29'
+        MARKETING_VERSION: '2.1.0'
+        CURRENT_PROJECT_VERSION: '30'
         TARGETED_DEVICE_FAMILY: '1'
   BlindbanditTests:
     type: bundle.unit-test

@@ -70,16 +70,16 @@ struct ProfileHubView: View {
             }
 
             Section("Blindbandit Records") {
-                NavigationLink { Website(path: "/music/", title: "Music") } label: {
+                NavigationLink { NativeMusicHubView() } label: {
                     Label("Music", systemImage: "music.note")
                 }
-                NavigationLink { Website(path: "/about/", title: "About") } label: {
+                NavigationLink { NativeAboutHubView() } label: {
                     Label("About Mr. Blindbandit", systemImage: "info.circle")
                 }
             }
 
             Section("Help") {
-                NavigationLink { Website(url: AppConfig.supportURL, title: "Support") } label: {
+                NavigationLink { NativeSupportHubView() } label: {
                     Label("Help & support", systemImage: "questionmark.circle")
                 }
             }

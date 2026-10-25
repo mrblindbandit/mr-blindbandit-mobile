@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// More: account, Blindbandit Records pages, settings and sharing.
+/// More: account, Blindbandit Records pages, settings and sharing — fully native hubs (Safari only for explicit external opens).
 struct MoreHubView: View {
     @EnvironmentObject private var auth: ClerkAuthService
     @EnvironmentObject private var communications: ProductionCommunicationsService
@@ -32,6 +32,12 @@ struct MoreHubView: View {
                 NavigationLink { ListenHubView() } label: { Label("Listen to Blindbandit Records", systemImage: "headphones") }
             }
 
+            Section("Discover") {
+                NavigationLink { PeopleSearchView() } label: { Label("Search people", systemImage: "person.crop.circle.badge.magnifyingglass") }
+                NavigationLink { NotificationsInboxView() } label: { Label("Notifications", systemImage: "bell") }
+                NavigationLink { BiteBookmarksView() } label: { Label("Saved Bites", systemImage: "bookmark") }
+            }
+
             Section("Your account") {
                 NavigationLink { MessagesSettingsView() } label: {
                     Label("Messages & calls", systemImage: "bubble.left.and.bubble.right")
@@ -45,15 +51,14 @@ struct MoreHubView: View {
             }
 
             Section("Blindbandit Records") {
-                NavigationLink { Website(path: "/music/", title: "Music") } label: { Label("Music", systemImage: "music.note") }
-                NavigationLink { Website(path: "/label/", title: "Blindbandit Records") } label: { Label("Blindbandit Records", systemImage: "opticaldisc") }
-                NavigationLink { Website(path: "/community/", title: "Community") } label: { Label("Community", systemImage: "person.3") }
-                NavigationLink { Website(path: "/portal/", title: "Label portal") } label: { Label("Label portal for signed artists", systemImage: "building.2") }
-                NavigationLink { Website(path: "/about/", title: "About") } label: { Label("About Mr. Blindbandit", systemImage: "info.circle") }
+                NavigationLink { NativeMusicHubView() } label: { Label("Music", systemImage: "music.note") }
+                NavigationLink { NativeLabelHubView() } label: { Label("Blindbandit Records", systemImage: "opticaldisc") }
+                NavigationLink { NativeCommunityHubView() } label: { Label("Community", systemImage: "person.3") }
+                NavigationLink { NativeAboutHubView() } label: { Label("About Mr. Blindbandit", systemImage: "info.circle") }
             }
 
             Section("Help") {
-                NavigationLink { Website(url: AppConfig.supportURL, title: "Support") } label: { Label("Help & support", systemImage: "questionmark.circle") }
+                NavigationLink { NativeSupportHubView() } label: { Label("Help & support", systemImage: "questionmark.circle") }
                 Link(destination: URL(string: "mailto:\(AppConfig.supportEmail)")!) {
                     Label("Email \(AppConfig.supportEmail)", systemImage: "envelope")
                 }

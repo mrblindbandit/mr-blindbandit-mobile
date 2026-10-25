@@ -19,7 +19,10 @@ struct BiteAuthor: Identifiable, Codable, Equatable, Hashable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        handle = (try? c.decode(String.self, forKey: .handle)) ?? ""
+        // /api/v1/feed uses `username`; /v1/social/newsfeed uses `handle`.
+        handle = (try? c.decode(String.self, forKey: .handle))
+            ?? (try? c.decode(String.self, forKey: .username))
+            ?? ""
         id = (try? c.decode(String.self, forKey: .id)) ?? handle
         let name = try? c.decodeIfPresent(String.self, forKey: .display_name)
         display_name = (name?.isEmpty == false ? name! : handle)
@@ -27,7 +30,7 @@ struct BiteAuthor: Identifiable, Codable, Equatable, Hashable {
         verified = FlexibleBool.decode(c, .verified) ?? false
     }
 
-    enum CodingKeys: String, CodingKey { case id, handle, display_name, avatar_url, verified }
+    enum CodingKeys: String, CodingKey { case id, handle, username, display_name, avatar_url, verified }
 }
 
 struct BiteReactions: Codable, Equatable {
@@ -97,11 +100,15 @@ struct BiteItem: Identifiable, Equatable, Decodable {
         }
         author = (try? c.decode(BiteAuthor.self, forKey: .author))
             ?? BiteAuthor(handle: (try? c.decode(String.self, forKey: .handle)) ?? "unknown")
-        likes = (try? c.decode(Int.self, forKey: .likes)) ?? 0
+        likes = (try? c.decode(Int.self, forKey: .likes))
+            ?? (try? c.decode(Int.self, forKey: .like_count))
+            ?? 0
         if let reactions = try? c.decode(BiteReactions.self, forKey: .reactions), likes == 0 {
             likes = reactions.total > 0 ? reactions.total : reactions.like
         }
-        comments = (try? c.decode(Int.self, forKey: .comments)) ?? 0
+        comments = (try? c.decode(Int.self, forKey: .comments))
+            ?? (try? c.decode(Int.self, forKey: .comment_count))
+            ?? 0
         liked_by_me = FlexibleBool.decode(c, .liked_by_me) ?? false
         my_reaction = try? c.decodeIfPresent(String.self, forKey: .my_reaction)
         if video_url != nil || (try? c.decodeIfPresent(String.self, forKey: .product)) == "BanditBites" {
@@ -113,6 +120,7 @@ struct BiteItem: Identifiable, Equatable, Decodable {
 
     enum CodingKeys: String, CodingKey {
         case id, body, caption, media, video_url, poster_url, created_at, author, likes, comments
+        case like_count, comment_count
         case liked_by_me, my_reaction, reactions, handle, product
     }
 

@@ -370,3 +370,7 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 For every future release, update the source versions, build numbers, CI artifact names, README release table, and this changelog in the same release commit or pull request.
 
 See `RELEASING.md` for the release checklist.
+
+## 2.1.0 (build 30) — Flagship native Bandit Feed
+
+See FLAGSHIP_CHANGES.md for the full numbered list (~103 features): native Bandit Feed (swipe-like, VoiceOver actions, composer drafts, reactions, comments, bookmarks, mute/hide), fatter Settings (Feed/AI/privacy/notif/appearance/security), AI internet search via `/v1/ai/search` + Foundation Models upgrades, WebView shells replaced with native hubs (Safari only for explicit external opens). Profiles/Bites/Admin/calls/messaging retained.

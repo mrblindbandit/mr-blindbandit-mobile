@@ -81,7 +81,11 @@ final class AIChatStore: ObservableObject {
     """
 
     func instructions() -> String {
-        var s = AIPersona.forPrivate.prompt() + " Today is \(Date().formatted(date: .complete, time: .shortened))."
+        var s = AIPersona.forPrivate.prompt() + " " + AIPersonaMode.current.promptAddon
+        s += " Today is \(Date().formatted(date: .complete, time: .shortened))."
+        if UserDefaults.standard.object(forKey: SettingsKey.aiPreferOnDevice) as? Bool ?? true {
+            s += " Prefer on-device tools; escalate to cloud only when asked or when on-device fails."
+        }
         if !memory.facts.isEmpty { s += " Things you remember about the user: " + memory.facts.joined(separator: "; ") + "." }
         if !memory.summary.isEmpty { s += " Summary of your earlier conversations: " + memory.summary }
         return s
@@ -130,6 +134,19 @@ final class AIChatStore: ObservableObject {
             commit()
             return
         }
+        // Force live web context when the question clearly needs the internet (Cloud AI / Brave via /v1/ai/search).
+        var webContext = ""
+        if WebSearch.allowed, WebSearch.needsLiveInfo(question) {
+            webContext = await WebSearch.search(question)
+            UIAccessibility.post(notification: .announcement, argument: "Searching the web")
+        }
+        let promptForModel: String
+        if webContext.isEmpty {
+            promptForModel = question
+        } else {
+            promptForModel = "Live web results (cite links, do not invent):\n" + webContext + "\n\nUser question: " + question
+        }
+
         let reply = Line(fromAI: true, text: "")
         lines.append(reply)
         var final = ""
@@ -139,7 +156,7 @@ final class AIChatStore: ObservableObject {
             for attempt in 0..<2 {
                 guard let session = session() as? LanguageModelSession else { break }
                 do {
-                    for try await snap in session.streamResponse(to: question) {
+                    for try await snap in session.streamResponse(to: promptForModel) {
                         final = snap.content
                         update(reply.id, text: final)
                         // Read finished sentences as they stream in.
@@ -220,7 +237,10 @@ final class AIChatStore: ObservableObject {
 @MainActor
 final class AIVoice: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
     static let shared = AIVoice()
-    static var speakReplies: Bool { UserDefaults.standard.bool(forKey: "ai.speakReplies") }
+    static var speakReplies: Bool {
+        get { UserDefaults.standard.object(forKey: SettingsKey.aiSpeakReplies) as? Bool ?? false }
+        set { UserDefaults.standard.set(newValue, forKey: SettingsKey.aiSpeakReplies) }
+    }
     static var handsFree: Bool { UserDefaults.standard.bool(forKey: "ai.handsFree") }
     private let synth = AVSpeechSynthesizer()
     @Published var speaking = false
@@ -651,6 +671,7 @@ struct AIChatView: View {
                         Button(speakReplies ? "Stop speaking replies" : "Speak replies") { speakReplies.toggle() }
                         Button("Clear AI chat") { confirmClear = true }
                         if CloudAI.isOn(.chat) { Button("Ask the bigger AI") { askBigger() } }
+                        if WebSearch.allowed { Button("Search the web") { searchWeb() } }
                         if CloudAI.isOn(.image) { Button("Make an image") { makeImage() } }
                     }
                 PhotosPicker(selection: $photoItem, matching: .images) {
@@ -680,6 +701,7 @@ struct AIChatView: View {
                 Toggle("Hands-free conversation", isOn: $handsFree)
                 Button("What AI remembers") { showMemory = true }
                 if CloudAI.isOn(.chat) { Button("Ask the bigger AI") { askBigger() } }
+                if WebSearch.allowed { Button("Search the web") { searchWeb() } }
                 if CloudAI.isOn(.image) { Button("Make an image") { makeImage() } }
                 Button("Clear AI chat", role: .destructive) { confirmClear = true }
             } label: { Image(systemName: "gearshape") }.accessibilityLabel("AI chat settings")
@@ -760,6 +782,17 @@ struct AIChatView: View {
             UIAccessibility.post(notification: .announcement, argument: "Type your question first"); return
         }
         store.forceCloud = true
+        send()
+    }
+
+    private func searchWeb() {
+        let q = draft.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else {
+            UIAccessibility.post(notification: .announcement, argument: "Type what to search first"); return
+        }
+        if !q.lowercased().contains("search") {
+            draft = "Search the web for: " + q
+        }
         send()
     }
 

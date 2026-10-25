@@ -33,14 +33,14 @@ enum BitesCache {
 @MainActor
 enum BitesAPI {
 
-    /// Live social API today: `/v1/social/…`.
-    /// Upcoming batch ea112272 (deploy_authorized): `/api/v1/feed|/bites|/users|/admin…`.
-    /// Prefer live paths; optionally probe aliases when primary 404s.
-    private static let upcomingAliases: [String: String] = [
+    /// Prefer `/api/v1/feed` (username/like_count shape). Fall back to `/v1/social/newsfeed` on 404.
+    private static let feedFallbacks: [String: String] = [
+        "api/v1/feed": "v1/social/newsfeed",
+        "api/v1/bites": "v1/social/bites",
         "v1/social/newsfeed": "api/v1/feed",
-        "v1/social/feed": "api/v1/feed",
         "v1/social/bites": "api/v1/bites",
     ]
+    private static let upcomingAliases: [String: String] = feedFallbacks
 
     /// Profile full → upcoming `/api/v1/users/{handle}` when live.
     private static func requestProfileFull(handle: String) async throws -> Data {
@@ -71,9 +71,9 @@ enum BitesAPI {
         }
     }
 
-    /// Newsfeed (text posts) — primary Bites tab content while video BanditBites fill in.
+    /// Newsfeed (text posts) — prefer `/api/v1/feed`, fall back to `/v1/social/newsfeed`.
     static func newsfeed(limit: Int = 40, offset: Int = 0, useCache: Bool = true) async throws -> [BiteItem] {
-        let path = "v1/social/newsfeed?limit=\(limit)&offset=\(offset)"
+        let path = "api/v1/feed?limit=\(limit)&offset=\(offset)"
         let cacheKey = "newsfeed-\(offset)"
         if useCache, offset == 0, let cached = BitesCache.load(cacheKey),
            let page = try? BlindbanditAPI.decode(SocialFeedPage.self, from: cached) {
@@ -92,7 +92,7 @@ enum BitesAPI {
     }
 
     static func videoBites(limit: Int = 25, offset: Int = 0) async throws -> [BiteItem] {
-        let data = try await requestSocial("v1/social/bites?limit=\(limit)&offset=\(offset)")
+        let data = try await requestSocial("api/v1/bites?limit=\(limit)&offset=\(offset)")
         if offset == 0 { BitesCache.save(data, key: "bites-0") }
         return try BlindbanditAPI.decode(SocialFeedPage.self, from: data).items
     }

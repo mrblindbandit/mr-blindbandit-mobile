@@ -710,3 +710,181 @@ struct BlindExtrasSettingsView: View {
         .navigationTitle("Blind-first extras")
     }
 }
+
+
+// MARK: - Bandit Feed preferences
+
+struct BanditFeedSettingsView: View {
+    @AppStorage(SettingsKey.bitesSwipeToLike) private var swipeToLike = true
+    @AppStorage(SettingsKey.bitesShowLikeHints) private var showHints = true
+    @AppStorage(SettingsKey.bitesAutoPlayVideos) private var autoPlay = false
+    @AppStorage(SettingsKey.bitesDataSaverMedia) private var dataSaver = false
+    @AppStorage(SettingsKey.bitesHideLikedCounts) private var hideCounts = false
+    @AppStorage(SettingsKey.feedPrefFollowingOnly) private var followingOnly = false
+    @AppStorage(SettingsKey.feedPrefHideReposts) private var hideReposts = false
+    @AppStorage(SettingsKey.compactFeedDensity) private var compact = false
+    @AppStorage(SettingsKey.boldFeedText) private var boldFeed = false
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Swipe up to like, down to unlike", isOn: $swipeToLike)
+                Toggle("Show swipe hints on Bandit Feed", isOn: $showHints)
+                Toggle("Auto-play short video Bites on Wi-Fi", isOn: $autoPlay)
+                Toggle("Data saver — load media on demand", isOn: $dataSaver)
+                Toggle("Hide like counts", isOn: $hideCounts)
+                Toggle("Following only (when server supports)", isOn: $followingOnly)
+                Toggle("Hide reposts (when server supports)", isOn: $hideReposts)
+                Toggle("Compact feed density", isOn: $compact)
+                Toggle("Bold Bite text", isOn: $boldFeed)
+            } header: { Text("Bandit Feed").accessibilityAddTraits(.isHeader) } footer: {
+                Text("Swipe gestures work alongside scrolling. VoiceOver users get Like, Unlike, Comment, Share, Save, Hide, and Mute as custom actions.")
+            }
+            Section {
+                Button("Clear saved Bites") {
+                    UserDefaults.standard.removeObject(forKey: "bites.bookmarks.v1")
+                    AppHaptics.success()
+                    UIAccessibility.post(notification: .announcement, argument: "Saved Bites cleared")
+                }
+                Button("Clear muted authors") {
+                    UserDefaults.standard.removeObject(forKey: "bites.mutedAuthors.v1")
+                    AppHaptics.success()
+                }
+                Button("Clear hidden Bites") {
+                    UserDefaults.standard.removeObject(forKey: "bites.hiddenPosts.v1")
+                    AppHaptics.success()
+                }
+            } header: { Text("Local feed data").accessibilityAddTraits(.isHeader) }
+        }
+        .navigationTitle("Bandit Feed")
+    }
+}
+
+// MARK: - AI preferences
+
+struct AIPreferencesSettingsView: View {
+    @AppStorage(SettingsKey.aiWebSearch) private var webSearch = true
+    @AppStorage(SettingsKey.aiPreferOnDevice) private var preferOnDevice = true
+    @AppStorage(SettingsKey.aiCloudFallback) private var cloudFallback = true
+    @AppStorage(SettingsKey.aiSpeakReplies) private var speak = false
+    @AppStorage(SettingsKey.aiPersonaMode) private var persona = AIPersonaMode.friend.rawValue
+    @AppStorage(SettingsKey.aiTranslateDefault) private var translateLang = "Cebuano"
+    @AppStorage(SettingsKey.aiCaptionHelper) private var captionHelper = true
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Allow AI to search the internet", isOn: $webSearch)
+                    .accessibilityHint("Uses Blindbandit Cloud AI search on the server")
+                Toggle("Prefer on-device Apple Foundation Models", isOn: $preferOnDevice)
+                Toggle("Allow Cloud AI fallback", isOn: $cloudFallback)
+                Toggle("Speak AI replies aloud", isOn: $speak)
+                    .onChange(of: speak) { _, v in AIVoice.speakReplies = v }
+                Toggle("Caption helper for new Bites", isOn: $captionHelper)
+            } header: { Text("Routing").accessibilityAddTraits(.isHeader) } footer: {
+                Text("Web search hits /v1/ai/search on mrblindbandit.net (Brave or equivalent). On-device Apple Foundation Models run first when available; Cloud AI covers harder questions.")
+            }
+            Section {
+                Picker("Persona mode", selection: $persona) {
+                    ForEach(AIPersonaMode.allCases) { m in
+                        Text(m.title).tag(m.rawValue)
+                    }
+                }
+                .onChange(of: persona) { _, _ in AIChatStore.shared.resetSession() }
+                Picker("Default translate language", selection: $translateLang) {
+                    Text("Cebuano").tag("Cebuano")
+                    Text("Tagalog").tag("Tagalog")
+                    Text("English").tag("English")
+                    Text("Spanish").tag("Spanish")
+                }
+            } header: { Text("Style").accessibilityAddTraits(.isHeader) }
+            AIStyleSection()
+        }
+        .navigationTitle("AI")
+    }
+}
+
+// MARK: - Privacy / notif / a11y / appearance / language / security extras (2.1)
+
+struct PrivacyExtrasSettingsView: View {
+    @AppStorage(SettingsKey.showOnlineStatus) private var online = true
+    @AppStorage(SettingsKey.blockUnknownCallers) private var blockUnknown = false
+    @AppStorage(SettingsKey.sendReadReceipts) private var receipts = true
+    @AppStorage(SettingsKey.sendTypingIndicators) private var typing = true
+    @AppStorage(SettingsKey.lastSeenVisibility) private var lastSeen = LastSeenVisibility.everyone.rawValue
+    var body: some View {
+        Form {
+            Toggle("Show when I’m online", isOn: $online)
+            Toggle("Silence unknown callers", isOn: $blockUnknown)
+            Toggle("Send read receipts", isOn: $receipts)
+            Toggle("Send typing indicators", isOn: $typing)
+            Picker("Last seen", selection: $lastSeen) {
+                ForEach(LastSeenVisibility.allCases) { v in Text(v.title).tag(v.rawValue) }
+            }
+        }
+        .navigationTitle("Privacy extras")
+    }
+}
+
+struct NotificationCategoriesSettingsView: View {
+    @AppStorage(SettingsKey.notifyBites) private var bites = true
+    @AppStorage(SettingsKey.notifyFollows) private var follows = true
+    @AppStorage(SettingsKey.bitesNotifyComments) private var comments = true
+    @AppStorage(SettingsKey.bitesNotifyMentions) private var mentions = true
+    @AppStorage(SettingsKey.bitesNotifyReactions) private var reactions = true
+    @AppStorage(SettingsKey.bitesNotifyNewFollowers) private var newFollowers = true
+    var body: some View {
+        Form {
+            Section("Bandit Feed") {
+                Toggle("New Bites from people I follow", isOn: $bites)
+                Toggle("Comments on my Bites", isOn: $comments)
+                Toggle("Mentions", isOn: $mentions)
+                Toggle("Reactions", isOn: $reactions)
+            }
+            Section("Social") {
+                Toggle("New followers", isOn: $follows)
+                Toggle("Follower highlights", isOn: $newFollowers)
+            }
+        }
+        .navigationTitle("Notification categories")
+    }
+}
+
+struct AppearanceLanguageSettingsView: View {
+    @AppStorage(SettingsKey.appLanguageHint) private var lang = "system"
+    @AppStorage(SettingsKey.reduceAppAnimations) private var reduceAnim = false
+    @AppStorage(SettingsKey.compactFeedDensity) private var compact = false
+    @AppStorage(SettingsKey.boldFeedText) private var bold = false
+    @AppStorage(SettingsKey.appearance) private var appearance = AppAppearance.system.rawValue
+    var body: some View {
+        Form {
+            Picker("Appearance", selection: $appearance) {
+                Text("System").tag(AppAppearance.system.rawValue)
+                Text("Light").tag(AppAppearance.light.rawValue)
+                Text("Dark").tag(AppAppearance.dark.rawValue)
+            }
+            Picker("Language hint", selection: $lang) {
+                Text("System").tag("system")
+                Text("English").tag("en")
+                Text("Cebuano").tag("ceb")
+                Text("Tagalog").tag("fil")
+            }
+            Toggle("Reduce app animations", isOn: $reduceAnim)
+            Toggle("Compact Bandit Feed", isOn: $compact)
+            Toggle("Bold feed text", isOn: $bold)
+        }
+        .navigationTitle("Appearance & language")
+    }
+}
+
+struct SecurityExtrasSettingsView: View {
+    @AppStorage(SettingsKey.lockWithFaceIDOnOpen) private var lockOpen = false
+    @AppStorage(SettingsKey.autoLockMinutes) private var autoLock = 5
+    @AppStorage(SettingsKey.requireDeviceUnlock) private var requireUnlock = true
+    var body: some View {
+        Form {
+            Toggle("Require device unlock for app", isOn: $requireUnlock)
+            Toggle("Ask Face ID / Touch ID on open", isOn: $lockOpen)
+            Stepper("Auto-lock after \(autoLock) min", value: $autoLock, in: 1...30)
+        }
+        .navigationTitle("Security extras")
+    }
+}

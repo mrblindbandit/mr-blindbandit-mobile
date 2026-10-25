@@ -381,8 +381,13 @@ private fun ThreadScreen(communications: ProductionCommunicationsService, conver
     LaunchedEffect(lastReceipt) {
         if (lastReceipt == Receipt.READ || lastReceipt == Receipt.DELIVERED) Announcer.announce(context, "Your last message: ${lastReceipt.label}")
     }
-    LaunchedEffect(communications.messages.size) {
-        if (communications.messages.isNotEmpty()) listState.animateScrollToItem(communications.messages.size - 1)
+    // Scroll only when the tail identity changes to a new message — not on poll/receipt reconcile.
+    val tailKey = communications.messages.lastOrNull()?.let { "${it.id}:${it.body.hashCode()}" }
+    LaunchedEffect(tailKey) {
+        val last = communications.messages.lastOrNull() ?: return@LaunchedEffect
+        if (last.id.startsWith("local-") || communications.messages.isNotEmpty()) {
+            listState.animateScrollToItem(communications.messages.size - 1)
+        }
     }
 
     fun send() {

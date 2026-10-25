@@ -96,6 +96,24 @@ struct Settings: View {
                 NavigationLink { BlindExtrasSettingsView() } label: {
                     Label("Blind-first extras", systemImage: "eye")
                 }
+                NavigationLink { BanditFeedSettingsView() } label: {
+                    Label("Bandit Feed", systemImage: "flame")
+                }
+                NavigationLink { AIPreferencesSettingsView() } label: {
+                    Label("AI", systemImage: "sparkles")
+                }
+                NavigationLink { PrivacyExtrasSettingsView() } label: {
+                    Label("Privacy extras", systemImage: "eye.slash")
+                }
+                NavigationLink { NotificationCategoriesSettingsView() } label: {
+                    Label("Notification categories", systemImage: "bell.badge")
+                }
+                NavigationLink { AppearanceLanguageSettingsView() } label: {
+                    Label("Appearance & language", systemImage: "globe")
+                }
+                NavigationLink { SecurityExtrasSettingsView() } label: {
+                    Label("Security extras", systemImage: "lock.rotation")
+                }
                 NavigationLink { MessagesSettingsView() } label: {
                     Label("Messages extras", systemImage: "text.bubble")
                 }
@@ -152,7 +170,10 @@ struct Settings: View {
                 Label("Edit display name", systemImage: "person.text.rectangle")
             }
             NavigationLink("Edit username") { UsernameEditor().navigationTitle("Username") }
-            NavigationLink { Website(url: AppConfig.accountURL, title: "Profile & account") } label: {
+            NavigationLink { NativeProfileView(handle: "", isMe: true) } label: {
+                Label("Open native profile", systemImage: "person.crop.circle.fill")
+            }
+            NavigationLink { NativeProfileView(handle: "", isMe: true) } label: {
                 Label("Edit email and password on the web", systemImage: "person.crop.circle")
             }
             Button {

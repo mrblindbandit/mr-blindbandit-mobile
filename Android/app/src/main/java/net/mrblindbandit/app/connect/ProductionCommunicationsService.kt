@@ -228,8 +228,10 @@ class ProductionCommunicationsService(
             val known = messages.map { it.id }.toSet()
             val hadMessages = messages.isNotEmpty()
             val incoming = parsed.filter { it.id !in known && it.senderId != myProfileId }
+            val pendingLocal = messages.filter { it.id.startsWith("local-") && it.pending
+                && parsed.none { s -> s.senderId == myProfileId && s.body == it.body } }
             messages.clear()
-            messages.addAll(parsed)
+            messages.addAll(parsed + pendingLocal)
             otherTyping = result.lBool("other_typing", "typing")
             threadState = LoadState.Loaded
             if (hadMessages && incoming.isNotEmpty()) markRead(conversationId)
@@ -328,15 +330,16 @@ class ProductionCommunicationsService(
         // Optimistic bubble — show immediately, reconcile when the server echo arrives.
         val localId = "local-" + UUID.randomUUID().toString()
         val openId = openConversationId
-        if (openId.isNotBlank() && (conversationId.isBlank() || conversationId == openId)) {
-            val optimistic = ServerMessage(
-                id = localId,
-                senderId = myProfileId,
-                body = text,
-                createdAt = System.currentTimeMillis(),
-                clientMsgId = localId,
+        if (!openId.isNullOrBlank() && (conversationId.isBlank() || conversationId == openId)) {
+            messages.add(
+                ServerMessage(
+                    id = localId,
+                    senderId = myProfileId,
+                    body = text,
+                    createdAt = System.currentTimeMillis(),
+                    pending = true,
+                )
             )
-            messages = messages + optimistic
         }
         return try {
             val fields = messageFields(listOf(target), text).put("handle", target)
@@ -358,7 +361,7 @@ class ProductionCommunicationsService(
             Announcer.announce(appContext, statusMessage)
             null
         } catch (e: Exception) {
-            messages = messages.filterNot { it.id == localId }
+            messages.removeAll { it.id == localId }
             statusMessage = friendly(e, "Message could not be sent.")
             Announcer.announce(appContext, statusMessage)
             null

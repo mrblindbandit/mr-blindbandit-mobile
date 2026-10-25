@@ -188,6 +188,24 @@ struct BlindbanditApp: App {
             .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
             .tint(highContrast ? Color.primary : Brand.gold)
             .task { await SharePlayCalls.listen(communications) }
+            .task { AppleNativeBootstrap.onLaunch() }
+            .onContinueUserActivity(HandoffKind.chat.rawValue) { activity in _ = HandoffContinuity.handle(activity) }
+            .onContinueUserActivity(HandoffKind.ai.rawValue) { activity in _ = HandoffContinuity.handle(activity) }
+            .onContinueUserActivity(HandoffKind.bites.rawValue) { activity in _ = HandoffContinuity.handle(activity) }
+            .onReceive(NotificationCenter.default.publisher(for: .banditOpenBitesTab)) { _ in router.selection = .bites }
+            .onReceive(NotificationCenter.default.publisher(for: .banditOpenAIChat)) { _ in
+                router.selection = .messages
+                FeatureBehaviors220.onAIOpened(threadTitle: "Blind Bandit AI")
+            }
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("banditControlEndCall"))) { _ in
+                // Control Center end → request end on active CallKit call if any
+            }
+            .onOpenURL { url in
+                let host = url.host?.lowercased() ?? ""
+                if host == "bites" || url.path.contains("bites") { router.selection = .bites }
+                else if host == "messages" || url.path.contains("messages") { router.selection = .messages }
+                else if host == "call" || url.path.contains("call") { router.selection = .calls }
+            }
             .task { communications.loadCachedConversations(); AIChatStore.shared.prewarm() }
             .task {
                 auth.configure()

@@ -138,6 +138,10 @@ final class CallKitManager: NSObject {
         guard let id = uuids[callID], outgoing.contains(callID), !connected.contains(callID) else { return }
         connected.insert(callID)
         provider?.reportOutgoingCall(with: id, connectedAt: Date())
+        if ExtraFeatures220.liveActivitiesForCalls {
+            let handle = BanditSharedStore.defaults.string(forKey: "live.lastOutgoingHandle") ?? callID
+            AppleNativeBootstrap.onCallConnected(callID: callID, handle: handle, displayName: handle, startedAt: Date(), muted: false, onSpeaker: false)
+        }
     }
 
     // MARK: Incoming
@@ -165,7 +169,13 @@ final class CallKitManager: NSObject {
             Task { @MainActor in
                 guard let self else { return }
                 if error != nil { self.uuids[call.id] = nil; self.pendingEnds[id] = nil }
-                else { self.registered.insert(id); self.flushPendingEnd(id) }
+                else {
+                    self.registered.insert(id); self.flushPendingEnd(id)
+                    if ExtraFeatures220.liveActivitiesForCalls {
+                        AppleNativeBootstrap.onCallRinging(callID: call.id, handle: identity.handle, displayName: identity.name)
+                    }
+                    LiveCommunicationBridge.prepareIncomingPresentation(handle: identity.handle, displayName: identity.name)
+                }
             }
             completion?()
         }
@@ -186,6 +196,7 @@ final class CallKitManager: NSObject {
         } else {
             pendingEnds[id] = final
         }
+        AppleNativeBootstrap.onCallEnded()
     }
 
     nonisolated static func endReason(wasConnected: Bool) -> CXCallEndedReason {

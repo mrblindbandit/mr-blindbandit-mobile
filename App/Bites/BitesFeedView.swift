@@ -1,4 +1,5 @@
 import SwiftUI
+import TipKit
 import UIKit
 
 /// Root Bites tab: native Bandit Feed (newsfeed posts + BanditBites). Never Facebook/Meta branded.
@@ -217,6 +218,12 @@ struct BitesFeedView: View {
                 } label: {
                     Label("Saved Bites", systemImage: "bookmark")
                 }
+            }
+        }
+        .safeAreaInset(edge: .top) {
+            if UserDefaults.standard.object(forKey: SettingsKey.tipKitEnabled) as? Bool ?? true {
+                TipView(SwipeToLikeTip())
+                    .padding(.horizontal)
             }
         }
         .sheet(isPresented: $showComposer) {
@@ -586,10 +593,14 @@ struct BiteComposerView: View {
                 TextField("What’s happening?", text: $text, axis: .vertical)
                     .lineLimit(4...12)
                     .accessibilityLabel("Bite text")
+                    .banditWritingToolsEnabled()
                     .onChange(of: text) { _, v in onDraftChange(v) }
             } footer: {
                 Text("\(text.count) / \(limit)")
                     .accessibilityLabel("\(text.count) of \(limit) characters")
+            }
+            Section("Creator tools") {
+                CreatorAppleToolsStrip(biteText: text)
             }
             if !error.isEmpty {
                 Section { Text(error).foregroundStyle(.red) }
@@ -613,6 +624,7 @@ struct BiteComposerView: View {
         guard !body.isEmpty else { return }
         posting = true
         defer { posting = false }
+        FeatureBehaviors220.beginBitePostLiveActivity(preview: body)
         let optimistic = BitesAPI.makeLocalPost(
             body: body,
             handle: communications.myHandle.isEmpty ? "me" : communications.myHandle,
@@ -625,11 +637,14 @@ struct BiteComposerView: View {
         do {
             _ = try await BitesAPI.publishPost(body: body)
             AppHaptics.success()
+            FeatureBehaviors220.finishBitePostLiveActivity(success: true)
+            FeatureBehaviors220.onBiteAppeared(id: optimistic.id, author: optimistic.author.handle, body: body)
             onDone(optimistic)
             dismiss()
             UIAccessibility.post(notification: .announcement, argument: "Bite posted")
         } catch {
             self.error = error.localizedDescription
+            FeatureBehaviors220.finishBitePostLiveActivity(success: false)
             AppHaptics.error()
             UIAccessibility.post(notification: .announcement, argument: error.localizedDescription)
         }

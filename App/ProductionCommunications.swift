@@ -694,7 +694,9 @@ final class ProductionCommunicationsService: ObservableObject {
     }
 
     var unreadCount: Int {
-        conversations.filter { isUnread($0) && !LocalComms.muted.contains($0.id) }.count
+        let n = conversations.filter { isUnread($0) && !LocalComms.muted.contains($0.id) }.count
+        FeatureBehaviors220.publishConversationBadge(unread: n)
+        return n
     }
 
     private func markLocallyRead(_ conversation: BlindbanditConversation) {
@@ -726,6 +728,13 @@ final class ProductionCommunicationsService: ObservableObject {
 
     func openConversation(_ conversation: BlindbanditConversation) async {
         openConversationID = conversation.id
+        let handle = conversation.other?.handle ?? ""
+        let title: String = {
+            guard let other = conversation.other else { return "Chat" }
+            if let name = other.display_name, !name.isEmpty { return name }
+            return "@\(other.handle)"
+        }()
+        FeatureBehaviors220.onChatOpened(id: conversation.id, title: title, handle: handle)
         if let cached = ChatCache.get(conversation.id) { messages = cached }
         await reloadThread(conversation.id)
         markLocallyRead(conversation)

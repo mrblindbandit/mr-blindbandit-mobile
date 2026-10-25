@@ -1,8 +1,8 @@
-2.2.0 (32): Apple-native pack + 2.1.0 inventory mega cut.
+2.2.0 (33): Apple-native pack + 2.1.0 inventory mega cut.
 
 What's new:
 - App Intents / Shortcuts (Feed + AI), TipKit, Focus filters, Handoff, Spotlight, Passkeys, Writing Tools hooks
-- Live Activities / Home widgets / Watch: source ready; TF ships without those embeds until ASC App IDs exist
+- Live Activities / Home widgets / Watch: source ready; TF ships without ActivityKit / those embeds until ASC App IDs exist
 - Call + Edit display name / picture on native profiles; Settings → Open native profile
 - Prior 2.1.0: Bites tab, native Profile, Admin verify, voice/translate/settings
 

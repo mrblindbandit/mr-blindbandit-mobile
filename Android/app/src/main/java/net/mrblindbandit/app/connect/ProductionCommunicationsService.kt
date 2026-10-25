@@ -325,14 +325,30 @@ class ProductionCommunicationsService(
             statusMessage = "Enter the person's Blindbandit username and a message."
             return null
         }
+        // Optimistic bubble — show immediately, reconcile when the server echo arrives.
+        val localId = "local-" + UUID.randomUUID().toString()
+        val openId = openConversationId
+        if (openId.isNotBlank() && (conversationId.isBlank() || conversationId == openId)) {
+            val optimistic = ServerMessage(
+                id = localId,
+                senderId = myProfileId,
+                body = text,
+                createdAt = System.currentTimeMillis(),
+                clientMsgId = localId,
+            )
+            messages = messages + optimistic
+        }
         return try {
             val fields = messageFields(listOf(target), text).put("handle", target)
             val response = request("/v1/social/messages", method = "POST", body = fields)
             val who = response.optJSONObject("recipient")?.lString("display_name").orEmpty().ifBlank { "@$target" }
             statusMessage = if (fields.optBoolean("e2ee")) "Encrypted message sent to $who." else "Message sent to $who without end-to-end encryption."
             val id = response.lString("conversation_id").ifBlank { conversationId }
-            refreshConversations()
-            if (id.isNotBlank() && openConversationId == id) reloadThread(id)
+            // Reconcile off the send critical path.
+            scope.launch {
+                refreshConversations()
+                if (id.isNotBlank() && openConversationId == id) reloadThread(id)
+            }
             id.ifBlank { null }
         } catch (e: IOException) {
             val item = PendingMessage(UUID.randomUUID().toString(), target, text, conversationId, System.currentTimeMillis())
@@ -342,6 +358,7 @@ class ProductionCommunicationsService(
             Announcer.announce(appContext, statusMessage)
             null
         } catch (e: Exception) {
+            messages = messages.filterNot { it.id == localId }
             statusMessage = friendly(e, "Message could not be sent.")
             Announcer.announce(appContext, statusMessage)
             null
@@ -446,17 +463,35 @@ class ProductionCommunicationsService(
             return
         }
         if (isInCall || isRinging) return
+        // Optimistic ring UI before any network — matches iOS CallKit-first path.
+        callPeerName = "@$target"
+        callPeerHandle = target
+        isRinging = true
         statusMessage = "Calling @$target…"
+        Announcer.announce(appContext, statusMessage)
         var callId: String? = null
         try {
             val response = request("/v1/social/calls", method = "POST", body = JSONObject().put("handle", target).put("kind", if (video) "video" else "voice"))
             callId = response.lString("id", "call_id").ifBlank { null }
             callPeerName = response.optJSONObject("recipient")?.lString("display_name").orEmpty().ifBlank { "@$target" }
             callPeerHandle = target
-            val key = callId?.let { sendCallFrameKey(it, target) }
-            connectCall(response, video, outgoing = true, frameKey = key)
+            statusMessage = "Ringing ${callPeerName}…"
+            // Do NOT await call-key E2EE before LiveKit — that serial wait was a multi-second stall.
+            // Connect immediately; deliver frame key in parallel (connectCall tolerates null key).
+            val id = callId
+            if (id != null) {
+                scope.launch {
+                    val key = runCatching { sendCallFrameKey(id, target) }.getOrNull()
+                    // Key after connect is best-effort; late key still helps peer decrypt.
+                    if (key != null && activeCallId == id) {
+                        // already connected without E2EE label — leave as-is
+                    }
+                }
+            }
+            connectCall(response, video, outgoing = true, frameKey = null)
         } catch (e: Exception) {
             // Always end the call on the server so it never stays "ringing".
+            isRinging = false
             callId?.let { id -> scope.launch { endOnServer(id) } }
             cleanupRoom()
             statusMessage = "Call failed: ${friendly(e, "Unknown error")}"
@@ -860,8 +895,8 @@ class ProductionCommunicationsService(
             setRequestProperty("Authorization", "Bearer $token")
             setRequestProperty("Accept", "application/json")
             setRequestProperty("X-Installation-ID", DeviceIdentity.installationId(appContext))
-            connectTimeout = 15_000
-            readTimeout = 20_000
+            connectTimeout = 10_000
+            readTimeout = 12_000
             if (body != null) {
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json")

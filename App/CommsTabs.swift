@@ -742,7 +742,7 @@ struct ConversationThreadView: View {
                         }
                     }
                     ForEach(shownMessages) { message in
-                        bubble(message).id(message.id)
+                        bubble(message).id(message.stableIdentity)
                             .accessibilityRotorEntry(id: message.id, in: rotorSpace)
                     }
                     if communications.otherTyping && search.isEmpty {
@@ -762,7 +762,21 @@ struct ConversationThreadView: View {
                 if typing, search.isEmpty { withAnimation { proxy.scrollTo("typing-indicator", anchor: .bottom) } }
             }
             .onChange(of: communications.messages) { old, list in
-                if let last = list.last, search.isEmpty { proxy.scrollTo(last.id, anchor: .bottom) }
+                // Scroll only when a new tail arrives — not on receipt/poll reconcile or local→server id swaps
+                // for the same body (that was the up/down jump).
+                if search.isEmpty, let last = list.last {
+                    let oldLast = old.last
+                    let isNewTail = oldLast?.stableIdentity != last.stableIdentity && !(
+                        last.sender_id == communications.myProfileID
+                        && old.contains(where: { $0.id.hasPrefix("local-") && $0.body == last.body && $0.sender_id == last.sender_id })
+                    )
+                    let grew = list.count > old.count
+                    if isNewTail || grew {
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = oldLast?.id.hasPrefix("local-") == true
+                        withTransaction(transaction) { proxy.scrollTo(last.stableIdentity, anchor: .bottom) }
+                    }
+                }
                 let me = communications.myProfileID
                 let announceDelivery = UserDefaults.standard.object(forKey: SettingsKey.announceDelivery) as? Bool ?? false
                 for mineNow in list where mineNow.sender_id == me {

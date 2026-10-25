@@ -206,13 +206,25 @@ final class E2EEService: ObservableObject {
     // MARK: Sending
 
     private func recipients(handles: [String]) async throws -> [E2EEDeviceBundle] {
+        let peers = Array(Set(handles.map { $0.lowercased() }).filter { $0 != myHandle })
+        // Fetch peer bundles in parallel — serial awaits stacked to multi-second stalls on cold cache.
         var all: [E2EEDeviceBundle] = []
-        for h in Set(handles.map { $0.lowercased() }) where h != myHandle {
-            let list = try await devices(for: h)
-            if list.isEmpty { plaintextPeers.insert(h); return [] }
-            plaintextPeers.remove(h)
-            all += list
+        var missingPlaintext = false
+        try await withThrowingTaskGroup(of: (String, [E2EEDeviceBundle]).self) { group in
+            for h in peers {
+                group.addTask { (h, try await self.devices(for: h)) }
+            }
+            for try await (h, list) in group {
+                if list.isEmpty {
+                    await MainActor.run { self.plaintextPeers.insert(h) }
+                    missingPlaintext = true
+                } else {
+                    await MainActor.run { self.plaintextPeers.remove(h) }
+                    all += list
+                }
+            }
         }
+        if missingPlaintext { return [] }
         if let mine = try? await devices(for: "me") { all += mine.filter { $0.device_id != identity?.deviceID } }
         return Array(all.prefix(64))
     }
@@ -230,8 +242,13 @@ final class E2EEService: ObservableObject {
         guard ready, let id = identity, ServerFeatures.shared.isAvailable(.keys) else { return nil }
         let key = chatKey ?? "dmh:\(handle.lowercased())"
         if isE2EEDisabled(key) { return nil }
+        // Cap key fetch at 3s so a cold/hung bundles endpoint never blocks plaintext fallback for ~20–40s.
         let devs: [E2EEDeviceBundle]
-        do { devs = try await recipients(handles: [handle]) } catch is NeedsServerUpdate { return nil }
+        do {
+            let fetched = await withHardTimeout(seconds: 3) { try await self.recipients(handles: [handle]) }
+            guard let got = fetched else { return nil }
+            devs = got
+        } catch is NeedsServerUpdate { return nil }
         guard !devs.isEmpty else { return nil }
         let p = stamp(payload, chatKey: key)
         let env = try MessageCrypto.encrypt(p, local: id, recipients: devs, storage: storage)

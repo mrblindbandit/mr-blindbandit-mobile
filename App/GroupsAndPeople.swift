@@ -292,7 +292,16 @@ struct GroupChatView: View {
                     }
                 }
                 .listStyle(.plain)
-                .onChange(of: messages.count) { _, _ in if let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) } }
+                .onChange(of: messages.last?.id) { oldID, newID in
+                    guard let last = messages.last, let newID, newID != oldID else { return }
+                    // Skip scroll when optimistic local- id is replaced by the server id for same send.
+                    if let oldID, oldID.hasPrefix("local-"), !newID.hasPrefix("local-") { return }
+                    proxy.scrollTo(last.id, anchor: .bottom)
+                }
+                .onChange(of: messages.count) { oldCount, newCount in
+                    guard newCount > oldCount, let last = messages.last else { return }
+                    proxy.scrollTo(last.id, anchor: .bottom)
+                }
             }
             if let n = aiNote {
                 HStack(alignment: .top) {

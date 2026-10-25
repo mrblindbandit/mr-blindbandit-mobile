@@ -117,6 +117,11 @@ struct BlindbanditServerMessage: Identifiable, Decodable, Equatable {
 
     var envelope: E2EEEnvelope? { envelopeJSON.flatMap { E2EEEnvelope.from(any: $0) } }
     var isSystem: Bool { kind == "system" }
+    /// Prefer client_msg_id so optimistic local- rows and the server echo share one identity.
+    var stableIdentity: String {
+        if let c = client_msg_id, !c.isEmpty { return c }
+        return id
+    }
 
     enum CodingKeys: String, CodingKey {
         case id, sender_id, body, created_at, read_at, delivered_at, e2ee, envelope, kind, expires_at, view_once, opened_at, edited_at, client_msg_id
@@ -285,7 +290,7 @@ enum BlindbanditAPI {
         }
         var request = URLRequest(url: url(path))
         request.httpMethod = method
-        request.timeoutInterval = 20
+        request.timeoutInterval = 12
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let device = IdentityStore.shared.deviceID { request.setValue(device, forHTTPHeaderField: "X-BB-Device-Id") }
@@ -376,7 +381,11 @@ enum BlindbanditAPI {
     }
 
     static func sendMessage(handle: String, body: String, silent: Bool = false) async throws -> BlindbanditMessageResponse {
-        if let sent = try await E2EEService.shared.sendDM(handle: handle, payload: E2EEPayload(t: "text", body: body, silent: silent ? true : nil)) { return sent }
+        // Race E2EE (includes key fetch) so a hung encrypt path never delays plaintext for tens of seconds.
+        let e2ee: BlindbanditMessageResponse? = await withHardTimeout(seconds: 4) {
+            try await E2EEService.shared.sendDM(handle: handle, payload: E2EEPayload(t: "text", body: body, silent: silent ? true : nil))
+        } ?? nil
+        if let sent = e2ee { return sent }
         var fields: [String: Any] = ["handle": handle, "body": body]
         if silent { fields["silent"] = true }
         return try decode(BlindbanditMessageResponse.self, from: try await request(
@@ -761,8 +770,29 @@ final class ProductionCommunicationsService: ObservableObject {
                 }
             }
             let hadIncoming = fresh.count > messages.count && fresh.last?.sender_id != myProfileID && !messages.isEmpty
-            let optimistic = messages.filter { m in m.id.hasPrefix("local-") && !fresh.contains(where: { f in f.sender_id == myProfileID && f.body == m.body }) }
-            let merged = fresh + optimistic
+            // Keep optimistic rows until the server echo arrives; match by client_msg_id or body so
+            // ScrollView identity does not thrash (local- → server id was the jump).
+            var consumedLocal = Set<String>()
+            var merged = fresh.map { server -> BlindbanditServerMessage in
+                var row = server
+                if let match = messages.first(where: { local in
+                    local.id.hasPrefix("local-")
+                        && !consumedLocal.contains(local.id)
+                        && local.sender_id == myProfileID
+                        && (local.body == server.body
+                            || (server.client_msg_id != nil && local.id == server.client_msg_id))
+                }) {
+                    consumedLocal.insert(match.id)
+                    row = server
+                    if row.client_msg_id == nil || row.client_msg_id?.isEmpty == true {
+                        row.client_msg_id = match.client_msg_id ?? match.id
+                    }
+                }
+                return row
+            }
+            let optimistic = messages.filter { m in m.id.hasPrefix("local-") && !consumedLocal.contains(m.id)
+                && !fresh.contains(where: { f in f.sender_id == myProfileID && f.body == m.body }) }
+            merged += optimistic
             if merged != messages { messages = merged }
             ChatCache.put(id, fresh)
             if hadIncoming, let current = self.conversation(id: id) {
@@ -867,9 +897,11 @@ final class ProductionCommunicationsService: ObservableObject {
         // Optimistic: show the message right away with "Sending…"; the next thread load replaces it with the real one.
         var localID: String?
         if let open = openConversationID, conversation(id: open)?.other?.handle.lowercased() == handle.lowercased() {
-            let m = BlindbanditServerMessage(id: "local-" + UUID().uuidString, sender_id: myProfileID, body: String(text.prefix(4000)),
+            let lid = "local-" + UUID().uuidString
+            var m = BlindbanditServerMessage(id: lid, sender_id: myProfileID, body: String(text.prefix(4000)),
                                              created_at: Date().timeIntervalSince1970)
-            localID = m.id
+            m.client_msg_id = lid
+            localID = lid
             messages.append(m)
         }
         AppHaptics.light()
@@ -878,8 +910,12 @@ final class ProductionCommunicationsService: ObservableObject {
             CallSounds.messageSent()
             statusMessage = "Message sent to @\(handle)."
             UIAccessibility.post(notification: .announcement, argument: statusMessage)
-            await refreshConversations()
-            if openConversationID == response.conversation_id { await reloadThread(response.conversation_id) }
+            // Reconcile off the critical path so Send feels instant (optimistic bubble already shown).
+            let convID = response.conversation_id
+            Task { [weak self] in
+                await self?.refreshConversations()
+                if self?.openConversationID == convID { await self?.reloadThread(convID) }
+            }
             return response.conversation_id
         } catch let error as URLError where [URLError.Code.notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotConnectToHost].contains(error.code) {
             pendingMessages.append(PendingMessage(handle: handle, body: String(text.prefix(4000))))
@@ -993,7 +1029,11 @@ final class ProductionCommunicationsService: ObservableObject {
                 return
             }
             callKeyPeerHandle = handle
-            // The call key is generated locally; delivery and LiveKit connect run in parallel.
+            // Ring the local UI immediately after the server creates the call (push already fan-outs
+            // to the callee). Never wait on LiveKit connect / call-key E2EE — that was the ~40s stall.
+            beginOutgoingRinging()
+            CallTiming.step("ringback started (pre-LiveKit)")
+            // Call key is generated locally; delivery and LiveKit connect run in parallel.
             let msg = CallKeyMessage(call_id: response.id, key: E2EECrypto.b64u(CallKeyStore.newKey()), index: 0)
             async let delivered = sendCallKey(msg, handle: handle, groupID: groupID)
             try await connect(response: response, video: video, callKey: msg)
@@ -1003,7 +1043,6 @@ final class ProductionCommunicationsService: ObservableObject {
             if callKey == nil { markCallUnencrypted() }
             callKeyIsMine = true
             if callKey != nil, groupID != nil { startCallKeyPolling(callID: response.id) }
-            beginOutgoingRinging()
         } catch {
             CallTiming.step("failed: \(error.localizedDescription)")
             if let createdID {

@@ -1,9 +1,8 @@
-2.2.0 (36) — optimistic send/call (felt lag was client)
+2.2.0 (37) — Messenger/WhatsApp-parity Messages + US dial tone
 
-• "Sent" + send sound before network; failure announced if POST fails.
-• Outgoing ringback starts before await startCall (CallKit already early).
-• E2EE race cut to ≤500ms (nested recipients ≤500ms; bundles/me soft-skip ≤250ms) then plaintext.
-• Poll loop actually parallel (relay no longer serial behind conversation refresh).
-• Server Sites v147/v148 already live (relay fail-fast + non-blocking APNs); this build fixes remaining client awaits.
+• Messages: cache-first inbox — no false "Couldn't load" when signed in / cache exists; soft LastMessage decode so one bad preview cannot blank the list; empty inbox OK.
+• Send status: Sending → Sent on HTTP OK (local- id swapped to server id immediately); then Delivered → Read via poll/reload. Caption no longer sticks on "Sending…".
+• Outgoing call: classic US dial tone (continuous 350 Hz + 440 Hz) via ringback_us_dialtone before startCall returns.
+• Optimistic VO "Sent" + ring still fire before network (build 36); this build hardens load + receipt captions + dial.
 
-Please try: send a DM (VO "Sent" should be immediate), place a voice call (ringback before server returns).
+Please try (VoiceOver): open Messages (list or empty — not "Couldn't load" after sign-in); send a DM (status under bubble: Sending→Sent→Delivered→Read); place a voice call (US dial tone immediately).

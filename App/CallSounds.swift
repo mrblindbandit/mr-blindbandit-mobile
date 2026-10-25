@@ -209,8 +209,15 @@ enum CallSounds {
         loopPlayer = nil
     }
 
-    static func startRingback() { playLoop(named: "ringback_outgoing", volume: 0.42) }
-    static func stopRingback() { stopLoop() }
+    /// Outgoing call progress = classic United States dial tone (continuous 350 Hz + 440 Hz), seamless 2 s loop.
+    static let outgoingProgressToneName = "US dial tone"
+    static func startRingback() {
+        if loopPlayer?.isPlaying == true, loopIsRingback { return }
+        playLoop(named: url(named: "ringback_us_dialtone") != nil ? "ringback_us_dialtone" : "ringback_outgoing", volume: 0.42)
+        loopIsRingback = true
+    }
+    private static var loopIsRingback = false
+    static func stopRingback() { loopIsRingback = false; stopLoop() }
 
     static func playRingtone(preview: Bool = false) {
         if preview {

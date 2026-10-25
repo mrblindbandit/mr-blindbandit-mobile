@@ -19,12 +19,12 @@ final class Release220Build37Tests: XCTestCase {
         XCTAssertEqual(conv.last_message?.created_at, 99)
     }
 
-    func testMessageStatusSendingOnlyForLocalId() {
+    func testMessageStatusOptimisticLocalShowsSent() {
         let local = BlindbanditServerMessage(id: "local-abc", sender_id: "me", body: "hi", created_at: 1_700_000_000_000)
         let sent = BlindbanditServerMessage(id: "srv-1", sender_id: "me", body: "hi", created_at: 1_700_000_000_000)
         let delivered = BlindbanditServerMessage(id: "srv-2", sender_id: "me", body: "hi", created_at: 1_700_000_000_000, delivered_at: 1_700_000_001_000)
         let read = BlindbanditServerMessage(id: "srv-3", sender_id: "me", body: "hi", created_at: 1_700_000_000_000, read_at: 1_700_000_002_000, delivered_at: 1_700_000_001_000)
-        XCTAssertEqual(MessageStatus.caption(for: local, showRead: true), "Sending…")
+        XCTAssertEqual(MessageStatus.caption(for: local, showRead: true), "Sent")
         XCTAssertTrue(MessageStatus.caption(for: sent, showRead: true).hasPrefix("Sent "))
         XCTAssertTrue(MessageStatus.caption(for: delivered, showRead: true).hasPrefix("Delivered "))
         XCTAssertTrue(MessageStatus.caption(for: read, showRead: true).hasPrefix("Read "))

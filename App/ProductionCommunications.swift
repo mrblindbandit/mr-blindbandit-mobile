@@ -40,9 +40,12 @@ struct BlindbanditConversation: Identifiable, Decodable, Equatable {
         /// The list endpoint returns SQLite 0/1 here while other endpoints return true/false.
         /// A strict `Bool?` made the whole inbox fail to decode, which hid every conversation.
         let verified: Bool?
+        /// Dialer call number from slim inbox (`/v1/social/inbox`), when assigned.
+        let call_number: String?
 
-        init(handle: String, display_name: String, avatar_url: String?, verified: Bool?) {
-            self.handle = handle; self.display_name = display_name; self.avatar_url = avatar_url; self.verified = verified
+        init(handle: String, display_name: String, avatar_url: String?, verified: Bool?, call_number: String? = nil) {
+            self.handle = handle; self.display_name = display_name; self.avatar_url = avatar_url
+            self.verified = verified; self.call_number = call_number
         }
 
         init(from decoder: Decoder) throws {
@@ -51,9 +54,10 @@ struct BlindbanditConversation: Identifiable, Decodable, Equatable {
             display_name = (try? c.decode(String.self, forKey: .display_name)) ?? handle
             avatar_url = try? c.decodeIfPresent(String.self, forKey: .avatar_url)
             verified = FlexibleBool.decode(c, .verified)
+            call_number = try? c.decodeIfPresent(String.self, forKey: .call_number)
         }
 
-        enum CodingKeys: String, CodingKey { case handle, display_name, avatar_url, verified }
+        enum CodingKeys: String, CodingKey { case handle, display_name, avatar_url, verified, call_number }
     }
     struct LastMessage: Decodable, Equatable {
         let body: String
@@ -82,10 +86,13 @@ struct BlindbanditConversation: Identifiable, Decodable, Equatable {
     let updated_at: Double
     let other: Other?
     let last_message: LastMessage?
+    /// From slim inbox; nil on classic list payloads.
+    let unread_count: Int?
 
     /// Soft-decode: one bad/missing field must not blank the whole inbox list.
-    init(id: String, updated_at: Double, other: Other?, last_message: LastMessage?) {
-        self.id = id; self.updated_at = updated_at; self.other = other; self.last_message = last_message
+    init(id: String, updated_at: Double, other: Other?, last_message: LastMessage?, unread_count: Int? = nil) {
+        self.id = id; self.updated_at = updated_at; self.other = other
+        self.last_message = last_message; self.unread_count = unread_count
     }
 
     init(from decoder: Decoder) throws {
@@ -101,9 +108,11 @@ struct BlindbanditConversation: Identifiable, Decodable, Equatable {
             ?? 0
         other = try? c.decode(Other.self, forKey: .other)
         last_message = try? c.decode(LastMessage.self, forKey: .last_message)
+        unread_count = (try? c.decode(Int.self, forKey: .unread_count))
+            ?? (try? c.decode(Double.self, forKey: .unread_count)).map { Int($0) }
     }
 
-    enum CodingKeys: String, CodingKey { case id, updated_at, other, last_message }
+    enum CodingKeys: String, CodingKey { case id, updated_at, other, last_message, unread_count }
 }
 
 struct BlindbanditServerMessage: Identifiable, Decodable, Equatable {
@@ -209,6 +218,22 @@ struct BlindbanditMessageResponse: Decodable {
     let id: String
     let conversation_id: String
     let created_at: Double
+}
+
+struct BlindbanditCallNumberProfile: Decodable {
+    let id: String?
+    let handle: String
+    let display_name: String
+    let avatar_url: String?
+    let verified: Bool?
+    let call_number: String?
+}
+
+struct BlindbanditMyCallNumber: Decodable {
+    let call_number: String?
+    let handle: String?
+    let id: String?
+    let cleared: Bool?
 }
 
 enum FlexibleBool {
@@ -487,11 +512,24 @@ enum BlindbanditAPI {
     }
 
     static func conversations() async throws -> [BlindbanditConversation] {
-        // Inbox GET gets a longer timeout; UI still paints from ChatCache instantly.
-        let d = try await request("v1/social/messages?limit=100", timeout: 20)
-        let items = try softDecodeItems(BlindbanditConversation.self, from: d)
-        await ChatCache.saveList(d)
-        return items
+        // Prefer slim inbox (Sites native-speed batch bb031a35). Fall back to classic list on 404.
+        do {
+            let d = try await request("v1/social/inbox?limit=100", timeout: 12)
+            let items = try softDecodeItems(BlindbanditConversation.self, from: d)
+            await ChatCache.saveList(d)
+            return items
+        } catch let error as CommunicationsError {
+            switch error {
+            case .notFound:
+                break
+            default:
+                if !error.isMissingRoute { throw error }
+            }
+            let d = try await request("v1/social/messages?limit=100", timeout: 20)
+            let items = try softDecodeItems(BlindbanditConversation.self, from: d)
+            await ChatCache.saveList(d)
+            return items
+        }
     }
 
     static func messages(conversationID: String) async throws -> [BlindbanditServerMessage] {
@@ -525,17 +563,107 @@ enum BlindbanditAPI {
         _ = try? await request("v1/social/messages/\(escape(conversationID))/typing", method: "POST", body: ["typing": true])
     }
 
-    static func sendMessage(handle: String, body: String, silent: Bool = false) async throws -> BlindbanditMessageResponse {
-        // Race E2EE (includes key fetch) ≤500ms; soft-missing bundles/me must not feel like multi-second lag.
-        let e2ee: BlindbanditMessageResponse? = await withHardTimeout(seconds: 0.5) {
+    static func sendMessage(handle: String, body: String, silent: Bool = false, clientMsgID: String? = nil) async throws -> BlindbanditMessageResponse {
+        // Race E2EE (includes key fetch) ≤350ms; soft-missing bundles/me must not feel like multi-second lag.
+        let e2ee: BlindbanditMessageResponse? = await withHardTimeout(seconds: 0.35) {
             try await E2EEService.shared.sendDM(handle: handle, payload: E2EEPayload(t: "text", body: body, silent: silent ? true : nil))
         } ?? nil
         if let sent = e2ee { return sent }
         var fields: [String: Any] = ["handle": handle, "body": body]
         if silent { fields["silent"] = true }
+        if let clientMsgID, !clientMsgID.isEmpty { fields["client_msg_id"] = clientMsgID }
         return try decode(BlindbanditMessageResponse.self, from: try await request(
-            "v1/social/messages", method: "POST", body: fields
+            "v1/social/messages", method: "POST", body: fields, timeout: 8
         ))
+    }
+
+    /// Fast send ack by client_msg_id (native-speed) — no thread refetch.
+    static func sendAck(conversationID: String, clientMsgID: String) async throws -> Bool {
+        let d = try await request(
+            "v1/social/messages/send-ack", method: "POST",
+            body: ["conversation_id": conversationID, "client_msg_id": clientMsgID],
+            timeout: 6
+        )
+        guard let root = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return false }
+        let data = (root["data"] as? [String: Any]) ?? root
+        return data["acked"] as? Bool ?? false
+    }
+
+    /// Prefetch many threads in one round-trip.
+    static func hydrateThreads(ids: [String], limitPer: Int = 30) async {
+        let slice = Array(ids.prefix(20))
+        guard !slice.isEmpty else { return }
+        guard let d = try? await request(
+            "v1/social/inbox/hydrate", method: "POST",
+            body: ["conversation_ids": slice, "limit_per": limitPer],
+            timeout: 15
+        ) else { return }
+        guard let root = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return }
+        let data = (root["data"] as? [String: Any]) ?? root
+        guard let threads = data["threads"] as? [[String: Any]] else { return }
+        for thr in threads {
+            guard let id = thr["id"] as? String,
+                  let itemsRaw = thr["items"] as? [Any],
+                  JSONSerialization.isValidJSONObject(itemsRaw),
+                  let itemData = try? JSONSerialization.data(withJSONObject: ["data": ["items": itemsRaw]]),
+                  let items = try? softDecodeItems(BlindbanditServerMessage.self, from: itemData),
+                  !items.isEmpty else { continue }
+            let resolved = await E2EEService.shared.resolve(items, conversationID: id)
+            ChatCache.put(id, resolved.sorted { $0.created_at < $1.created_at })
+        }
+    }
+
+    static func resolveCallNumber(_ number: String) async throws -> (handle: String, displayName: String, callNumber: String) {
+        let digits = number.filter(\.isNumber)
+        let d = try await request("v1/social/call-numbers/\(escape(digits))", timeout: 6)
+        let profile = try decode(BlindbanditCallNumberProfile.self, from: d)
+        return (profile.handle, profile.display_name, profile.call_number ?? digits)
+    }
+
+    static func getMyCallNumber() async throws -> String? {
+        let d = try await request("v1/social/me/call-number", timeout: 6)
+        let row = try decode(BlindbanditMyCallNumber.self, from: d)
+        return row.call_number
+    }
+
+    static func setMyCallNumber(_ number: String?) async throws -> String? {
+        var body: [String: Any] = [:]
+        if let number, !number.isEmpty {
+            body["call_number"] = number
+        } else {
+            body["call_number"] = NSNull()
+        }
+        let d = try await request("v1/social/me/call-number", method: "PUT", body: body, timeout: 8)
+        let row = try decode(BlindbanditMyCallNumber.self, from: d)
+        return row.call_number
+    }
+
+    static func presenceBatch(handles: [String]) async throws -> [String: Bool] {
+        let slice = Array(Set(handles.map { $0.lowercased() })).prefix(50)
+        guard !slice.isEmpty else { return [:] }
+        let d = try await request(
+            "v1/social/presence/batch", method: "POST",
+            body: ["handles": Array(slice)], timeout: 8
+        )
+        guard let root = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return [:] }
+        let data = (root["data"] as? [String: Any]) ?? root
+        guard let items = data["items"] as? [[String: Any]] else { return [:] }
+        var out: [String: Bool] = [:]
+        for item in items {
+            guard let h = item["handle"] as? String else { continue }
+            let online = (item["online"] as? Bool) ?? ((item["online"] as? Int).map { $0 != 0 } ?? false)
+            out[h.lowercased()] = online
+        }
+        return out
+    }
+
+    static func readBatch(conversationIDs: [String]) async {
+        let slice = Array(Set(conversationIDs)).prefix(50)
+        guard !slice.isEmpty else { return }
+        _ = try? await request(
+            "v1/social/messages/read-batch", method: "POST",
+            body: ["conversation_ids": Array(slice)], timeout: 8
+        )
     }
 
     static func startCall(handle: String, video: Bool) async throws -> BlindbanditCallResponse {
@@ -870,18 +998,19 @@ final class ProductionCommunicationsService: ObservableObject {
     }
 
     private var prefetched = false
-    /// Prefetches the latest 50 messages of the top chats so opening them is instant.
+    /// Prefetches top chats via native-speed hydrate (one round-trip) with classic fallback.
     private func prefetchThreads() {
         guard !prefetched else { return }
         prefetched = true
         let ids = conversations.prefix(8).map(\.id)
         Task { [weak self] in
+            await BlindbanditAPI.hydrateThreads(ids: ids, limitPer: 40)
             for id in ids where ChatCache.get(id) == nil {
                 if let p = try? await BlindbanditAPI.thread(conversationID: id) {
                     ChatCache.put(id, p.items.sorted { $0.created_at < $1.created_at })
                 }
-                _ = self
             }
+            _ = self
         }
     }
 
@@ -1151,10 +1280,10 @@ final class ProductionCommunicationsService: ObservableObject {
             statusMessage = "Enter a Blindbandit username and a message."
             return nil
         }
-        // Optimistic: show the message right away with "Sending…"; the next thread load replaces it with the real one.
+        // Optimistic: bubble + "Sent" caption immediately; network runs after VO/haptics.
+        let lid = "local-" + UUID().uuidString
         var localID: String?
         if let open = openConversationID, conversation(id: open)?.other?.handle.lowercased() == handle.lowercased() {
-            let lid = "local-" + UUID().uuidString
             var m = BlindbanditServerMessage(id: lid, sender_id: myProfileID, body: String(text.prefix(4000)),
                                              created_at: Date().timeIntervalSince1970 * 1000)
             m.client_msg_id = lid
@@ -1162,28 +1291,30 @@ final class ProductionCommunicationsService: ObservableObject {
             messages.append(m)
         }
         AppHaptics.light()
-        // VoiceOver: "Sending" then optimistic "Sent" before any network — felt lag was await BlindbanditAPI.sendMessage.
         UIAccessibility.post(notification: .announcement, argument: "Sending")
         CallSounds.messageSent()
         UIAccessibility.post(notification: .announcement, argument: "Sent")
         statusMessage = "Message sent to @\(handle)."
         do {
-            let response = try await BlindbanditAPI.sendMessage(handle: handle, body: String(text.prefix(4000)), silent: silent)
-            // HTTP OK: flip the optimistic bubble to the real server message now so it never sticks on "Sending…".
+            let response = try await BlindbanditAPI.sendMessage(
+                handle: handle, body: String(text.prefix(4000)), silent: silent, clientMsgID: localID ?? lid
+            )
             if let localID, let i = messages.firstIndex(where: { $0.id == localID }) {
                 if messages.contains(where: { $0.id == response.id }) {
                     messages.remove(at: i)
                 } else {
-                    var real = messages[i]
-                    real = BlindbanditServerMessage(id: response.id, sender_id: real.sender_id, body: real.body,
-                                                    created_at: response.created_at > 0 ? response.created_at : real.created_at)
+                    var real = BlindbanditServerMessage(
+                        id: response.id, sender_id: messages[i].sender_id, body: messages[i].body,
+                        created_at: response.created_at > 0 ? response.created_at : messages[i].created_at
+                    )
                     real.client_msg_id = localID
                     messages[i] = real
                 }
             }
-            // Reconcile off the critical path (Delivered/Read arrive via thread reload / relay / poll).
             let convID = response.conversation_id
+            let ackID = localID ?? lid
             Task { [weak self] in
+                _ = try? await BlindbanditAPI.sendAck(conversationID: convID, clientMsgID: ackID)
                 await self?.refreshConversations()
                 if self?.openConversationID == convID { await self?.reloadThread(convID) }
             }
@@ -1204,6 +1335,7 @@ final class ProductionCommunicationsService: ObservableObject {
             return nil
         }
     }
+
 
     func block(handle rawHandle: String) async -> Bool {
         let handle = BlindbanditHandle.normalize(rawHandle)
@@ -1620,12 +1752,19 @@ final class ProductionCommunicationsService: ObservableObject {
             let tracks = newRoom.remoteParticipants.values.flatMap { $0.audioTracks.compactMap { $0.track as? RemoteAudioTrack } }
             setCaptions(true, tracks: tracks)
         }
-        CallSounds.callConnected()
-        AppHaptics.success()
-        var connected = callGroupID == nil ? "Connected with \(callPeerName)." : "Joined \(callPeerName). \(participants.count) in the call."
-        if !callEncryptionLabel.isEmpty { connected += " " + callEncryptionLabel + "." }
-        statusMessage = connected
-        UIAccessibility.post(notification: .announcement, argument: statusMessage)
+        // Local LiveKit connect is NOT remote answer. Keep looping US ringback until a remote joins.
+        if isRinging {
+            AppHaptics.light()
+            statusMessage = "Ringing \(callPeerName)…"
+            UIAccessibility.post(notification: .announcement, argument: statusMessage)
+        } else {
+            CallSounds.callConnected()
+            AppHaptics.success()
+            var connected = callGroupID == nil ? "Connected with \(callPeerName)." : "Joined \(callPeerName). \(participants.count) in the call."
+            if !callEncryptionLabel.isEmpty { connected += " " + callEncryptionLabel + "." }
+            statusMessage = connected
+            UIAccessibility.post(notification: .announcement, argument: statusMessage)
+        }
     }
 
     // MARK: Room state

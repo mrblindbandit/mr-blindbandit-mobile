@@ -378,21 +378,30 @@ struct NowPlayingBar: View {
 enum CallWarmup {
     private static var lastWarm: TimeInterval = 0
     /// Warms DNS + TLS to LiveKit and the Blindbandit API so call button → ring is faster.
-    /// Safe to call from onAppear of chat/people/calls screens; rate-limited to once per 60s.
+    /// Safe to call from onAppear of chat/people/calls screens; rate-limited to once per 25s.
     static func preconnect() {
         let now = Date().timeIntervalSince1970
-        guard now - lastWarm > 60 else { return }
+        guard now - lastWarm > 25 else { return }
         lastWarm = now
         let last = UserDefaults.standard.string(forKey: "livekit.lastURL") ?? AppConfig.liveKitURL
         if let u = URL(string: last.replacingOccurrences(of: "wss://", with: "https://")) {
-            var r = URLRequest(url: u); r.httpMethod = "HEAD"; r.timeoutInterval = 5
+            var r = URLRequest(url: u); r.httpMethod = "HEAD"; r.timeoutInterval = 4
             URLSession.shared.dataTask(with: r).resume()
         }
-        // Warm API TLS too — startCall / token is the usual first-hop delay.
-        var api = URLRequest(url: AppConfig.apiBaseURL.appending(path: "v1/health"))
-        api.httpMethod = "HEAD"; api.timeoutInterval = 5
-        URLSession.shared.dataTask(with: api).resume()
-        // Touch installation_id so UserDefaults is hot before placeCall (MainActor).
+        // Warm API TLS — startCall / slim inbox / call-number are the usual first-hop delay.
+        let paths = ["v1/health", "v1/social/me/call-number"]
+        for path in paths {
+            var api = URLRequest(url: AppConfig.apiBaseURL.appending(path: path))
+            api.httpMethod = "HEAD"; api.timeoutInterval = 4
+            URLSession.shared.dataTask(with: api).resume()
+        }
+        if var inbox = URLComponents(url: AppConfig.apiBaseURL.appending(path: "v1/social/inbox"), resolvingAgainstBaseURL: false) {
+            inbox.queryItems = [URLQueryItem(name: "limit", value: "1")]
+            if let u = inbox.url {
+                var api = URLRequest(url: u); api.httpMethod = "HEAD"; api.timeoutInterval = 4
+                URLSession.shared.dataTask(with: api).resume()
+            }
+        }
         Task { @MainActor in _ = BlindbanditAPI.installationID }
     }
 }

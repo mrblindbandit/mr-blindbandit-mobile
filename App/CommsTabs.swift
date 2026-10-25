@@ -204,10 +204,12 @@ struct MessagesTabView: View {
                     } else if communications.conversations.isEmpty {
                         VStack(spacing: 10) {
                             Image("BBEmptyInbox").resizable().scaledToFit().frame(maxWidth: 160).accessibilityHidden(true)
-                            Text("No conversations yet").font(.headline)
-                            Text("Start one with the compose button.").foregroundStyle(.secondary)
+                            Text("Your chats will show up here").font(.headline)
+                            Text("Tap compose to message someone, or open People.").foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("messages-empty")
                     } else if visibleConversations.isEmpty {
                         Text("No conversations match \"\(search)\".").foregroundStyle(.secondary)
                     } else {
@@ -1179,6 +1181,18 @@ struct CallsTabView: View {
         NavigationStack {
             List {
                 Section {
+                    NavigationLink {
+                        DialerView()
+                    } label: {
+                        Label("Dialer", systemImage: "circle.grid.3x3.fill")
+                    }
+                    .accessibilityIdentifier("calls-tab-dialer")
+                    .accessibilityHint("Open the keypad to dial a BlindBandit call number")
+                } header: {
+                    Text("Keypad").accessibilityAddTraits(.isHeader)
+                }
+
+                Section {
                     UsernameSearchField(label: "Blindbandit username", text: $recipient)
                     HStack {
                         Button { call(recipient, video: false) } label: { Label("Voice", systemImage: "phone.fill") }
@@ -1225,7 +1239,7 @@ struct CallsTabView: View {
                     if !communications.historyError.isEmpty && communications.callHistory.isEmpty {
                         CommsErrorView(message: communications.historyError) { await communications.refreshCallHistory() }
                     } else if rows.isEmpty {
-                        Text(missedOnly ? "No missed calls." : "No calls yet.").foregroundStyle(.secondary)
+                        Text(missedOnly ? "No missed calls yet." : "No recent calls — try the Dialer above.").foregroundStyle(.secondary)
                     } else {
                         ForEach(rows) { record in historyRow(record) }
                     }
@@ -1544,7 +1558,7 @@ struct MessageStatusCaption: View {
 enum MessageStatus {
     /// "Sent", "Delivered", "Read 5:08 AM", "Read Yesterday 9:14 PM", "Read Mon 9:14 PM" or "Read Oct 3, 9:14 PM".
     static func caption(for message: BlindbanditServerMessage, showRead: Bool, now: Date = Date()) -> String {
-        if message.id.hasPrefix("local-") { return "Sending…" }
+        if message.id.hasPrefix("local-") { return "Sent" }
         return caption(sent: message.created_at, delivered: message.delivered_at, read: message.read_at, showRead: showRead, now: now)
     }
 

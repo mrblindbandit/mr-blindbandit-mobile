@@ -182,24 +182,33 @@ struct DialerView: View {
     private func placeCall() {
         let normalized = CallNumberDirectory.normalize(digits)
         guard !normalized.isEmpty else { return }
-        if let handle = CallNumberDirectory.resolve(normalized) {
-            placing = true
-            status = "Calling @\(handle)…"
-            // Hand off to outbound machine: connecting dial → ringback.
-            CallSounds.closeDialer()
-            Task {
-                // startCall owns dial → ringback phases.
-                await communications.startCall(recipient: handle, video: false)
-                placing = false
+        placing = true
+        status = "Looking up…"
+        CallSounds.closeDialer()
+        Task {
+            let handle: String?
+            if let local = CallNumberDirectory.resolve(normalized) {
+                handle = local
+            } else if let resolved = try? await BlindbanditAPI.resolveCallNumber(normalized) {
+                CallNumberDirectory.assign(number: resolved.callNumber, handle: resolved.handle)
+                handle = resolved.handle
+            } else {
+                handle = nil
             }
+            guard let handle else {
+                placing = false
+                showNotFound = true
+                CallSounds.busyOrFailed()
+                status = "Not found"
+                UIAccessibility.post(notification: .announcement, argument: "Number not found")
+                AppHaptics.error()
+                return
+            }
+            status = "Calling @\(handle)…"
             UIAccessibility.post(notification: .announcement, argument: "Calling \(handle)")
             AppHaptics.medium()
-        } else {
-            showNotFound = true
-            CallSounds.busyOrFailed()
-            status = "Not found"
-            UIAccessibility.post(notification: .announcement, argument: "Number not found")
-            AppHaptics.error()
+            await communications.startCall(recipient: handle, video: false)
+            placing = false
         }
     }
 
@@ -251,7 +260,7 @@ struct CallNumberSettingsView: View {
             } header: {
                 Text("My call number")
             } footer: {
-                Text("People can dial this from the Dialer once they assign it to your handle. Saved on this iPhone and iCloud Key-Value until server sync ships.")
+                Text("People can dial this from the Dialer. Synced to BlindBandit when you tap Save; also kept on this iPhone and iCloud Key-Value.")
             }
 
             Section("People") {
@@ -311,14 +320,31 @@ struct CallNumberSettingsView: View {
                         CallNumberDirectory.assign(number: number, handle: handle)
                     }
                     CallNumberDirectory.myCallNumber = myNumber
-                    AppHaptics.success()
-                    UIAccessibility.post(notification: .announcement, argument: "Call numbers saved")
+                    let digits = CallNumberDirectory.normalize(myNumber)
+                    Task {
+                        do {
+                            let saved = try await BlindbanditAPI.setMyCallNumber(digits.isEmpty ? nil : digits)
+                            if let saved { CallNumberDirectory.myCallNumber = saved; myNumber = saved }
+                            AppHaptics.success()
+                            UIAccessibility.post(notification: .announcement, argument: "Call numbers saved")
+                        } catch {
+                            // Local save already applied; server sync can retry later.
+                            AppHaptics.warning()
+                            UIAccessibility.post(notification: .announcement, argument: "Saved on this iPhone. Server sync failed.")
+                        }
+                    }
                 }
+            } footer: {
+                Text("Your number syncs to BlindBandit so others can dial it from the Dialer directory.")
             }
         }
         .navigationTitle("Call numbers")
-        .onAppear {
+        .task {
             myNumber = CallNumberDirectory.myCallNumber
+            if let remote = try? await BlindbanditAPI.getMyCallNumber(), !remote.isEmpty {
+                CallNumberDirectory.myCallNumber = remote
+                myNumber = remote
+            }
         }
     }
 }

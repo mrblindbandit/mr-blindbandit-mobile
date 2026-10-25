@@ -155,10 +155,35 @@ enum CallSounds {
         set { UserDefaults.standard.set(newValue.rawValue, forKey: "selectedNotificationTone") }
     }
 
-    private static func prepareSession() {
+    /// True while dial tone or US ringback should keep looping (CallKit must not kill it).
+    static var isOutgoingProgressActive: Bool { outgoingProgress != .idle }
+
+    /// CallKit / LiveKit-safe session. Outgoing progress uses playAndRecord so mic publish
+    /// never hits LiveKit "Audio session category does not support recording" after ambient.
+    private static func prepareSession(forCallProgress: Bool = false) {
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.ambient, mode: .default, options: [.mixWithOthers, .duckOthers])
+        let progress = forCallProgress || outgoingProgress != .idle
+        if progress {
+            try? session.setCategory(.playAndRecord, mode: .voiceChat,
+                                    options: [.allowBluetooth, .allowBluetoothA2DP, .mixWithOthers, .duckOthers])
+        } else {
+            try? session.setCategory(.ambient, mode: .default, options: [.mixWithOthers, .duckOthers])
+        }
         try? session.setActive(true)
+    }
+
+    /// After CallKit `didActivate`, restart dial/ringback on the voiceChat session.
+    static func resumeOutgoingProgressIfNeeded() {
+        guard outgoingProgress != .idle else { return }
+        prepareSession(forCallProgress: true)
+        if let player = loopPlayer, !player.isPlaying {
+            player.prepareToPlay()
+            player.play()
+        } else if outgoingProgress == .ringback {
+            startRingback()
+        } else if outgoingProgress == .dialTone {
+            startDialTone()
+        }
     }
 
     private static func url(named name: String) -> URL? {
@@ -180,7 +205,8 @@ enum CallSounds {
     private static func playOneShot(named name: String, volume: Float = 0.7) {
         guard playUISounds else { return }
         guard UIApplication.shared.applicationState != .background else { return }
-        prepareSession()
+        // Preserve playAndRecord when dial/ringback (or an active CallKit session) is live.
+        prepareSession(forCallProgress: outgoingProgress != .idle)
         guard let url = url(named: name) else { return }
         do {
             oneShot = try AVAudioPlayer(contentsOf: url)
@@ -192,7 +218,9 @@ enum CallSounds {
 
     private static func playLoop(named name: String, volume: Float = 0.45) {
         guard playUISounds else { return }
-        prepareSession()
+        // Outbound US dial/ringback must use playAndRecord so CallKit+LiveKit can publish mic.
+        let outbound = name.hasPrefix("ringback_us_")
+        prepareSession(forCallProgress: outbound)
         stopLoop()
         guard let url = url(named: name) else { return }
         do {
@@ -265,7 +293,8 @@ enum CallSounds {
     static func playDTMF(_ key: String) {
         guard playUISounds else { return }
         guard let (lo, hi) = dtmfPairs[key] else { return }
-        prepareSession()
+        // Never drop to ambient mid-call — CallKit/LiveKit need playAndRecord.
+        prepareSession(forCallProgress: true)
         let sr = 44100.0
         let duration = 0.14
         let n = Int(duration * sr)

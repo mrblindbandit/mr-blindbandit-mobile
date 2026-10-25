@@ -61,10 +61,43 @@ final class BlindbanditTests: XCTestCase {
     }
 
     func testEnvelopeUnwrapsCallWithLiveKitGrant() throws {
-        let json = #"{"success":true,"data":{"id":"c1","room":"call_abc","kind":"video","status":"ringing","livekit":{"token":"t","identity":"p1","room":"call_abc","expires_at":1,"url":""}}}"#
+        let json = #"{"success":true,"data":{"id":"c1","room":"call_abc","kind":"video","status":"ringing","provider":"livekit","livekit":{"token":"t","identity":"p1","room":"call_abc","expires_at":1,"url":""}}}"#
         let call = try BlindbanditAPI.decode(BlindbanditCallResponse.self, from: Data(json.utf8))
         XCTAssertEqual(call.kind, "video")
-        XCTAssertEqual(call.livekit.token, "t")
+        XCTAssertEqual(call.resolvedProvider, "livekit")
+        XCTAssertEqual(call.livekit?.token, "t")
+        XCTAssertNil(call.agora)
+    }
+
+    func testEnvelopeUnwrapsCallWithNestedAgoraGrant() throws {
+        let json = #"{"success":true,"data":{"id":"c2","room":"call_xyz","kind":"voice","status":"ringing","provider":"agora","livekit":null,"agora":{"token":"atok","app_id":"app123","channel":"call_xyz","uid":"42","expires_at":1700000000000},"token":"atok","app_id":"app123","channel":"call_xyz","uid":"42"}}"#
+        let call = try BlindbanditAPI.decode(BlindbanditCallResponse.self, from: Data(json.utf8))
+        XCTAssertEqual(call.resolvedProvider, "agora")
+        XCTAssertTrue(call.usesAgora)
+        XCTAssertEqual(call.agora?.appId, "app123")
+        XCTAssertEqual(call.agora?.token, "atok")
+        XCTAssertEqual(call.agora?.channel, "call_xyz")
+        XCTAssertEqual(call.agora?.uid, 42)
+        XCTAssertNil(call.livekit)
+    }
+
+    func testEnvelopeUnwrapsCallWithFlatAgoraGrant() throws {
+        let json = #"{"success":true,"data":{"call_id":"c3","room":"room1","kind":"video","status":"active","provider":"agora","token":"flatTok","app_id":"flatApp","channel":"room1","uid":99}}"#
+        let call = try BlindbanditAPI.decode(BlindbanditCallResponse.self, from: Data(json.utf8))
+        XCTAssertEqual(call.id, "c3")
+        XCTAssertEqual(call.resolvedProvider, "agora")
+        XCTAssertEqual(call.agora?.appId, "flatApp")
+        XCTAssertEqual(call.agora?.uid, 99)
+        XCTAssertEqual(call.agora?.token, "flatTok")
+    }
+
+    func testEnvelopeStillAcceptsLegacyFlatLiveKit() throws {
+        let json = #"{"success":true,"data":{"call_id":"c4","room":"r","kind":"voice","status":"ringing","token":"lk","livekit_url":"wss://example.livekit.cloud"}}"#
+        let call = try BlindbanditAPI.decode(BlindbanditCallResponse.self, from: Data(json.utf8))
+        XCTAssertEqual(call.resolvedProvider, "livekit")
+        XCTAssertEqual(call.livekit?.token, "lk")
+        XCTAssertEqual(call.livekit?.url, "wss://example.livekit.cloud")
+        XCTAssertNil(call.agora)
     }
 
     func testHandleNormalization() {

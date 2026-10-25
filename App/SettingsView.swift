@@ -501,6 +501,7 @@ struct DeleteAccountView: View {
 struct LicensesView: View {
     private let licenses: [(name: String, license: String, url: String)] = [
         ("LiveKit Swift SDK", "Apache License 2.0", "https://github.com/livekit/client-sdk-swift/blob/main/LICENSE"),
+        ("Agora RTC SDK (iOS)", "Agora SDK License", "https://www.agora.io/en/license/"),
         ("LiveKit WebRTC", "BSD 3-Clause License", "https://github.com/livekit/webrtc-xcframework/blob/main/LICENSE"),
         ("LiveKit UniFFI", "Apache License 2.0", "https://github.com/livekit/livekit-uniffi-xcframework"),
         ("SwiftProtobuf", "Apache License 2.0", "https://github.com/apple/swift-protobuf/blob/main/LICENSE.txt"),

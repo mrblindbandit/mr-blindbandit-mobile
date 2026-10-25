@@ -1,5 +1,6 @@
 package net.mrblindbandit.app
 
+import net.mrblindbandit.app.connect.CallRtcGrant
 import net.mrblindbandit.app.connect.CommsDestination
 import net.mrblindbandit.app.connect.Lenient
 import net.mrblindbandit.app.connect.Receipt
@@ -59,6 +60,29 @@ class CommsModelsTest {
         assertEquals(ended.key, invite.key)
         assertFalse(net.mrblindbandit.app.connect.PushPayload.parse(mapOf("type" to "message")).isCall)
     }
+    @Test fun callRtcGrantParsesNestedAgora() {
+        val json = JSONObject("""{"id":"c2","room":"call_xyz","kind":"voice","status":"ringing","provider":"agora","livekit":null,"agora":{"token":"atok","app_id":"app123","channel":"call_xyz","uid":"42"},"token":"atok","app_id":"app123","channel":"call_xyz","uid":"42"}""")
+        val g = CallRtcGrant.parse(json)
+        assertEquals("agora", g.provider)
+        assertTrue(g.usesAgora)
+        assertEquals("app123", g.agoraAppId)
+        assertEquals("atok", g.agoraToken)
+        assertEquals("call_xyz", g.agoraChannel)
+        assertEquals(42, g.agoraUid)
+        assertNull(g.livekitToken)
+    }
+
+    @Test fun callRtcGrantParsesFlatAgoraAndLegacyLiveKit() {
+        val agora = CallRtcGrant.parse(JSONObject("""{"call_id":"c3","room":"room1","provider":"agora","token":"flatTok","app_id":"flatApp","channel":"room1","uid":99}"""))
+        assertTrue(agora.usesAgora)
+        assertEquals(99, agora.agoraUid)
+        val lk = CallRtcGrant.parse(JSONObject("""{"call_id":"c4","room":"r","token":"lk","livekit_url":"wss://example.livekit.cloud"}"""))
+        assertEquals("livekit", lk.provider)
+        assertFalse(lk.usesAgora)
+        assertEquals("lk", lk.livekitToken)
+        assertEquals("wss://example.livekit.cloud", lk.livekitUrl)
+    }
+
     @Test fun destinations() {
         assertEquals(CommsDestination.Thread("abc"), CommsDestination.parse("https://mrblindbandit.net/messages/abc"))
         assertEquals(CommsDestination.Call("k9"), CommsDestination.parse("/mobile/calls/k9"))

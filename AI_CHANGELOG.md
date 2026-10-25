@@ -1,3 +1,12 @@
+## 2026-10-26 — Dual RTC Agora (iOS + Android)
+
+- Parse `provider` + nested/flat Agora grants from create/join/accept; keep LiveKit nested+flat.
+- Route connect/mute/camera/leave through Agora session when `provider=agora`; LiveKit path unchanged.
+- SPM `AgoraRtcEngine_iOS` (RtcBasic); Android `io.agora.rtc:full-sdk:4.5.2` + Agora Maven.
+- Frame E2EE / Agora video canvas / screen share: follow-up. No App Certificate in client.
+- Version bumps left to release workflow.
+- See `docs/DUAL_RTC_AGORA.md`.
+
 ## 2026-10-26 — Android 2.0.12 (16): phone-feel + join fix + native Bites video
 
 - **Send:** optimistic Sent caption + clear draft immediately; `client_msg_id` + `POST /v1/social/messages/send-ack`; E2EE race ≤350ms; Clerk session token hard 3.5s.

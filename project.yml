@@ -6,6 +6,9 @@ options:
     watchOS: '10.0'
 settings:
   base:
+    # Single source of truth for every target (app + all extensions + watch). Bump here only.
+    MARKETING_VERSION: '2.2.0'
+    CURRENT_PROJECT_VERSION: '39'
     SWIFT_VERSION: '5.0'
     CODE_SIGNING_ALLOWED: NO
     TARGETED_DEVICE_FAMILY: '1'
@@ -37,6 +40,8 @@ targets:
     info:
       path: App/Info.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleURLTypes:
           - CFBundleURLName: net.mrblindbandit.app
             CFBundleURLSchemes: [mrblindbandit, blindbandit]
@@ -75,8 +80,6 @@ targets:
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         INFOPLIST_KEY_UIBackgroundModes: [audio, remote-notification, voip]
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        MARKETING_VERSION: '2.2.0'
-        CURRENT_PROJECT_VERSION: '39'
     dependencies:
       - package: LiveKitClient
         product: LiveKit
@@ -97,6 +100,8 @@ targets:
     info:
       path: Widgets/BlindbanditWidgets/Info.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDisplayName: Blind Bandit Widgets
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
@@ -105,8 +110,6 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.mrblindbandit.app.widgets
         CODE_SIGN_ENTITLEMENTS: Widgets/BlindbanditWidgets/BlindbanditWidgets.entitlements
-        MARKETING_VERSION: '2.2.0'
-        CURRENT_PROJECT_VERSION: '39'
         TARGETED_DEVICE_FAMILY: '1'
         APPLICATION_EXTENSION_API_ONLY: YES
         GENERATE_INFOPLIST_FILE: YES
@@ -120,6 +123,8 @@ targets:
     info:
       path: WatchApp/BlindbanditWatch/Info.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDisplayName: Blind Bandit
         WKCompanionAppBundleIdentifier: net.mrblindbandit.app
         WKApplication: true
@@ -127,8 +132,6 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.mrblindbandit.app.watchkitapp
         CODE_SIGN_ENTITLEMENTS: WatchApp/BlindbanditWatch/BlindbanditWatch.entitlements
-        MARKETING_VERSION: '2.2.0'
-        CURRENT_PROJECT_VERSION: '39'
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_FILE: WatchApp/BlindbanditWatch/Info.plist
         SDKROOT: watchos
@@ -141,6 +144,8 @@ targets:
     info:
       path: ScreenShare/Info.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDisplayName: Mr. BlindBandit
         RTCAppGroupIdentifier: group.net.mrblindbandit.app
         NSExtension:
@@ -151,8 +156,6 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.mrblindbandit.app.ScreenShare
         CODE_SIGN_ENTITLEMENTS: ScreenShare/ScreenShare.entitlements
-        MARKETING_VERSION: '2.2.0'
-        CURRENT_PROJECT_VERSION: '39'
         TARGETED_DEVICE_FAMILY: '1'
         APPLICATION_EXTENSION_API_ONLY: YES
     dependencies:
@@ -172,6 +175,8 @@ targets:
     info:
       path: NotificationService/Info.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDisplayName: Mr. BlindBandit Notifications
         BBKeychainGroup: $(AppIdentifierPrefix)net.mrblindbandit.shared
         NSExtension:
@@ -183,8 +188,6 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.mrblindbandit.app.NotificationService
         CODE_SIGN_ENTITLEMENTS: NotificationService/NotificationService.entitlements
-        MARKETING_VERSION: '2.2.0'
-        CURRENT_PROJECT_VERSION: '39'
         TARGETED_DEVICE_FAMILY: '1'
   BlindbanditTests:
     type: bundle.unit-test

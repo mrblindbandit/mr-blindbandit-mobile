@@ -15,8 +15,9 @@ platform :ios do
     import_certificate(certificate_path: p12, certificate_password: ENV.fetch("IOS_DIST_P12_PASSWORD"),
       keychain_path: keychain_path, keychain_password: "ci_signing")
     File.delete(p12)
-    # One App Store profile per signed target, force-regenerated so new capabilities (App Group, WeatherKit, SCA,
-    # communication / time-sensitive notifications, SharePlay) are included.
+    # One App Store profile per signed *embedded* target. Widgets (net.mrblindbandit.app.widgets) and
+    # Watch (net.mrblindbandit.app.watchkitapp) stay out of the archive until ASC App IDs + profiles exist;
+    # then add them here and re-embed in project.yml.
     targets = { "Blindbandit" => "net.mrblindbandit.app",
                 "ScreenShare" => "net.mrblindbandit.app.ScreenShare",
                 "NotificationService" => "net.mrblindbandit.app.NotificationService" }

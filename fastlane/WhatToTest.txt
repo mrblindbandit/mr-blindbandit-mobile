@@ -1,8 +1,15 @@
-2.0.10 (29): BITES tab (native newsfeed + composer/like/comment/share/report/delete) + native Profile (avatar, @handle, bio, Bites/followers/following, follow/unfollow). People + author tap open native profile. Tabs: Chats / Bites / Calls / People / Profile. Owner-only Admin (Verify people → verified badge via server, report queue, hide Bite, ban). Voice play still Android-parity temp .m4a + translate + fat settings from 28.
+2.2.0 (31): Apple-native pack + 2.1.0 inventory mega cut.
+
+What's new:
+- Live Activities / Dynamic Island plumbing for calls (widget extension ships next once ASC App IDs land)
+- App Intents / Shortcuts (Feed + AI), TipKit, Focus filters, Handoff, Spotlight, Passkeys, Writing Tools hooks
+- Control Center / CarPlay / Watch source scaffolding (Watch embed deferred for signing)
+- Call + Edit display name / picture on native profiles; Settings → Open native profile
+- Prior 2.1.0: Bites tab, native Profile, Admin verify, voice/translate/settings
 
 Please test:
-1) Bites tab — open feed (instant if cached), New Bite, like, comment, open author profile, Follow.
-2) Profile tab — counts, Followers/Following lists, Settings, Admin only if @kheck.
-3) Admin → Verify people: look up @handle, Verify / Unverify; badge on profile + Bites.
-4) Voice: Settings → Voice & calls → Play test tone; play a received voice note.
-5) Auto-translate on a non-English bubble with chat Auto-translate on.
+1) Cold launch + sign-in; Bites feed load / New Bite / like / comment.
+2) Profile → Edit display name + Edit profile picture; other profile → Call + Message.
+3) Settings → Open native profile; Voice & calls tones.
+4) Start/receive a call — CallKit + in-app UI still work (LA UI lands with widgets).
+5) Regression: Chats, People, Auto-translate, Admin (owner).

@@ -32,10 +32,11 @@ platform :ios do
     build_app(project: "Blindbandit.xcodeproj", scheme: "Blindbandit", configuration: "Release",
       export_method: "app-store", xcargs: "CODE_SIGNING_ALLOWED=YES",
       export_options: { provisioningProfiles: profiles })
-    # Waits for App Store Connect processing so the What to Test notes are attached to this build.
+    # Skip waiting: ASC sometimes takes >40m or silently rejects; CI should pass once the IPA is uploaded.
+    # What-to-Test notes can be set in ASC after the build appears. Poll ASC for processingState.
     notes_path = File.expand_path("WhatToTest.txt", __dir__)
-    upload_to_testflight(api_key: api_key, skip_waiting_for_build_processing: false,
+    upload_to_testflight(api_key: api_key, skip_waiting_for_build_processing: true,
       changelog: File.exist?(notes_path) ? File.read(notes_path) : nil,
-      distribute_external: false, wait_processing_timeout_duration: 2400)
+      distribute_external: false)
   end
 end

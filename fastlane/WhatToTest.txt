@@ -1,9 +1,8 @@
-2.2.0 (31): Apple-native pack + 2.1.0 inventory mega cut.
+2.2.0 (32): Apple-native pack + 2.1.0 inventory mega cut.
 
 What's new:
-- Live Activities / Dynamic Island plumbing for calls (widget extension ships next once ASC App IDs land)
 - App Intents / Shortcuts (Feed + AI), TipKit, Focus filters, Handoff, Spotlight, Passkeys, Writing Tools hooks
-- Control Center / CarPlay / Watch source scaffolding (Watch embed deferred for signing)
+- Live Activities / Home widgets / Watch: source ready; TF ships without those embeds until ASC App IDs exist
 - Call + Edit display name / picture on native profiles; Settings → Open native profile
 - Prior 2.1.0: Bites tab, native Profile, Admin verify, voice/translate/settings
 
@@ -11,5 +10,5 @@ Please test:
 1) Cold launch + sign-in; Bites feed load / New Bite / like / comment.
 2) Profile → Edit display name + Edit profile picture; other profile → Call + Message.
 3) Settings → Open native profile; Voice & calls tones.
-4) Start/receive a call — CallKit + in-app UI still work (LA UI lands with widgets).
+4) Start/receive a call — CallKit + in-app UI.
 5) Regression: Chats, People, Auto-translate, Admin (owner).

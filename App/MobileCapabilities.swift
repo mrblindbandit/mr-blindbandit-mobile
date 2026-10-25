@@ -3,6 +3,7 @@ import SwiftUI
 import UIKit
 import UserNotifications
 import AVFoundation
+import Intents
 
 extension Notification.Name {
     static let apnsDeviceTokenUpdated = Notification.Name("apnsDeviceTokenUpdated")
@@ -23,6 +24,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         UNUserNotificationCenter.current().delegate = self
         // PushKit must be registered at launch so a VoIP push that woke the app is delivered.
         CallKitManager.shared.setUp()
+        AppleNativeBootstrap.onLaunch()
         return true
     }
 
@@ -38,6 +40,14 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         UserDefaults.standard.set(message, forKey: "apnsRegistrationError")
         NotificationCenter.default.post(name: .apnsRegistrationFailed, object: message)
     }
+
+    func application(_ application: UIApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
+        if userActivity.activityType == "INStartCallIntent", let intent = userActivity.interaction?.intent as? INStartCallIntent {
+            return CarPlayCalling.handleStartCallIntent(intent)
+        }
+        return HandoffContinuity.handle(userActivity)
+    }
+
 
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,

@@ -1,4 +1,12 @@
-# Flagship changes — iOS 2.1.0 (build 30)
+# Flagship changes — iOS 2.2.0 (build 31)
+
+See **[APPLE_NATIVE_100.md](./APPLE_NATIVE_100.md)** for the Apple-native pack (Live Activities, widgets, App Intents, Focus, LCK, Control Center, Handoff, Spotlight, TipKit, Writing Tools, Watch, CarPlay, Passkeys, creator tools) and the numbered ~100 additional features.
+
+Below is the retained 2.1.0 Bandit Feed / Settings / AI inventory (still shipping).
+
+---
+
+# Prior inventory — iOS 2.1.0 (build 30)
 
 Mega native ship: Bandit Feed, Settings, AI web search, Foundation Models, WebView shell removal, and ~100 meaningful features.
 

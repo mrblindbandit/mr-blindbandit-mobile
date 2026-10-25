@@ -111,6 +111,12 @@ struct Settings: View {
                 NavigationLink { AppearanceLanguageSettingsView() } label: {
                     Label("Appearance & language", systemImage: "globe")
                 }
+                NavigationLink {
+                    Form { ExtraFeatures220SettingsSection() }
+                        .navigationTitle("Apple & Continuity")
+                } label: {
+                    Label("Apple & Continuity", systemImage: "apple.logo")
+                }
                 NavigationLink { SecurityExtrasSettingsView() } label: {
                     Label("Security extras", systemImage: "lock.rotation")
                 }

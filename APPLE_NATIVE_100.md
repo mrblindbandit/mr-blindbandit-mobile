@@ -13,7 +13,7 @@ Mega cut after 2.1.0 CI recovery. Ships **all mandatory Apple-native surfaces** 
 7. **App Intent — Message @handle** (`MessageHandleIntent`).
 8. **App Intent — What’s new on Bandit Feed** (`WhatsNewOnBanditFeedIntent`).
 9. **App Intent — Start AI** (`StartBanditAIIntent`).
-10. **Focus filter — Quiet Hours / Work** (`BanditFocusFilter` / `SetFocusFilterIntent`) — hide Bites + mute notification categories the Apple way.
+10. **Focus filter — Quiet Hours / Work** (`BanditFocusFilter` / `SetFocusFilterIntent`) — hide Bites + mute notification categories the system Focus way.
 11. **Live Communication Kit bridge** (`LiveCommunicationBridge`) with graceful CallKit fallback when LCK unavailable.
 12. **Control Center — Mute call** (`MuteCallControl` + `MuteCallIntent`, iOS 18+).
 13. **Control Center — End call** (`EndCallControl` + `EndCallIntent`).

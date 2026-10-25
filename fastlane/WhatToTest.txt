@@ -1,4 +1,4 @@
-2.2.0 (33): Apple-native pack + 2.1.0 inventory mega cut.
+2.2.0 (34): ASC ITMS-90626 — scrub "apple" from App Intent / Focus filter description.
 
 What's new:
 - App Intents / Shortcuts (Feed + AI), TipKit, Focus filters, Handoff, Spotlight, Passkeys, Writing Tools hooks

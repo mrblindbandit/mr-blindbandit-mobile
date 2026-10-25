@@ -584,10 +584,9 @@ enum BlindbanditAPI {
             body: ["conversation_id": conversationID, "client_msg_id": clientMsgID],
             timeout: 6
         )
-        if let root = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
-           let data = (root["data"] as? [String: Any]) ?? root,
-           let acked = data["acked"] as? Bool { return acked }
-        return false
+        guard let root = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return false }
+        let data = (root["data"] as? [String: Any]) ?? root
+        return data["acked"] as? Bool ?? false
     }
 
     /// Prefetch many threads in one round-trip.
@@ -599,9 +598,9 @@ enum BlindbanditAPI {
             body: ["conversation_ids": slice, "limit_per": limitPer],
             timeout: 15
         ) else { return }
-        guard let root = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
-              let data = (root["data"] as? [String: Any]) ?? root,
-              let threads = data["threads"] as? [[String: Any]] else { return }
+        guard let root = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return }
+        let data = (root["data"] as? [String: Any]) ?? root
+        guard let threads = data["threads"] as? [[String: Any]] else { return }
         for thr in threads {
             guard let id = thr["id"] as? String,
                   let itemsRaw = thr["items"] as? [Any],
@@ -646,9 +645,9 @@ enum BlindbanditAPI {
             "v1/social/presence/batch", method: "POST",
             body: ["handles": Array(slice)], timeout: 8
         )
-        guard let root = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
-              let data = (root["data"] as? [String: Any]) ?? root,
-              let items = data["items"] as? [[String: Any]] else { return [:] }
+        guard let root = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return [:] }
+        let data = (root["data"] as? [String: Any]) ?? root
+        guard let items = data["items"] as? [[String: Any]] else { return [:] }
         var out: [String: Bool] = [:]
         for item in items {
             guard let h = item["handle"] as? String else { continue }

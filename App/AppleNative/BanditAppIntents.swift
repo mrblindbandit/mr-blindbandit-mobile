@@ -69,26 +69,9 @@ struct StartBanditAIIntent: AppIntent {
     }
 }
 
+/// App Shortcuts only for parameter-free intents (String @Parameter is not allowed in utterances).
 struct BanditAppShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
-        AppShortcut(
-            intent: CallHandleIntent(),
-            phrases: [
-                "Call \(\.$handle) on \(.applicationName)",
-                "Blind Bandit call \(\.$handle)",
-            ],
-            shortTitle: "Call",
-            systemImageName: "phone.fill"
-        )
-        AppShortcut(
-            intent: MessageHandleIntent(),
-            phrases: [
-                "Message \(\.$handle) on \(.applicationName)",
-                "Blind Bandit message \(\.$handle)",
-            ],
-            shortTitle: "Message",
-            systemImageName: "message.fill"
-        )
         AppShortcut(
             intent: WhatsNewOnBanditFeedIntent(),
             phrases: [
@@ -102,7 +85,7 @@ struct BanditAppShortcuts: AppShortcutsProvider {
             intent: StartBanditAIIntent(),
             phrases: [
                 "Start AI in \(.applicationName)",
-                "Open Blind Bandit AI",
+                "Open Blind Bandit AI in \(.applicationName)",
             ],
             shortTitle: "AI",
             systemImageName: "brain.head.profile"

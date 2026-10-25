@@ -11,6 +11,8 @@ data class ServerConversation(
     val lastCreatedAt: Long,
     val verified: Boolean,
     val unreadCount: Int = 0,
+    /** Dialer call number from slim inbox, when assigned. */
+    val callNumber: String = "",
 ) {
     companion object {
         fun parse(row: JSONObject): ServerConversation? {
@@ -27,6 +29,7 @@ data class ServerConversation(
                 lastCreatedAt = last.lTime("created_at") ?: row.lTime("updated_at") ?: 0L,
                 verified = other.lBool("verified", "is_verified"),
                 unreadCount = (row.lLong("unread_count", "unread") ?: 0L).toInt().coerceAtLeast(0),
+                callNumber = other.lString("call_number").ifBlank { row.lString("call_number") },
             )
         }
     }
@@ -46,9 +49,14 @@ data class ServerMessage(
     val encrypted: Boolean = false,
     val decryptFailed: Boolean = false,
     val media: JSONObject? = null,
+    /** Client-generated id so optimistic local- rows and the server echo share one identity. */
+    val clientMsgId: String = "",
 ) {
     val receipt: Receipt
         get() = when {
+            // Optimistic phone-feel: local bubbles show Sent immediately (iOS TF 39 parity).
+            pending && !id.startsWith("local-") -> Receipt.SENDING
+            id.startsWith("local-") -> Receipt.SENT
             pending -> Receipt.SENDING
             readAt != null -> Receipt.READ
             deliveredAt != null -> Receipt.DELIVERED
@@ -58,6 +66,7 @@ data class ServerMessage(
     companion object {
         fun parse(row: JSONObject): ServerMessage? {
             val id = row.lString("id").ifBlank { return null }
+            val client = row.lString("client_msg_id")
             return ServerMessage(
                 id = id,
                 senderId = row.lString("sender_id"),
@@ -65,6 +74,7 @@ data class ServerMessage(
                 createdAt = row.lTime("created_at") ?: 0L,
                 deliveredAt = row.lTime("delivered_at"),
                 readAt = row.lTime("read_at"),
+                clientMsgId = client,
             )
         }
     }

@@ -4,7 +4,7 @@ object AppConfig {
     /** Store title. The launcher label (res/values/strings.xml app_name) is the shorter "BlindBandit". */
     const val APP_DISPLAY_NAME = "Mr. BlindBandit Mobile"
     const val HOME_SCREEN_NAME = "BlindBandit"
-    const val MARKETING_VERSION = "2.0.11"
+    const val MARKETING_VERSION = "2.0.12"
     const val API_BASE_URL = "https://api.mrblindbandit.net"
 
     const val PRIVACY_URL = "https://mrblindbandit.net/privacy/"

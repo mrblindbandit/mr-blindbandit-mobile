@@ -11,6 +11,7 @@ import net.mrblindbandit.app.connect.items
 import net.mrblindbandit.app.connect.lString
 import net.mrblindbandit.app.connect.normalizeHandle
 import org.json.JSONObject
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -195,6 +196,94 @@ class SocialRepository(
             body = JSONObject().put("approve", approve),
         )
     }
+
+    suspend fun likePost(id: String) {
+        request("/v1/social/posts/${enc(id)}/like", method = "POST", body = JSONObject())
+    }
+
+    suspend fun unlikePost(id: String) {
+        runCatching { request("/v1/social/posts/${enc(id)}/like", method = "DELETE") }
+    }
+
+    suspend fun reactPost(id: String, reaction: String = "like") {
+        request("/v1/social/posts/${enc(id)}/react", method = "POST", body = JSONObject().put("reaction", reaction))
+    }
+
+    /**
+     * Two-step public media upload for BanditBite video:
+     * POST /v1/media/uploads → PUT upload_url → POST /v1/media/{id}/complete → public content URL.
+     */
+    suspend fun uploadBiteVideo(bytes: ByteArray, mime: String = "video/mp4"): String = withContext(Dispatchers.IO) {
+        require(bytes.isNotEmpty()) { "Choose a video first." }
+        require(bytes.size <= 100 * 1024 * 1024) { "Video must be 100 MB or smaller." }
+        val token = auth.sessionToken() ?: error("Sign in to publish a BanditBite.")
+        val reserveBody = JSONObject()
+            .put("kind", "video")
+            .put("mime", mime.ifBlank { "video/mp4" })
+            .put("bytes", bytes.size)
+        val reserved = authedJson("/v1/media/uploads", "POST", reserveBody, token)
+        val mediaId = reserved.lString("media_id", "id")
+        val uploadUrl = reserved.lString("upload_url", "url")
+        require(mediaId.isNotBlank() && uploadUrl.isNotBlank()) { "Media upload slot was incomplete." }
+        putBytes(uploadUrl, bytes, mime.ifBlank { "video/mp4" }, reserved.optJSONObject("headers"))
+        val done = runCatching {
+            authedJson("/v1/media/${enc(mediaId)}/complete", "POST", JSONObject().put("alt_text", "BanditBite video"), token)
+        }.getOrNull()
+        val url = done?.lString("url", "content_url", "public_url").orEmpty()
+            .ifBlank { reserved.lString("public_url", "content_url") }
+            .ifBlank { AppConfig.API_BASE_URL.trimEnd('/') + "/v1/media/$mediaId/content" }
+        absoluteMediaUrl(url)
+    }
+
+    private fun putBytes(url: String, bytes: ByteArray, mime: String, headers: JSONObject?) {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "PUT"
+            doOutput = true
+            setFixedLengthStreamingMode(bytes.size)
+            setRequestProperty("Content-Type", mime)
+            headers?.keys()?.forEach { key ->
+                val k = key as? String ?: return@forEach
+                setRequestProperty(k, headers.optString(k))
+            }
+            connectTimeout = 30_000
+            readTimeout = 120_000
+        }
+        try {
+            connection.outputStream.use { it.write(bytes) }
+            val status = connection.responseCode
+            if (status !in 200..299) {
+                val err = runCatching { connection.errorStream?.bufferedReader()?.use { it.readText() } }.getOrNull().orEmpty()
+                throw IOException("Video upload failed ($status). $err")
+            }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private suspend fun authedJson(path: String, method: String, body: JSONObject?, token: String): JSONObject =
+        withContext(Dispatchers.IO) {
+            val connection = (URL(AppConfig.API_BASE_URL.trimEnd('/') + path).openConnection() as HttpURLConnection).apply {
+                requestMethod = method
+                setRequestProperty("Authorization", "Bearer $token")
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty("X-Installation-ID", DeviceIdentity.installationId(appContext))
+                connectTimeout = 15_000
+                readTimeout = 45_000
+                if (body != null) {
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/json")
+                }
+            }
+            try {
+                if (body != null) connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                val status = connection.responseCode
+                val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+                val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                BlindbanditApiEnvelope.unwrap(status, text)
+            } finally {
+                connection.disconnect()
+            }
+        }
 
     private fun enc(value: String) = URLEncoder.encode(value, Charsets.UTF_8.name())
 

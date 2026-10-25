@@ -79,6 +79,7 @@ fun CallsTab(
     var pendingCall by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
 
     var pendingAnswer by remember { mutableStateOf<String?>(null) }
+    var showDialer by remember { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         val answer = pendingAnswer
@@ -116,9 +117,28 @@ fun CallsTab(
 
     if (!signedIn) { CenteredText("Sign in from the Home tab to make and receive calls."); return }
 
+    if (showDialer) {
+        DialerScreen(communications, haptics, onBack = { showDialer = false })
+        return
+    }
+
+    // Warm TLS while the Calls tab is visible.
+    LaunchedEffect(signedIn) { if (signedIn) communications.warmCallPath() }
+
     LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp)) {
         item {
             Text("Calls", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(16.dp, 8.dp).semantics { heading() })
+        }
+        item {
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Keypad", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+                FilledTonalButton(
+                    onClick = { haptics.tap(); showDialer = true },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).semantics { contentDescription = "Open Dialer keypad" },
+                ) {
+                    Text("Dialer")
+                }
+            }
         }
         communications.incomingCallId?.let { callId ->
             item {
@@ -184,7 +204,7 @@ fun CallsTab(
                 item { ErrorRetry(state.message, { scope.launch { communications.loadCallHistory() } }) }
             (state is LoadState.Loading || state is LoadState.Idle) && communications.callHistory.isEmpty() ->
                 item { Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.semantics { contentDescription = "Loading call history" }) } }
-            rows.isEmpty() -> item { CenteredText(if (missedOnly) "No missed calls." else "No calls yet.") }
+            rows.isEmpty() -> item { CenteredText(if (missedOnly) "No missed calls yet." else "No recent calls — try the Dialer above.") }
             else -> items(rows, key = { it.id }) { call ->
                 CallRow(call, communications, onCallBack = { dial(call.peerHandle, call.isVideo) }, onMessage = { onMessage(call.peerHandle) }, onReport = { report = ReportTarget("call", call.id, "this call") })
                 HorizontalDivider()

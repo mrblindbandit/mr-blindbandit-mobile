@@ -43,6 +43,11 @@ class CommsModelsTest {
         assertEquals(Receipt.DELIVERED, m.receipt)
         assertEquals(Receipt.READ, m.copy(readAt = 3).receipt)
         assertEquals(Receipt.SENDING, m.copy(pending = true).receipt)
+        // Optimistic local bubbles show Sent immediately (Android 2.0.12 / iOS TF 39).
+        assertEquals(Receipt.SENT, m.copy(id = "local-abc", pending = false, clientMsgId = "local-abc").receipt)
+        assertEquals(Receipt.SENT, m.copy(id = "local-abc", pending = true).receipt)
+        val withClient = ServerMessage.parse(JSONObject("""{"id":"srv1","sender_id":"me","body":"x","created_at":1,"client_msg_id":"local-abc"}"""))!!
+        assertEquals("local-abc", withClient.clientMsgId)
     }
 
     @Test fun pushTerminalEventsAreNotIncomingCalls() {

@@ -394,16 +394,15 @@ private fun ThreadScreen(communications: ProductionCommunicationsService, conver
         val text = draft.trim()
         if (text.isBlank() || sending) return
         val quoted = replyTo?.let { r -> r.body.lines().take(3).joinToString("\n") { "> $it" } + "\n" }.orEmpty()
+        // Clear draft + unlock Send immediately; network runs after optimistic Sent (TF 39).
+        val payload = quoted + text
+        draft = ""; replyTo = null
+        communications.local.setDraft(conversationId, "")
         sending = true
+        haptics.success()
         scope.launch {
-            val target = peerHandle.ifBlank { convo?.peerName.orEmpty() }
-            val id = communications.sendMessage(target, quoted + text, conversationId)
+            communications.sendMessage(peerHandle.ifBlank { convo?.peerName.orEmpty() }, payload, conversationId)
             sending = false
-            if (id != null || communications.pendingMessages.isNotEmpty()) {
-                draft = ""; replyTo = null
-                communications.local.setDraft(conversationId, "")
-                haptics.success()
-            }
         }
     }
 

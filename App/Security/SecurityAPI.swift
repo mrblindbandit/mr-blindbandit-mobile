@@ -177,7 +177,12 @@ enum SecurityAPI {
 
     static func relayPending() async throws -> [RelayItem] {
         try await gated(.relay) {
-            let obj = data(try await BlindbanditAPI.request("v1/social/relay/pending"))
+            // Always send device_id in the query (server historically required it); header alone was ignored and returned DEVICE_NOT_FOUND ~6s.
+            var path = "v1/social/relay/pending"
+            if let device = IdentityStore.shared.deviceID, !device.isEmpty {
+                path += "?device_id=\(device.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? device)"
+            }
+            let obj = data(try await BlindbanditAPI.request(path))
             return (obj["items"] as? [[String: Any]] ?? []).map {
                 RelayItem(id: "\($0["id"] ?? "")", chatType: $0["chat_type"] as? String ?? "dm", chatID: "\($0["chat_id"] ?? "")",
                           messageID: "\($0["message_id"] ?? "")", sender: $0["sender_handle"] as? String ?? "",

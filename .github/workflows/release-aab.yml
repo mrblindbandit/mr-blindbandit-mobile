@@ -3,7 +3,7 @@ name: Release AAB (Google Play) — Mr. Blindbandit
 #   ANDROID_UPLOAD_KEYSTORE_BASE64, ANDROID_UPLOAD_KEYSTORE_PASSWORD,
 #   ANDROID_UPLOAD_KEY_ALIAS, ANDROID_UPLOAD_KEY_PASSWORD.
 # Runs on demand only. The job fails if the bundle is not signed by the expected upload key.
-# Optional auto-upload to Play internal track when PLAY_SERVICE_ACCOUNT_JSON is set.
+# Optional auto-upload to Play when PLAY_SERVICE_ACCOUNT_JSON is set (default track: production).
 on:
   workflow_dispatch:
 permissions:
@@ -98,16 +98,18 @@ jobs:
             echo "- Upload key SHA-256: $actual"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload to Play Console (internal testing)
+      - name: Upload to Play Console (production by default)
         env:
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          PLAY_TRACK: ${{ vars.PLAY_TRACK }}
+          PLAY_RELEASE_STATUS: ${{ vars.PLAY_RELEASE_STATUS }}
         run: |
           set -euo pipefail
           AAB=$(ls dist/*.aab | head -1)
           VN=$(basename "$AAB" .aab | sed 's/^MrBlindbandit-//')
           echo "AAB=$AAB versionName=$VN"
           if [ -z "${PLAY_SERVICE_ACCOUNT_JSON:-}" ]; then
-            echo "::notice::PLAY_SERVICE_ACCOUNT_JSON not set — signed AAB is the workflow artifact for manual Play Console upload (Testing → Internal testing)."
+            echo "::notice::PLAY_SERVICE_ACCOUNT_JSON not set — signed AAB is the workflow artifact for manual Play Console upload (Release → Production)."
             {
               echo "### Play Console"
               echo "- Auto-upload skipped (no PLAY_SERVICE_ACCOUNT_JSON secret)."
@@ -119,7 +121,7 @@ jobs:
           umask 077
           printf '%s' "$PLAY_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/play.json"
           python3 -m pip install -q google-api-python-client google-auth
-          VERSION_NAME="$VN" python3 scripts/upload-play-internal.py "$RUNNER_TEMP/play.json" "dist/*.aab"
+          VERSION_NAME="$VN" PLAY_TRACK="${PLAY_TRACK:-production}" PLAY_RELEASE_STATUS="${PLAY_RELEASE_STATUS:-completed}" python3 scripts/upload-play-internal.py "$RUNNER_TEMP/play.json" "dist/*.aab"
           rm -f "$RUNNER_TEMP/play.json"
 
       - name: Remove decoded keystore

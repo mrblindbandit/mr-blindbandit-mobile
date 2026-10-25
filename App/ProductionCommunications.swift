@@ -177,22 +177,105 @@ struct BlindbanditServerMessage: Identifiable, Decodable, Equatable {
     }
 }
 
-struct BlindbanditLiveKitGrant: Decodable {
+struct BlindbanditLiveKitGrant: Decodable, Equatable {
     let token: String
     let identity: String?
     let room: String
     let expires_at: Double?
     let url: String?
+
+    enum CodingKeys: String, CodingKey { case token, identity, room, expires_at, url }
+
+    init(token: String, identity: String?, room: String, expires_at: Double?, url: String?) {
+        self.token = token
+        self.identity = identity
+        self.room = room
+        self.expires_at = expires_at
+        self.url = url
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        token = try c.decode(String.self, forKey: .token)
+        identity = try c.decodeIfPresent(String.self, forKey: .identity)
+        room = (try c.decodeIfPresent(String.self, forKey: .room)) ?? ""
+        expires_at = try c.decodeIfPresent(Double.self, forKey: .expires_at)
+        url = try c.decodeIfPresent(String.self, forKey: .url)
+    }
 }
 
-/// Accepts both the 1.8 shape `{id, room, kind, status, livekit:{token,url,…}}` and the 1.9 contract
-/// shape `{call_id, room, livekit_url, token}`.
+/// Agora RTC grant from create/join/accept. Server mints token + channel; App Certificate stays server-side.
+/// Coded against Sites `mintCallRtcToken` / `mintAgoraRtcToken`:
+/// nested `agora: { token, app_id, channel, uid, expires_at, … }` plus flat `provider`, `app_id`, `token`, `channel`, `uid`.
+struct BlindbanditAgoraGrant: Decodable, Equatable {
+    let appId: String
+    let token: String
+    let channel: String
+    let uid: UInt
+    let expiresAt: Double?
+
+    private enum CodingKeys: String, CodingKey {
+        case app_id, appId, token, channel, uid, expires_at, expiresAt
+    }
+
+    init(appId: String, token: String, channel: String, uid: UInt, expiresAt: Double? = nil) {
+        self.appId = appId
+        self.token = token
+        self.channel = channel
+        self.uid = uid
+        self.expiresAt = expiresAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        appId = try c.decodeIfPresent(String.self, forKey: .app_id)
+            ?? c.decode(String.self, forKey: .appId)
+        token = try c.decode(String.self, forKey: .token)
+        channel = try c.decode(String.self, forKey: .channel)
+        if let n = try? c.decode(UInt.self, forKey: .uid) {
+            uid = n
+        } else if let i = try? c.decode(Int.self, forKey: .uid), i >= 0 {
+            uid = UInt(i)
+        } else if let s = try c.decodeIfPresent(String.self, forKey: .uid), let n = UInt(s) {
+            uid = n
+        } else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.uid,
+                .init(codingPath: c.codingPath, debugDescription: "Missing agora uid")
+            )
+        }
+        if let d = try? c.decodeIfPresent(Double.self, forKey: .expires_at) {
+            expiresAt = d
+        } else if let d = try? c.decodeIfPresent(Double.self, forKey: .expiresAt) {
+            expiresAt = d
+        } else if let s = try? c.decodeIfPresent(String.self, forKey: .expires_at), let d = Double(s) {
+            expiresAt = d
+        } else {
+            expiresAt = nil
+        }
+    }
+}
+
+/// Accepts LiveKit nested+flat shapes and Agora nested+flat from Sites mintCallRtcToken.
 struct BlindbanditCallResponse: Decodable {
     let id: String
     let room: String
     let kind: String
     let status: String
-    let livekit: BlindbanditLiveKitGrant
+    /// `livekit` (default) or `agora`. Absent → infer from grants.
+    let provider: String?
+    let livekit: BlindbanditLiveKitGrant?
+    let agora: BlindbanditAgoraGrant?
+
+    var resolvedProvider: String {
+        if let p = provider?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !p.isEmpty {
+            return p
+        }
+        if agora != nil { return "agora" }
+        return "livekit"
+    }
+
+    var usesAgora: Bool { resolvedProvider == "agora" && agora != nil }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -200,18 +283,71 @@ struct BlindbanditCallResponse: Decodable {
         room = (try? c.decode(String.self, forKey: .room)) ?? ""
         kind = (try? c.decode(String.self, forKey: .kind)) ?? "voice"
         status = (try? c.decode(String.self, forKey: .status)) ?? "ringing"
-        if let grant = try? c.decode(BlindbanditLiveKitGrant.self, forKey: .livekit) {
-            livekit = grant
-        } else {
-            livekit = BlindbanditLiveKitGrant(
-                token: try c.decode(String.self, forKey: .token),
-                identity: nil, room: room, expires_at: nil,
+        provider = (try? c.decodeIfPresent(String.self, forKey: .provider))
+            ?? (try? c.decodeIfPresent(String.self, forKey: .rtc_provider))
+
+        let nestedLivekit = try? c.decodeIfPresent(BlindbanditLiveKitGrant.self, forKey: .livekit)
+        let nestedAgora = try? c.decodeIfPresent(BlindbanditAgoraGrant.self, forKey: .agora)
+
+        let flatAppId = (try? c.decodeIfPresent(String.self, forKey: .agora_app_id))
+            ?? (try? c.decodeIfPresent(String.self, forKey: .app_id))
+        let flatToken = (try? c.decodeIfPresent(String.self, forKey: .agora_token))
+            ?? (try? c.decodeIfPresent(String.self, forKey: .token))
+        let flatChannel = (try? c.decodeIfPresent(String.self, forKey: .channel)) ?? (room.isEmpty ? nil : room)
+        let flatUid: UInt? = {
+            if let n = try? c.decodeIfPresent(UInt.self, forKey: .uid) { return n }
+            if let i = try? c.decodeIfPresent(Int.self, forKey: .uid), i >= 0 { return UInt(i) }
+            if let s = try? c.decodeIfPresent(String.self, forKey: .uid), let n = UInt(s) { return n }
+            return nil
+        }()
+        let flatAgora: BlindbanditAgoraGrant? = {
+            guard let flatAppId, !flatAppId.isEmpty,
+                  let flatToken, !flatToken.isEmpty,
+                  let flatChannel, !flatChannel.isEmpty,
+                  let flatUid else { return nil }
+            return BlindbanditAgoraGrant(appId: flatAppId, token: flatToken, channel: flatChannel, uid: flatUid)
+        }()
+
+        let flatLivekit: BlindbanditLiveKitGrant? = {
+            // Only when no agora app_id — LiveKit mint sets app_id=null and still may send channel/uid.
+            guard flatAppId == nil || flatAppId?.isEmpty == true else { return nil }
+            guard let tok = try? c.decodeIfPresent(String.self, forKey: .token), !tok.isEmpty else { return nil }
+            return BlindbanditLiveKitGrant(
+                token: tok,
+                identity: nil,
+                room: room,
+                expires_at: nil,
                 url: try? c.decodeIfPresent(String.self, forKey: .livekit_url)
+            )
+        }()
+
+        let agoraGrant = nestedAgora ?? flatAgora
+        let livekitGrant = nestedLivekit ?? (agoraGrant == nil ? flatLivekit : nil)
+
+        // If provider forces livekit, prefer livekit even when flat agora-looking fields appear.
+        let p = provider?.lowercased()
+        if p == "agora" {
+            livekit = nestedLivekit
+            agora = agoraGrant
+        } else if p == "livekit" {
+            livekit = livekitGrant ?? nestedLivekit ?? flatLivekit
+            agora = nestedAgora
+        } else {
+            livekit = livekitGrant
+            agora = agoraGrant
+        }
+
+        if livekit == nil && agora == nil {
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: c.codingPath, debugDescription: "Missing livekit or agora RTC grant")
             )
         }
     }
 
-    enum CodingKeys: String, CodingKey { case id, call_id, room, kind, status, livekit, token, livekit_url }
+    enum CodingKeys: String, CodingKey {
+        case id, call_id, room, kind, status, provider, rtc_provider, livekit, agora
+        case token, livekit_url, app_id, agora_app_id, agora_token, channel, uid
+    }
 }
 
 struct BlindbanditMessageResponse: Decodable {
@@ -874,6 +1010,10 @@ final class ProductionCommunicationsService: ObservableObject {
     @Published private(set) var localQuality: ConnectionQuality = .unknown
 
     private var room: Room?
+    /// Active when server returned provider=agora for this call.
+    private var agoraSession: AgoraCallSession?
+    /// `livekit` or `agora` for the active call.
+    private(set) var activeRtcProvider = "livekit"
     private var pollTimer: Timer?
     private var ringTimeout: Task<Void, Never>?
     /// The outgoing call is marked missed by the server after a short wait; we stop ringing at 45 seconds
@@ -1700,7 +1840,87 @@ final class ProductionCommunicationsService: ObservableObject {
     }
 
     private func connect(response: BlindbanditCallResponse, video: Bool, callKey: CallKeyMessage? = nil) async throws {
-        let serverURL = (response.livekit.url?.isEmpty == false ? response.livekit.url : nil) ?? AppConfig.liveKitURL
+        activeCallID = response.id
+        if response.usesAgora, let grant = response.agora {
+            try await connectAgora(response: response, grant: grant, video: video)
+        } else {
+            try await connectLiveKit(response: response, video: video, callKey: callKey)
+        }
+    }
+
+    private func connectAgora(response: BlindbanditCallResponse, grant: BlindbanditAgoraGrant, video: Bool) async throws {
+        activeRtcProvider = "agora"
+        // Frame E2EE (call_key / LiveKit FrameCryptor) is LiveKit-specific; Agora media encryption is a follow-up.
+        callKeyProvider = nil
+        callEncrypted = false
+        callEncryptionLabel = "Media encrypted in transit (Agora); frame E2EE follow-up"
+        let session = AgoraCallSession()
+        session.onUserJoined = { [weak self] _ in
+            Task { @MainActor in self?.agoraRemoteChanged() }
+        }
+        session.onUserOffline = { [weak self] _ in
+            Task { @MainActor in self?.agoraRemoteChanged() }
+        }
+        session.onError = { [weak self] message in
+            Task { @MainActor in
+                self?.statusMessage = message
+            }
+        }
+        try session.join(
+            appId: grant.appId,
+            channel: grant.channel,
+            token: grant.token,
+            uid: grant.uid,
+            video: video
+        )
+        agoraSession = session
+        room = nil
+        roomObserver = nil
+        isVideoCall = video
+        micEnabled = true
+        AudioManager.shared.isVoiceProcessingBypassed = false
+        let startCameraOff = UserDefaults.standard.bool(forKey: "startCallsWithCameraOff")
+        if video && !startCameraOff {
+            session.setCamera(enabled: true)
+            cameraEnabled = true
+            speakerOn = true
+            applySpeaker()
+        } else {
+            cameraEnabled = false
+            session.setCamera(enabled: false)
+        }
+        session.setMic(enabled: true)
+        usingFrontCamera = true
+        knownParticipantIDs = []
+        hadRemote = false
+        aloneSince = nil
+        isInCall = true
+        callUIMinimized = false
+        callSeconds = 0
+        startTicker()
+        refreshParticipants()
+        if isRinging {
+            AppHaptics.light()
+            statusMessage = "Ringing \(callPeerName)…"
+            UIAccessibility.post(notification: .announcement, argument: statusMessage)
+        } else {
+            CallSounds.callConnected()
+            AppHaptics.success()
+            var connected = callGroupID == nil ? "Connected with \(callPeerName)." : "Joined \(callPeerName)."
+            if !callEncryptionLabel.isEmpty { connected += " " + callEncryptionLabel + "." }
+            statusMessage = connected
+            UIAccessibility.post(notification: .announcement, argument: statusMessage)
+        }
+    }
+
+    private func connectLiveKit(response: BlindbanditCallResponse, video: Bool, callKey: CallKeyMessage? = nil) async throws {
+        activeRtcProvider = "livekit"
+        agoraSession?.leave()
+        agoraSession = nil
+        guard let grant = response.livekit else {
+            throw CommunicationsError.server("The call server did not return a LiveKit grant.")
+        }
+        let serverURL = (grant.url?.isEmpty == false ? grant.url : nil) ?? AppConfig.liveKitURL
         guard serverURL.hasPrefix("wss://") else { throw CommunicationsError.liveKitURLMissing }
         let observer = CallRoomObserver(service: self)
         let newRoom: Room
@@ -1720,9 +1940,8 @@ final class ProductionCommunicationsService: ObservableObject {
             newRoom = Room(delegate: observer)
         }
         roomObserver = observer
-        activeCallID = response.id
         UserDefaults.standard.set(serverURL, forKey: "livekit.lastURL")
-        try await newRoom.connect(url: serverURL, token: response.livekit.token)
+        try await newRoom.connect(url: serverURL, token: grant.token)
         room = newRoom
         isVideoCall = video
         micEnabled = true
@@ -1767,6 +1986,25 @@ final class ProductionCommunicationsService: ObservableObject {
         }
     }
 
+    /// Agora remote peer join/leave — keep ringback / CallKit parity with LiveKit path.
+    private func agoraRemoteChanged() {
+        guard agoraSession != nil, isInCall || isRinging else { return }
+        let remotes = agoraSession?.remoteUids ?? []
+        let ids = Set(remotes.map { String($0) })
+        if isRinging, !ids.isEmpty {
+            stopRinging(answered: true)
+            statusMessage = "Connected with \(callPeerName)."
+            UIAccessibility.post(notification: .announcement, argument: statusMessage)
+        }
+        if hadRemote, ids.isEmpty {
+            finishCall(notifyServer: true, announcement: "\(callPeerName.isEmpty ? "The other person" : callPeerName) left the call.")
+            return
+        }
+        hadRemote = hadRemote || !ids.isEmpty
+        knownParticipantIDs = ids
+        refreshParticipants()
+    }
+
     // MARK: Room state
 
     func roomChanged() { refreshParticipants() }
@@ -1778,6 +2016,10 @@ final class ProductionCommunicationsService: ObservableObject {
 
     /// Rebuilds the grid, active speaker, video tracks and joined/left announcements.
     private func refreshParticipants() {
+        if agoraSession != nil {
+            refreshAgoraParticipants()
+            return
+        }
         guard let room else {
             participants = []
             localVideoTrack = nil
@@ -1857,7 +2099,9 @@ final class ProductionCommunicationsService: ObservableObject {
     func setMic(enabled: Bool) {
         guard micEnabled != enabled else { return }
         micEnabled = enabled
-        if screenSharing {
+        if let agoraSession {
+            agoraSession.setMic(enabled: enabled)
+        } else if screenSharing {
             // Broadcast app audio is mixed into the mic track, so while sharing keep the track live
             // and mute only the mic's input in the mixer; otherwise muting would also silence the shared audio.
             AudioManager.shared.mixer.micVolume = enabled ? 1 : 0
@@ -1875,9 +2119,14 @@ final class ProductionCommunicationsService: ObservableObject {
         if !isVideoCall { upgradeToVideo(); return }
         cameraEnabled.toggle()
         let enabled = cameraEnabled
-        Task {
-            _ = try? await room?.localParticipant.setCamera(enabled: enabled)
+        if let agoraSession {
+            agoraSession.setCamera(enabled: enabled)
             refreshParticipants()
+        } else {
+            Task {
+                _ = try? await room?.localParticipant.setCamera(enabled: enabled)
+                refreshParticipants()
+            }
         }
         AppHaptics.selection()
         UIAccessibility.post(notification: .announcement, argument: enabled ? "Camera on" : "Camera off")
@@ -1889,16 +2138,23 @@ final class ProductionCommunicationsService: ObservableObject {
         isVideoCall = true
         cameraEnabled = true
         if !speakerOn { speakerOn = true; applySpeaker() }
-        Task {
-            do {
-                _ = try await room?.localParticipant.setCamera(enabled: true)
-                statusMessage = "Switched to video."
-            } catch {
-                cameraEnabled = false
-                statusMessage = "Couldn't turn on the camera: \(error.localizedDescription)"
-            }
+        if let agoraSession {
+            agoraSession.setCamera(enabled: true)
+            statusMessage = "Switched to video."
             UIAccessibility.post(notification: .announcement, argument: statusMessage)
             refreshParticipants()
+        } else {
+            Task {
+                do {
+                    _ = try await room?.localParticipant.setCamera(enabled: true)
+                    statusMessage = "Switched to video."
+                } catch {
+                    cameraEnabled = false
+                    statusMessage = "Couldn't turn on the camera: \(error.localizedDescription)"
+                }
+                UIAccessibility.post(notification: .announcement, argument: statusMessage)
+                refreshParticipants()
+            }
         }
         if let id = activeCallID { CallKitManager.shared.reportVideo(callID: id, video: true) }
     }
@@ -1908,11 +2164,17 @@ final class ProductionCommunicationsService: ObservableObject {
         guard isInCall else { return }
         isVideoCall = false
         cameraEnabled = false
-        Task {
-            _ = try? await room?.localParticipant.setCamera(enabled: false)
-            if screenSharing { _ = try? await room?.localParticipant.setScreenShare(enabled: false) }
+        if let agoraSession {
+            agoraSession.setCamera(enabled: false)
             screenSharing = false
             refreshParticipants()
+        } else {
+            Task {
+                _ = try? await room?.localParticipant.setCamera(enabled: false)
+                if screenSharing { _ = try? await room?.localParticipant.setScreenShare(enabled: false) }
+                screenSharing = false
+                refreshParticipants()
+            }
         }
         if let id = activeCallID { CallKitManager.shared.reportVideo(callID: id, video: false) }
         statusMessage = "Switched to voice only."
@@ -1920,6 +2182,18 @@ final class ProductionCommunicationsService: ObservableObject {
     }
 
     func switchCamera() {
+        if let agoraSession {
+            guard cameraEnabled else {
+                statusMessage = "Turn your camera on first."
+                UIAccessibility.post(notification: .announcement, argument: statusMessage)
+                return
+            }
+            agoraSession.switchCamera()
+            usingFrontCamera.toggle()
+            AppHaptics.selection()
+            UIAccessibility.post(notification: .announcement, argument: usingFrontCamera ? "Front camera" : "Back camera")
+            return
+        }
         guard let capturer = (room?.localParticipant.firstCameraPublication?.track as? LocalVideoTrack)?.capturer as? CameraCapturer else {
             statusMessage = "Turn your camera on first."
             UIAccessibility.post(notification: .announcement, argument: statusMessage)
@@ -1935,6 +2209,11 @@ final class ProductionCommunicationsService: ObservableObject {
 
     /// In-app screen share (LiveKit captures this app's screen).
     func toggleScreenShare() {
+        if agoraSession != nil {
+            statusMessage = "Screen share on Agora is coming in a follow-up."
+            UIAccessibility.post(notification: .announcement, argument: statusMessage)
+            return
+        }
         guard let room else { return }
         let enable = !screenSharing
         Task {
@@ -1977,18 +2256,28 @@ final class ProductionCommunicationsService: ObservableObject {
         isOnHold = on
         if on {
             holdRestore = (micEnabled, cameraEnabled)
-            Task {
-                try? await room?.localParticipant.setMicrophone(enabled: false)
-                _ = try? await room?.localParticipant.setCamera(enabled: false)
+            if let agoraSession {
+                agoraSession.setMic(enabled: false)
+                agoraSession.setCamera(enabled: false)
+            } else {
+                Task {
+                    try? await room?.localParticipant.setMicrophone(enabled: false)
+                    _ = try? await room?.localParticipant.setCamera(enabled: false)
+                }
             }
             micEnabled = false
             cameraEnabled = false
         } else if let restore = holdRestore {
             micEnabled = restore.mic
             cameraEnabled = restore.camera
-            Task {
-                try? await room?.localParticipant.setMicrophone(enabled: restore.mic)
-                if restore.camera { _ = try? await room?.localParticipant.setCamera(enabled: true) }
+            if let agoraSession {
+                agoraSession.setMic(enabled: restore.mic)
+                agoraSession.setCamera(enabled: restore.camera)
+            } else {
+                Task {
+                    try? await room?.localParticipant.setMicrophone(enabled: restore.mic)
+                    if restore.camera { _ = try? await room?.localParticipant.setCamera(enabled: true) }
+                }
             }
             holdRestore = nil
         }
@@ -2083,11 +2372,13 @@ final class ProductionCommunicationsService: ObservableObject {
         let id = activeCallID
         if let id { EndedCalls.mark(id) }
         let closingRoom = room
+        let closingAgora = agoraSession
         let wasActive = isInCall || id != nil
         stopRinging(answered: false)
         stopTicker()
         speakerOn = false
         Task {
+            closingAgora?.leave()
             try? await closingRoom?.localParticipant.setMicrophone(enabled: false)
             _ = try? await closingRoom?.localParticipant.setCamera(enabled: false)
             await closingRoom?.disconnect()
@@ -2097,6 +2388,8 @@ final class ProductionCommunicationsService: ObservableObject {
         if let id { CallKitManager.shared.reportEnded(callID: id, reason: nil) }
         room = nil
         roomObserver = nil
+        agoraSession = nil
+        activeRtcProvider = "livekit"
         activeCallID = nil
         isInCall = false
         callUIMinimized = false

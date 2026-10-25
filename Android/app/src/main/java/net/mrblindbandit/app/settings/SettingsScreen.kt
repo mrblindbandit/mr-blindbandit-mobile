@@ -411,6 +411,7 @@ object OpenSourceLicenses {
         OpenSourceLibrary("Kotlin & kotlinx.coroutines", "Apache License 2.0", "https://kotlinlang.org"),
         OpenSourceLibrary("Clerk Android SDK", "MIT License", "https://github.com/clerk/clerk-android"),
         OpenSourceLibrary("LiveKit Android SDK", "Apache License 2.0", "https://github.com/livekit/client-sdk-android"),
+        OpenSourceLibrary("Agora RTC SDK", "Agora SDK License", "https://www.agora.io/en/license/"),
         OpenSourceLibrary("WebRTC", "BSD 3-Clause License", "https://webrtc.org"),
         OpenSourceLibrary("Firebase Cloud Messaging", "Apache License 2.0", "https://firebase.google.com"),
         OpenSourceLibrary("OkHttp", "Apache License 2.0", "https://github.com/square/okhttp"),

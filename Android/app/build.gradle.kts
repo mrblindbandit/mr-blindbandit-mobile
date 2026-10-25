@@ -153,6 +153,9 @@ dependencies {
     // LiveKit realtime. Room tokens are obtained from the authenticated Blindbandit API.
     implementation("io.livekit:livekit-android:2.18.3")
 
+    // Agora RTC (dual-provider calls when server returns provider=agora).
+    implementation("io.agora.rtc:full-sdk:4.5.2")
+
     implementation(platform("com.google.firebase:firebase-bom:34.19.0"))
     implementation("com.google.firebase:firebase-messaging")
 

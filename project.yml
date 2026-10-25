@@ -16,6 +16,9 @@ packages:
   LiveKitClient:
     url: https://github.com/livekit/client-sdk-swift
     from: 2.6.0
+  AgoraRtcEngine_iOS:
+    url: https://github.com/AgoraIO/AgoraRtcEngine_iOS
+    from: 4.5.0
   Clerk:
     url: https://github.com/clerk/clerk-ios
     # 1.2.0+ needs Swift tools 6.2; Xcode 16.4 CI cannot resolve. Last 5.10-compatible release:
@@ -83,6 +86,8 @@ targets:
     dependencies:
       - package: LiveKitClient
         product: LiveKit
+      - package: AgoraRtcEngine_iOS
+        product: RtcBasic
       - package: Clerk
         product: ClerkKit
       - target: ScreenShare

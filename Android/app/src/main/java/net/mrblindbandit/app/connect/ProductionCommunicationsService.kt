@@ -107,6 +107,8 @@ class ProductionCommunicationsService(
     private var callKeyProvider: BaseKeyProvider? = null
 
     var room by mutableStateOf<Room?>(null); private set
+    private var agoraSession: AgoraCallSession? = null
+    var activeRtcProvider by mutableStateOf("livekit"); private set
     private var lastTypingSent = 0L
 
     /** Mirrors the "Start video calls with camera off" setting. */
@@ -819,13 +821,95 @@ class ProductionCommunicationsService(
     }
 
     private suspend fun connectCall(response: JSONObject, video: Boolean, outgoing: Boolean, frameKey: CallFrameKeys.Key? = null) {
-        val livekit = response.optJSONObject("livekit") ?: JSONObject()
-            .put("token", response.lString("token")).put("url", response.lString("livekit_url"))
-        val token = livekit.lString("token")
-        val url = livekit.lString("url").ifBlank { AppConfig.liveKitUrl }
+        val grant = CallRtcGrant.parse(response)
+        activeCallId = response.lString("id", "call_id").ifBlank { null }
+        if (grant.usesAgora) {
+            connectAgora(grant, video, outgoing)
+        } else {
+            connectLiveKit(grant, video, outgoing, frameKey)
+        }
+    }
+
+    private suspend fun connectAgora(grant: CallRtcGrant, video: Boolean, outgoing: Boolean) {
+        activeRtcProvider = "agora"
+        callKeyProvider = null
+        callEncryptionLabel = "Media encrypted in transit (Agora); frame E2EE follow-up"
+        val appId = grant.agoraAppId!!
+        val token = grant.agoraToken!!
+        val channel = grant.agoraChannel!!
+        val uid = grant.agoraUid!!
+        var remoteJoined = false
+        val session = AgoraCallSession(
+            appContext = appContext,
+            onJoined = { },
+            onUserJoined = {
+                remoteJoined = true
+                scope.launch(Dispatchers.Main.immediate) {
+                    if (isRinging) {
+                        isRinging = false
+                        callSounds.callConnected()
+                        statusMessage = "Connected with ${callPeerName.ifBlank { "Blindbandit user" }}."
+                        Announcer.announce(appContext, statusMessage)
+                    }
+                }
+            },
+            onUserOffline = {
+                scope.launch(Dispatchers.Main.immediate) {
+                    if (isInCall && (agoraSession?.remoteUids?.isEmpty() != false)) {
+                        endCall(reason = "${callPeerName.ifBlank { "The other person" }} left the call.")
+                    }
+                }
+            },
+            onError = { msg ->
+                scope.launch(Dispatchers.Main.immediate) { statusMessage = msg }
+            },
+        )
+        withContext(Dispatchers.Main) {
+            session.join(appId = appId, channel = channel, token = token, uid = uid, video = video)
+            agoraSession = session
+            room = null
+        }
+        callSounds.resumeOutgoingProgressIfNeeded()
+        val cameraOn = video && !startWithCameraOff && androidx.core.content.ContextCompat.checkSelfPermission(appContext, android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        session.setMic(true)
+        if (cameraOn) session.setCamera(true) else session.setCamera(false)
+        isVideoCall = video
+        micEnabled = true
+        cameraEnabled = cameraOn
+        callSeconds = 0
+        setSpeaker(speakerByDefault || video, announce = false)
+        callSounds.resumeOutgoingProgressIfNeeded()
+        if (outgoing && !remoteJoined && (agoraSession?.remoteUids?.isEmpty() != false)) {
+            isRinging = true
+            statusMessage = "Ringing ${callPeerName}…"
+            Announcer.announce(appContext, statusMessage)
+            val started = System.currentTimeMillis()
+            while (agoraSession === session && (session.remoteUids.isEmpty())) {
+                if (System.currentTimeMillis() - started >= RING_TIMEOUT_MS) {
+                    isRinging = false
+                    endCall(reason = "No answer from ${callPeerName}.")
+                    return
+                }
+                delay(500)
+            }
+            isRinging = false
+            callSounds.callConnected()
+            if (agoraSession !== session) return
+        }
+        isInCall = true
+        statusMessage = "Connected with ${callPeerName.ifBlank { "Blindbandit user" }}."
+        Announcer.announce(appContext, statusMessage)
+        scope.launch { while (agoraSession === session && isInCall) { delay(1000); if (agoraSession === session && isInCall) callSeconds += 1 } }
+    }
+
+    private suspend fun connectLiveKit(grant: CallRtcGrant, video: Boolean, outgoing: Boolean, frameKey: CallFrameKeys.Key? = null) {
+        activeRtcProvider = "livekit"
+        agoraSession?.leave()
+        agoraSession = null
+        val token = grant.livekitToken.orEmpty()
+        val url = grant.livekitUrl?.ifBlank { null } ?: AppConfig.liveKitUrl
         require(java.net.URI(url).scheme == "wss") { "The call server must use a secure connection" }
         if (token.isBlank() || url.isBlank()) error("The call server is unavailable right now. Please try again shortly.")
-        activeCallId = response.lString("id", "call_id").ifBlank { null }
 
         // FrameCryptorFactory uses native WebRTC; initialize it before constructing the provider.
         LiveKit.init(appContext)
@@ -949,8 +1033,11 @@ class ProductionCommunicationsService(
     fun toggleMic() {
         val target = !micEnabled
         scope.launch {
-            try { room?.localParticipant?.setMicrophoneEnabled(target); micEnabled = target; Announcer.announce(appContext, if (target) "Microphone on" else "Muted") }
-            catch (e: Exception) { Announcer.announce(appContext, "Microphone could not be changed.") }
+            try {
+                agoraSession?.setMic(target) ?: room?.localParticipant?.setMicrophoneEnabled(target)
+                micEnabled = target
+                Announcer.announce(appContext, if (target) "Microphone on" else "Muted")
+            } catch (e: Exception) { Announcer.announce(appContext, "Microphone could not be changed.") }
         }
     }
 
@@ -958,8 +1045,11 @@ class ProductionCommunicationsService(
         if (!isVideoCall) return
         val target = !cameraEnabled
         scope.launch {
-            try { room?.localParticipant?.setCameraEnabled(target); cameraEnabled = target; Announcer.announce(appContext, if (target) "Camera on" else "Camera off") }
-            catch (e: Exception) { Announcer.announce(appContext, "Camera could not be changed. Check camera permission.") }
+            try {
+                agoraSession?.setCamera(target) ?: room?.localParticipant?.setCameraEnabled(target)
+                cameraEnabled = target
+                Announcer.announce(appContext, if (target) "Camera on" else "Camera off")
+            } catch (e: Exception) { Announcer.announce(appContext, "Camera could not be changed. Check camera permission.") }
         }
     }
 
@@ -1005,8 +1095,12 @@ class ProductionCommunicationsService(
         statusMessage = reason
         Announcer.announce(appContext, reason)
         val activeRoom = room
+        val activeAgora = agoraSession
         room = null
+        agoraSession = null
+        activeRtcProvider = "livekit"
         scope.launch {
+            try { activeAgora?.leave() } catch (_: Exception) {}
             try { activeRoom?.localParticipant?.setMicrophoneEnabled(false) } catch (_: Exception) {}
             try { activeRoom?.localParticipant?.setCameraEnabled(false) } catch (_: Exception) {}
             try { activeRoom?.disconnect(); activeRoom?.release() } catch (_: Exception) {}
@@ -1022,11 +1116,18 @@ class ProductionCommunicationsService(
         callKeyProvider = null
         callEncryptionLabel = "Media encrypted in transit"
         val r = room
+        val a = agoraSession
         room = null
+        agoraSession = null
+        activeRtcProvider = "livekit"
         activeCallId = null
         isRinging = false
         isInCall = false
-        scope.launch { runCatching { r?.disconnect(); r?.release() }; resetAudio() }
+        scope.launch {
+            runCatching { a?.leave() }
+            runCatching { r?.disconnect(); r?.release() }
+            resetAudio()
+        }
     }
 
     private fun resetAudio() {

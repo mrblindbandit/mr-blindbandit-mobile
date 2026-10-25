@@ -59,6 +59,24 @@ struct BlindbanditConversation: Identifiable, Decodable, Equatable {
         let body: String
         let created_at: Double
         let sender_id: String
+
+        /// Soft-decode: a null/missing body (or SQLite quirks) must not fail the whole inbox list.
+        init(body: String, created_at: Double, sender_id: String) {
+            self.body = body; self.created_at = created_at; self.sender_id = sender_id
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            body = (try? c.decode(String.self, forKey: .body)) ?? ""
+            created_at = (try? c.decode(Double.self, forKey: .created_at))
+                ?? (try? c.decode(Int.self, forKey: .created_at)).map(Double.init)
+                ?? 0
+            sender_id = (try? c.decode(String.self, forKey: .sender_id))
+                ?? (try? c.decode(Int.self, forKey: .sender_id)).map(String.init)
+                ?? ""
+        }
+
+        enum CodingKeys: String, CodingKey { case body, created_at, sender_id }
     }
     let id: String
     let updated_at: Double
@@ -830,7 +848,8 @@ final class ProductionCommunicationsService: ObservableObject {
             }
             loadError = ""
         } catch {
-            loadError = error.localizedDescription
+            // Keep cached/optimistic rows; only show Retry when the thread is truly empty.
+            if messages.isEmpty { loadError = error.localizedDescription }
         }
     }
 
@@ -933,7 +952,7 @@ final class ProductionCommunicationsService: ObservableObject {
         if let open = openConversationID, conversation(id: open)?.other?.handle.lowercased() == handle.lowercased() {
             let lid = "local-" + UUID().uuidString
             var m = BlindbanditServerMessage(id: lid, sender_id: myProfileID, body: String(text.prefix(4000)),
-                                             created_at: Date().timeIntervalSince1970)
+                                             created_at: Date().timeIntervalSince1970 * 1000)
             m.client_msg_id = lid
             localID = lid
             messages.append(m)

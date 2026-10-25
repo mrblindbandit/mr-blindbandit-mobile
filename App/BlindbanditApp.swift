@@ -130,6 +130,10 @@ struct BlindbanditApp: App {
             ZStack {
                 if ProcessInfo.processInfo.arguments.contains("-UITestMessageStatus") {
                     MessageStatusUITestView()
+                } else if ProcessInfo.processInfo.arguments.contains("-UITestMessagesEmpty") {
+                    MessagesEmptyUITestView()
+                } else if ProcessInfo.processInfo.arguments.contains("-UITestDialTone") {
+                    DialToneUITestView()
                 } else {
                 switch auth.state {
                 case .unknown:

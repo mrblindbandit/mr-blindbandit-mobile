@@ -1458,6 +1458,28 @@ struct MessageStatusUITestView: View {
     }
 }
 
+/// Empty Messages inbox fixture for UI tests — must never show CommsErrorView / "Couldn't load".
+struct MessagesEmptyUITestView: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("Messages").font(.largeTitle.bold())
+            ContentUnavailableView("No conversations yet", systemImage: "bubble.left.and.bubble.right", description: Text("Start a chat from People."))
+                .accessibilityIdentifier("messages-empty")
+        }
+        .padding()
+    }
+}
+
+/// Exposes the outgoing US dial tone name for simulator UI tests (asset is ringback_us_dialtone).
+struct DialToneUITestView: View {
+    var body: some View {
+        Text(CallSounds.outgoingProgressToneName)
+            .accessibilityIdentifier("outgoing-dial-tone")
+            .accessibilityLabel(CallSounds.outgoingProgressToneName)
+            .padding()
+    }
+}
+
 /// The small line under a message ("Delivered 2:34 PM"). A separate VoiceOver element that
 /// updates in place when receipts change.
 struct MessageStatusCaption: View {

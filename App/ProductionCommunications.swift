@@ -2014,6 +2014,32 @@ final class ProductionCommunicationsService: ObservableObject {
         finishCall(notifyServer: true, announcement: "Call disconnected.")
     }
 
+    private func refreshAgoraParticipants() {
+        localVideoTrack = nil
+        remoteVideoTrack = nil
+        var list: [CallParticipantInfo] = [
+            CallParticipantInfo(
+                id: "me", name: "You", isLocal: true,
+                isSpeaking: false, micOn: micEnabled, cameraOn: cameraEnabled,
+                sharingScreen: false, quality: .unknown, handRaised: handRaised,
+                videoTrack: nil, screenTrack: nil
+            )
+        ]
+        for uid in (agoraSession?.remoteUids ?? []).sorted() {
+            list.append(CallParticipantInfo(
+                id: String(uid),
+                name: callPeerName.isEmpty ? "Caller \(uid)" : callPeerName,
+                isLocal: false,
+                isSpeaking: false, micOn: true, cameraOn: isVideoCall,
+                sharingScreen: false, quality: .unknown, handRaised: raisedHands.contains(String(uid)),
+                videoTrack: nil, screenTrack: nil
+            ))
+        }
+        participants = list
+        activeSpeakerID = list.first(where: { !$0.isLocal })?.id
+        localQuality = .unknown
+    }
+
     /// Rebuilds the grid, active speaker, video tracks and joined/left announcements.
     private func refreshParticipants() {
         if agoraSession != nil {

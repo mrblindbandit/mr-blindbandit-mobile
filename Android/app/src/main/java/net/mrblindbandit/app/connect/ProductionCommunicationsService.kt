@@ -21,6 +21,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import net.mrblindbandit.app.auth.ClerkAuthService
 import net.mrblindbandit.app.config.AppConfig
 import org.json.JSONArray
@@ -55,6 +56,9 @@ class ProductionCommunicationsService(
     val local = LocalComms(appContext)
     private val conversationCache = ConversationCache(appContext)
     private val callSounds = CallSounds(appContext)
+    /** Exposed for Dialer keypad tones. */
+    val callSoundsPublic: CallSounds get() = callSounds
+    val callNumbers = CallNumberDirectory(appContext)
 
     var openGroupId by mutableStateOf<String?>(null)
     val conversations = mutableStateListOf<ServerConversation>()
@@ -164,7 +168,13 @@ class ProductionCommunicationsService(
             }
         }
         return try {
-            val raw = request("/v1/social/messages?limit=100")
+            // Prefer slim inbox (Sites native-speed). Fall back to classic list on 404.
+            val raw = try {
+                request("/v1/social/inbox?limit=100", connectMs = 8_000, readMs = 12_000)
+            } catch (e: BlindbanditApiException) {
+                if (e.status == 404) request("/v1/social/messages?limit=100", connectMs = 10_000, readMs = 20_000)
+                else throw e
+            }
             conversationCache.saveInbox(raw)
             val parsed = raw.items().mapNotNull { runCatching { ServerConversation.parse(it) }.getOrNull() }
             announceNewIncoming(parsed)
@@ -172,11 +182,52 @@ class ProductionCommunicationsService(
             conversations.addAll(parsed)
             conversationsState = LoadState.Loaded
             refreshUnreadCount()
+            prefetchThreads()
             true
         } catch (e: Exception) {
             if (conversations.isEmpty()) conversationsState = LoadState.Failed(friendly(e, "Could not load your conversations."))
             else statusMessage = friendly(e, "Could not refresh conversations.")
             false
+        }
+    }
+
+    private var prefetched = false
+    /** Prefetch top chats via native-speed hydrate (one round-trip) with classic fallback. */
+    private fun prefetchThreads() {
+        if (prefetched) return
+        prefetched = true
+        val ids = conversations.take(8).map { it.id }
+        scope.launch {
+            hydrateThreads(ids, limitPer = 40)
+            for (id in ids) {
+                if (conversationCache.loadThread(id) == null) {
+                    runCatching {
+                        val result = request("/v1/social/messages/${enc(id)}?limit=40", connectMs = 8_000, readMs = 15_000)
+                        conversationCache.saveThread(id, result)
+                    }
+                }
+            }
+        }
+    }
+
+    /** Prefetch many threads in one round-trip (native-speed). */
+    suspend fun hydrateThreads(ids: List<String>, limitPer: Int = 30) {
+        val slice = ids.take(20)
+        if (slice.isEmpty()) return
+        val body = JSONObject()
+            .put("conversation_ids", JSONArray(slice))
+            .put("limit_per", limitPer)
+        val raw = runCatching {
+            request("/v1/social/inbox/hydrate", method = "POST", body = body, connectMs = 8_000, readMs = 15_000)
+        }.getOrNull() ?: return
+        val threads = raw.optJSONArray("threads") ?: return
+        for (i in 0 until threads.length()) {
+            val thr = threads.optJSONObject(i) ?: continue
+            val id = thr.lString("id")
+            if (id.isBlank()) continue
+            val items = thr.optJSONArray("items") ?: continue
+            val wrapped = JSONObject().put("items", items)
+            conversationCache.saveThread(id, wrapped)
         }
     }
 
@@ -229,10 +280,25 @@ class ProductionCommunicationsService(
             val known = messages.map { it.id }.toSet()
             val hadMessages = messages.isNotEmpty()
             val incoming = parsed.filter { it.id !in known && it.senderId != myProfileId }
-            val pendingLocal = messages.filter { it.id.startsWith("local-") && it.pending
-                && parsed.none { s -> s.senderId == myProfileId && s.body == it.body } }
+            val pendingLocal = messages.filter { local ->
+                local.id.startsWith("local-") && parsed.none { s ->
+                    (local.clientMsgId.isNotBlank() && (s.clientMsgId == local.clientMsgId || s.id == local.clientMsgId || s.id == local.id))
+                        || (s.senderId == myProfileId && s.body == local.body)
+                }
+            }
+            // Prefer client_msg_id so optimistic local- rows and the server echo share one identity.
+            val merged = parsed.map { server ->
+                val match = messages.firstOrNull { local ->
+                    local.id.startsWith("local-") && (
+                        (local.clientMsgId.isNotBlank() && (server.clientMsgId == local.clientMsgId || server.id == local.clientMsgId))
+                            || (server.senderId == myProfileId && server.body == local.body)
+                    )
+                }
+                if (match != null && server.clientMsgId.isBlank()) server.copy(clientMsgId = match.clientMsgId.ifBlank { match.id })
+                else server
+            }
             messages.clear()
-            messages.addAll(parsed + pendingLocal)
+            messages.addAll(merged + pendingLocal)
             otherTyping = result.lBool("other_typing", "typing")
             threadState = LoadState.Loaded
             if (hadMessages && incoming.isNotEmpty()) markRead(conversationId)
@@ -320,7 +386,7 @@ class ProductionCommunicationsService(
         }
     }
 
-    /** Sends a message. If the device is offline the message is queued and sent later. */
+    /** Sends a message. Optimistic Sent caption immediately; network runs in background (iOS TF 39). */
     suspend fun sendMessage(recipient: String, body: String, conversationId: String = ""): String? {
         val target = normalizeHandle(recipient)
         val text = body.trim().take(4000)
@@ -328,7 +394,6 @@ class ProductionCommunicationsService(
             statusMessage = "Enter the person's Blindbandit username and a message."
             return null
         }
-        // Optimistic bubble — show immediately, reconcile when the server echo arrives.
         val localId = "local-" + UUID.randomUUID().toString()
         val openId = openConversationId
         if (!openId.isNullOrBlank() && (conversationId.isBlank() || conversationId == openId)) {
@@ -338,35 +403,107 @@ class ProductionCommunicationsService(
                     senderId = myProfileId,
                     body = text,
                     createdAt = System.currentTimeMillis(),
-                    pending = true,
+                    pending = false,
+                    clientMsgId = localId,
                 )
             )
         }
-        return try {
-            val fields = messageFields(listOf(target), text).put("handle", target)
-            val response = request("/v1/social/messages", method = "POST", body = fields)
-            val who = response.optJSONObject("recipient")?.lString("display_name").orEmpty().ifBlank { "@$target" }
-            statusMessage = if (fields.optBoolean("e2ee")) "Encrypted message sent to $who." else "Message sent to $who without end-to-end encryption."
-            val id = response.lString("conversation_id").ifBlank { conversationId }
-            // Reconcile off the send critical path.
-            scope.launch {
+        callSounds.messageSent()
+        Announcer.announce(appContext, "Sent")
+        statusMessage = "Message sent to @$target."
+        val seedConv = conversationId.ifBlank { openId.orEmpty() }
+        // Network off the UI path — draft already cleared by the caller.
+        scope.launch {
+            try {
+                // Race E2EE ≤350ms so missing bundles never feel like multi-second lag.
+                val e2ee = withTimeoutOrNull(350L) {
+                    runCatching { messageFields(listOf(target), text) }.getOrNull()
+                }
+                val fields = (e2ee ?: JSONObject().put("body", text))
+                    .put("handle", target)
+                    .put("client_msg_id", localId)
+                val response = request("/v1/social/messages", method = "POST", body = fields, connectMs = 6_000, readMs = 8_000)
+                val who = response.optJSONObject("recipient")?.lString("display_name").orEmpty().ifBlank { "@$target" }
+                statusMessage = if (fields.optBoolean("e2ee")) "Encrypted message sent to $who." else "Message sent to $who."
+                val id = response.lString("conversation_id").ifBlank { seedConv }
+                val serverMsgId = response.lString("id", "message_id")
+                // Flip optimistic bubble to real server id when present.
+                val idx = messages.indexOfFirst { it.id == localId }
+                if (idx >= 0 && serverMsgId.isNotBlank()) {
+                    if (messages.any { it.id == serverMsgId }) {
+                        messages.removeAll { it.id == localId }
+                    } else {
+                        val cur = messages[idx]
+                        messages[idx] = cur.copy(
+                            id = serverMsgId,
+                            createdAt = response.lTime("created_at") ?: cur.createdAt,
+                            clientMsgId = localId,
+                            pending = false,
+                        )
+                    }
+                }
+                if (id.isNotBlank()) {
+                    runCatching { sendAck(id, localId) }
+                }
                 refreshConversations()
                 if (id.isNotBlank() && openConversationId == id) reloadThread(id)
+            } catch (e: IOException) {
+                val item = PendingMessage(UUID.randomUUID().toString(), target, text, seedConv, System.currentTimeMillis())
+                pendingMessages.add(item)
+                local.pending = pendingMessages.toList()
+                statusMessage = "You're offline. The message to @$target will send when you're back online."
+                Announcer.announce(appContext, statusMessage)
+            } catch (e: Exception) {
+                messages.removeAll { it.id == localId }
+                statusMessage = friendly(e, "Message could not be sent.")
+                Announcer.announce(appContext, statusMessage)
             }
-            id.ifBlank { null }
-        } catch (e: IOException) {
-            val item = PendingMessage(UUID.randomUUID().toString(), target, text, conversationId, System.currentTimeMillis())
-            pendingMessages.add(item)
-            local.pending = pendingMessages.toList()
-            statusMessage = "You're offline. The message to @$target will send when you're back online."
-            Announcer.announce(appContext, statusMessage)
-            null
-        } catch (e: Exception) {
-            messages.removeAll { it.id == localId }
-            statusMessage = friendly(e, "Message could not be sent.")
-            Announcer.announce(appContext, statusMessage)
+        }
+        return seedConv.ifBlank { null }
+    }
+
+    /** Fast send ack by client_msg_id (native-speed) — no thread refetch required. */
+    suspend fun sendAck(conversationId: String, clientMsgId: String): Boolean {
+        if (conversationId.isBlank() || clientMsgId.isBlank()) return false
+        return try {
+            val d = request(
+                "/v1/social/messages/send-ack",
+                method = "POST",
+                body = JSONObject().put("conversation_id", conversationId).put("client_msg_id", clientMsgId),
+                connectMs = 4_000,
+                readMs = 6_000,
+            )
+            d.lBool("acked", default = false)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    suspend fun resolveCallNumber(number: String): Triple<String, String, String> {
+        val digits = number.filter { it.isDigit() }
+        val d = request("/v1/social/call-numbers/${enc(digits)}", connectMs = 4_000, readMs = 6_000)
+        val handle = d.lString("handle")
+        val name = d.lString("display_name").ifBlank { handle }
+        val callNumber = d.lString("call_number").ifBlank { digits }
+        require(handle.isNotBlank()) { "Number not found" }
+        return Triple(handle, name, callNumber)
+    }
+
+    suspend fun getMyCallNumber(): String? {
+        return try {
+            val d = request("/v1/social/me/call-number", connectMs = 4_000, readMs = 6_000)
+            d.lString("call_number").ifBlank { null }
+        } catch (_: Exception) {
             null
         }
+    }
+
+    suspend fun setMyCallNumber(number: String?): String? {
+        val body = JSONObject()
+        if (number.isNullOrBlank()) body.put("call_number", JSONObject.NULL)
+        else body.put("call_number", number.filter { it.isDigit() })
+        val d = request("/v1/social/me/call-number", method = "PUT", body = body, connectMs = 4_000, readMs = 8_000)
+        return d.lString("call_number").ifBlank { null }
     }
 
     internal suspend fun messageFields(handles: List<String>, text: String, silent: Boolean = false): JSONObject {
@@ -451,12 +588,27 @@ class ProductionCommunicationsService(
 
     // Calls
 
-    /** Warm LiveKit path: resolve /v1/social/me ping keeps TLS+DNS hot; token is per-call so we only warm sockets. */
+    private var lastWarmMs = 0L
+    /** Warm DNS+TLS to LiveKit + native-speed API paths so call/send feel instant (iOS CallWarmup parity). */
     fun warmCallPath() {
-        scope.launch {
-            try {
-                request("/v1/social/calls/incoming")
-            } catch (_: Exception) { }
+        val now = System.currentTimeMillis()
+        if (now - lastWarmMs < 25_000L) return
+        lastWarmMs = now
+        scope.launch(Dispatchers.IO) {
+            // LiveKit HEAD over https
+            runCatching {
+                val lk = AppConfig.liveKitUrl.replace("wss://", "https://")
+                val c = (URL(lk).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "HEAD"; connectTimeout = 4_000; readTimeout = 4_000
+                }
+                try { c.responseCode } finally { c.disconnect() }
+            }
+            for (path in listOf("/v1/health", "/v1/social/me/call-number", "/v1/social/inbox?limit=1", "/v1/social/calls/incoming")) {
+                runCatching {
+                    // Best-effort warm — ignore auth failures; still primes TLS.
+                    request(path, connectMs = 4_000, readMs = 4_000)
+                }
+            }
         }
     }
 
@@ -467,6 +619,7 @@ class ProductionCommunicationsService(
             return
         }
         if (isInCall || isRinging) return
+        warmCallPath()
         // Phase 1: US dial tone while dialing / connecting (before remote ring).
         callPeerName = "@$target"
         callPeerHandle = target
@@ -476,7 +629,7 @@ class ProductionCommunicationsService(
         callSounds.callInitiated()
         var callId: String? = null
         try {
-            val response = request("/v1/social/calls", method = "POST", body = JSONObject().put("handle", target).put("kind", if (video) "video" else "voice"))
+            val response = request("/v1/social/calls", method = "POST", body = JSONObject().put("handle", target).put("kind", if (video) "video" else "voice"), connectMs = 6_000, readMs = 8_000)
             callId = response.lString("id", "call_id").ifBlank { null }
             callPeerName = response.optJSONObject("recipient")?.lString("display_name").orEmpty().ifBlank { "@$target" }
             callPeerHandle = target
@@ -538,31 +691,103 @@ class ProductionCommunicationsService(
 
     suspend fun joinCall(callId: String) {
         if (callId.isBlank()) return
-        if (isInCall || isRinging || activeCallId != null) return
+        // Already joined this call — ignore duplicate answer taps.
+        if (activeCallId == callId && (isInCall || joiningCallId == callId)) return
+        // Stuck outbound ringing / failed place must not block Answer.
+        if (isRinging && activeCallId == null && joiningCallId == null) {
+            isRinging = false
+            callSounds.stopOutgoingProgress()
+        }
+        if (isInCall || activeCallId != null) {
+            statusMessage = "Already in a call. Hang up before answering another."
+            Announcer.announce(appContext, statusMessage)
+            return
+        }
         incomingCallId = null
         joiningCallId = callId
         joinedAt[callId] = System.currentTimeMillis()
+        statusMessage = "Joining…"
+        Announcer.announce(appContext, "Joining call")
         try {
-            // A push tap only has a call ID. Resolve caller identity from the authenticated invite,
-            // never trust a sender-supplied call_key control to identify the caller.
-            val invite = request("/v1/social/calls/incoming").items().firstOrNull { it.lString("id", "call_id") == callId }
-            val response = request("/v1/social/calls/${enc(callId)}/join", method = "POST", body = JSONObject().put("installation_id", DeviceIdentity.installationId(appContext)))
+            // Join first (fast). Identity + frame key must NOT serialize ahead of LiveKit.
+            val response = request(
+                "/v1/social/calls/${enc(callId)}/join",
+                method = "POST",
+                body = JSONObject().put("installation_id", DeviceIdentity.installationId(appContext)),
+                connectMs = 6_000,
+                readMs = 8_000,
+            )
+            val invite = runCatching {
+                request("/v1/social/calls/incoming", connectMs = 4_000, readMs = 6_000)
+                    .items().firstOrNull { it.lString("id", "call_id") == callId }
+            }.getOrNull()
             val caller = response.optJSONObject("caller") ?: response.optJSONObject("other") ?: invite?.optJSONObject("caller")
             callPeerName = caller?.lString("display_name", "handle").orEmpty().ifBlank { "Blindbandit caller" }
-            callPeerHandle = caller?.lString("handle").orEmpty().ifBlank { invite?.lString("from_handle", "caller_handle").orEmpty() }
-            val callerId = caller?.lString("id")?.takeIf { it.isNotBlank() } ?: invite?.lString("caller_id")?.takeIf { it.isNotBlank() } ?: callPeerHandle.takeIf { it.isNotBlank() }?.let {
-                request("/v1/social/profiles/${enc(it)}").lString("id").takeIf { id -> id.isNotBlank() }
+            callPeerHandle = caller?.lString("handle").orEmpty()
+                .ifBlank { invite?.lString("from_handle", "caller_handle").orEmpty() }
+            // Connect immediately — media first. Frame E2EE catches up in background.
+            connectCall(
+                response.apply { if (!has("id")) put("id", callId) },
+                response.lString("kind") == "video",
+                outgoing = false,
+                frameKey = null,
+            )
+            val handle = callPeerHandle
+            val groupBlank = response.lString("group_id").isBlank() && invite?.lString("group_id").isNullOrBlank()
+            if (groupBlank && handle.isNotBlank()) {
+                scope.launch {
+                    val callerId = caller?.lString("id")?.takeIf { it.isNotBlank() }
+                        ?: invite?.lString("caller_id")?.takeIf { it.isNotBlank() }
+                        ?: runCatching {
+                            request("/v1/social/profiles/${enc(handle)}", connectMs = 4_000, readMs = 6_000)
+                                .lString("id").takeIf { it.isNotBlank() }
+                        }.getOrNull()
+                    if (callerId != null && activeCallId == callId) {
+                        awaitCallFrameKey(callId, handle, callerId, maxAttempts = 4, delayMs = 400L)?.let { key ->
+                            applyLateFrameKey(key)
+                        }
+                    }
+                }
             }
-            val key = if (response.lString("group_id").isBlank() && invite?.lString("group_id").isNullOrBlank() && callPeerHandle.isNotBlank() && callerId != null)
-                awaitCallFrameKey(callId, callPeerHandle, callerId) else null
-            connectCall(response.apply { if (!has("id")) put("id", callId) }, response.lString("kind") == "video", outgoing = false, frameKey = key)
-        } catch (e: Exception) {
-            endOnServer(callId)
+        } catch (e: BlindbanditApiException) {
             cleanupRoom()
+            // Only hang up the server call on definitive "gone" — never on auth/network blips.
+            if (e.status in setOf(404, 409, 410)) {
+                scope.launch { endOnServer(callId) }
+            }
+            statusMessage = "Could not join call: ${friendly(e, "Unknown error")}"
+            Announcer.announce(appContext, statusMessage)
+        } catch (e: Exception) {
+            cleanupRoom()
+            // Transient failure — leave the call ringing for the peer / retry.
             statusMessage = "Could not join call: ${friendly(e, "Unknown error")}"
             Announcer.announce(appContext, statusMessage)
         } finally {
-            if (joiningCallId == callId) joiningCallId = null
+            // Keep answer-echo grace via joinedAt; drop joining flag shortly after connect.
+            if (joiningCallId == callId) {
+                scope.launch {
+                    delay(1_500)
+                    if (joiningCallId == callId) joiningCallId = null
+                }
+            }
+        }
+    }
+
+    /** Apply a late call-frame key after LiveKit is already up (answer path). */
+    private fun applyLateFrameKey(key: CallFrameKeys.Key) {
+        val provider = callKeyProvider
+        if (provider != null) {
+            runCatching { provider.setSharedKey(key.secret, key.index % 16) }
+            callEncryptionLabel = "End-to-end encrypted"
+            return
+        }
+        // Room already created without E2EEOptions — label stays transit-encrypted.
+        runCatching {
+            val p = BaseKeyProvider(enableSharedKey = true).also {
+                check(it.setSharedKey(key.secret, key.index % 16))
+            }
+            callKeyProvider = p
+            callEncryptionLabel = "End-to-end encrypted"
         }
     }
 
@@ -570,7 +795,8 @@ class ProductionCommunicationsService(
     fun shouldIgnoreAnswerEcho(callId: String): Boolean {
         if (joiningCallId == callId) return true
         val t0 = joinedAt[callId] ?: return false
-        if (System.currentTimeMillis() - t0 < 8_000L) return true
+        // 12s grace — join+LiveKit connect can exceed 8s on slow networks.
+        if (System.currentTimeMillis() - t0 < 12_000L) return true
         return false
     }
 
@@ -612,6 +838,8 @@ class ProductionCommunicationsService(
         room = newRoom
         newRoom.connect(url = url, token = token)
         newRoom.localParticipant.setMicrophoneEnabled(true)
+        // Local LiveKit connect is NOT remote answer — keep US ringback looping.
+        callSounds.resumeOutgoingProgressIfNeeded()
         val cameraOn = video && !startWithCameraOff && androidx.core.content.ContextCompat.checkSelfPermission(appContext, android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
         if (cameraOn) newRoom.localParticipant.setCameraEnabled(true)
         isVideoCall = video
@@ -619,9 +847,11 @@ class ProductionCommunicationsService(
         cameraEnabled = cameraOn
         callSeconds = 0
         setSpeaker(speakerByDefault || video, announce = false)
+        callSounds.resumeOutgoingProgressIfNeeded()
         if (outgoing && newRoom.remoteParticipants.isEmpty()) {
             isRinging = true
             statusMessage = "Ringing ${callPeerName}…"
+            // Do not stop ringback / play connected yet — wait for remote.
             Announcer.announce(appContext, statusMessage)
             val started = System.currentTimeMillis()
             while (room === newRoom && newRoom.remoteParticipants.isEmpty()) {
@@ -687,12 +917,18 @@ class ProductionCommunicationsService(
         request("/v1/social/messages/${enc(conversation.id)}?limit=100").items().forEach { encryption?.resolve(it) }
     }
 
-    private suspend fun awaitCallFrameKey(callId: String, handle: String, senderId: String): CallFrameKeys.Key? {
-        repeat(8) { attempt ->
+    private suspend fun awaitCallFrameKey(
+        callId: String,
+        handle: String,
+        senderId: String,
+        maxAttempts: Int = 8,
+        delayMs: Long = 1_000L,
+    ): CallFrameKeys.Key? {
+        repeat(maxAttempts) { attempt ->
             encryption?.callKeys?.get(callId, senderId)?.let { return it }
             try { fetchCallFrameKeys(handle) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { }
             encryption?.callKeys?.get(callId, senderId)?.let { return it }
-            if (attempt < 7) delay(1000)
+            if (attempt < maxAttempts - 1) delay(delayMs)
         }
         return null
     }
@@ -898,7 +1134,13 @@ class ProductionCommunicationsService(
         statusMessage = "Profile picture removed."
     }
 
-    internal suspend fun request(path: String, method: String = "GET", body: JSONObject? = null): JSONObject = withContext(Dispatchers.IO) {
+    internal suspend fun request(
+        path: String,
+        method: String = "GET",
+        body: JSONObject? = null,
+        connectMs: Int = 8_000,
+        readMs: Int = 12_000,
+    ): JSONObject = withContext(Dispatchers.IO) {
         val token = auth.sessionToken() ?: error("Sign in to use calls and messages.")
         val connection = (URL(AppConfig.API_BASE_URL.trimEnd('/') + path).openConnection() as HttpURLConnection).apply {
             // Android's platform HttpURLConnection (OkHttp-backed) accepts PATCH.
@@ -906,8 +1148,8 @@ class ProductionCommunicationsService(
             setRequestProperty("Authorization", "Bearer $token")
             setRequestProperty("Accept", "application/json")
             setRequestProperty("X-Installation-ID", DeviceIdentity.installationId(appContext))
-            connectTimeout = 10_000
-            readTimeout = 12_000
+            connectTimeout = connectMs
+            readTimeout = readMs
             if (body != null) {
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json")

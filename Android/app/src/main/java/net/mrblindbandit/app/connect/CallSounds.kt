@@ -108,18 +108,43 @@ class CallSounds(private val context: Context) {
     private enum class OutgoingProgress { Idle, DialTone, Ringback }
     private var outgoingProgress = OutgoingProgress.Idle
 
+    val isOutgoingProgressActive: Boolean
+        get() = outgoingProgress != OutgoingProgress.Idle
+
+    /** Voice-call session attrs so LiveKit mic publish never kills dial/ringback. */
+    private fun voiceCallAttrs(): AudioAttributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+        .build()
+
+    private fun playLoopRaw(resName: String, volume: Float = 0.42f): MediaPlayer? {
+        val resId = context.resources.getIdentifier(resName, "raw", context.packageName)
+        if (resId == 0) return null
+        return try {
+            MediaPlayer().apply {
+                setAudioAttributes(voiceCallAttrs())
+                setDataSource(context, android.net.Uri.parse("android.resource://${context.packageName}/$resId"))
+                isLooping = true
+                setVolume(volume, volume)
+                prepare()
+                start()
+            }
+        } catch (_: Exception) {
+            // Fallback to create() if setDataSource path fails on some OEMs.
+            MediaPlayer.create(context, resId)?.apply {
+                isLooping = true
+                setVolume(volume, volume)
+                start()
+            }
+        }
+    }
+
     /** Phase 1 — dialing / connecting: continuous US dial tone (350 + 440 Hz). */
     fun startDialTone() {
         if (!playUISounds) return
         if (outgoingProgress == OutgoingProgress.DialTone && ringbackPlayer?.isPlaying == true) return
         stopRingback()
-        val resId = context.resources.getIdentifier("ringback_us_dialtone", "raw", context.packageName)
-        if (resId == 0) return
-        ringbackPlayer = MediaPlayer.create(context, resId)?.apply {
-            isLooping = true
-            setVolume(0.42f, 0.42f)
-            start()
-        }
+        ringbackPlayer = playLoopRaw("ringback_us_dialtone")
         outgoingProgress = OutgoingProgress.DialTone
         CallHaptics.outgoingStart(context)
     }
@@ -129,15 +154,38 @@ class CallSounds(private val context: Context) {
         if (!playUISounds) return
         if (outgoingProgress == OutgoingProgress.Ringback && ringbackPlayer?.isPlaying == true) return
         stopRingback()
-        var resId = context.resources.getIdentifier("ringback_us_ringback", "raw", context.packageName)
-        if (resId == 0) resId = context.resources.getIdentifier("ringback_us_dialtone", "raw", context.packageName)
-        if (resId == 0) return
-        ringbackPlayer = MediaPlayer.create(context, resId)?.apply {
-            isLooping = true
-            setVolume(0.42f, 0.42f)
-            start()
-        }
+        ringbackPlayer = playLoopRaw("ringback_us_ringback") ?: playLoopRaw("ringback_us_dialtone")
         outgoingProgress = OutgoingProgress.Ringback
+    }
+
+    /** After LiveKit mic enable / audio mode change, restart dial/ringback if it died. */
+    fun resumeOutgoingProgressIfNeeded() {
+        if (outgoingProgress == OutgoingProgress.Idle) return
+        val playing = try { ringbackPlayer?.isPlaying == true } catch (_: Exception) { false }
+        if (playing) return
+        when (outgoingProgress) {
+            OutgoingProgress.DialTone -> {
+                outgoingProgress = OutgoingProgress.Idle
+                startDialTone()
+            }
+            OutgoingProgress.Ringback -> {
+                outgoingProgress = OutgoingProgress.Idle
+                startRingback()
+            }
+            else -> {}
+        }
+    }
+
+    /** Dialer open → continuous US dial tone until a digit or Call/End. */
+    fun openDialerIdleTone() = startDialTone()
+
+    /** Leave Dialer / End — stop dial, ringback. */
+    fun closeDialer() = stopRingback()
+
+    /** First digit kills idle dial tone; every key plays classic ITU DTMF. */
+    fun dialerKeyPress(key: String) {
+        if (outgoingProgress == OutgoingProgress.DialTone) stopRingback()
+        playDTMF(key)
     }
 
     fun stopRingback() {
@@ -168,10 +216,20 @@ class CallSounds(private val context: Context) {
             else -> return
         }
         try {
-            val tg = android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 80)
+            val stream = if (isOutgoingProgressActive || outgoingProgress != OutgoingProgress.Idle)
+                android.media.AudioManager.STREAM_VOICE_CALL
+            else
+                android.media.AudioManager.STREAM_MUSIC
+            val tg = android.media.ToneGenerator(stream, 80)
             tg.startTone(tone, 140)
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ tg.release() }, 200)
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+            try {
+                val tg = android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 80)
+                tg.startTone(tone, 140)
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ tg.release() }, 200)
+            } catch (_: Exception) {}
+        }
     }
 
     fun callInitiated() { startDialTone() /* dial tone only — no legacy call_initiated oneshot */ }

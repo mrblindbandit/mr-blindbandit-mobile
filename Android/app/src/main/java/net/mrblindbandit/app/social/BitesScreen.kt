@@ -1,8 +1,9 @@
 package net.mrblindbandit.app.social
 
-import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,12 +18,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -52,13 +57,15 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import net.mrblindbandit.app.connect.ProductionCommunicationsService
 import net.mrblindbandit.app.ui.Spacing
 
 /**
- * BanditBites + community newsfeed. TalkBack-first: vertical list with collection semantics,
- * merged card descriptions, and explicit actions — not a gesture-only pager.
+ * Native BanditBites + community feed: compose (gallery video or HTTPS URL),
+ * in-app VideoView playback, optimistic Like — no WebView.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,10 +85,21 @@ fun BitesScreen(
     var status by remember { mutableStateOf("") }
     var caption by remember { mutableStateOf("") }
     var videoUrl by remember { mutableStateOf("") }
-    var posterUrl by remember { mutableStateOf("") }
+    var localVideoUri by remember { mutableStateOf<Uri?>(null) }
+    var localVideoName by remember { mutableStateOf("") }
     var postBody by remember { mutableStateOf("") }
+    var publishing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+
+    val pickVideo = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            localVideoUri = uri
+            localVideoName = uri.lastPathSegment?.substringAfterLast('/') ?: "video"
+            videoUrl = ""
+            status = "Video selected. Add a caption and publish."
+        }
+    }
 
     fun refresh() {
         scope.launch {
@@ -156,31 +174,77 @@ fun BitesScreen(
                             Card(Modifier.fillMaxWidth()) {
                                 Column(Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                                     Text("Publish a BanditBite", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
-                                    OutlinedTextField(caption, { caption = it.take(2200) }, label = { Text("Caption") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
-                                    OutlinedTextField(videoUrl, { videoUrl = it }, label = { Text("Video URL") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                                    OutlinedTextField(posterUrl, { posterUrl = it }, label = { Text("Poster image URL (optional)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                                    OutlinedTextField(
+                                        caption, { caption = it.take(2200) },
+                                        label = { Text("Caption") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        minLines = 2,
+                                    )
+                                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                                        FilledTonalButton(
+                                            onClick = { pickVideo.launch("video/*") },
+                                            modifier = Modifier.heightIn(min = 48.dp),
+                                        ) {
+                                            Icon(Icons.Default.Videocam, contentDescription = null)
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(if (localVideoUri != null) "Change video" else "Choose video")
+                                        }
+                                    }
+                                    if (localVideoUri != null) {
+                                        Text("Selected: $localVideoName", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        TextButton(onClick = { localVideoUri = null; localVideoName = "" }) { Text("Clear video") }
+                                    }
+                                    OutlinedTextField(
+                                        videoUrl,
+                                        {
+                                            videoUrl = it
+                                            if (it.isNotBlank()) localVideoUri = null
+                                        },
+                                        label = { Text("Or paste HTTPS video URL") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true,
+                                        enabled = localVideoUri == null,
+                                    )
                                     Button(
-                                        enabled = videoUrl.isNotBlank() && !loading,
+                                        enabled = (localVideoUri != null || videoUrl.isNotBlank()) && !publishing,
                                         onClick = {
                                             scope.launch {
-                                                loading = true
+                                                publishing = true
+                                                status = "Publishing…"
                                                 try {
-                                                    social.publishBite(caption, videoUrl, posterUrl)
-                                                    caption = ""; videoUrl = ""; posterUrl = ""
+                                                    val url = if (localVideoUri != null) {
+                                                        status = "Uploading video…"
+                                                        val bytes = withContext(Dispatchers.IO) {
+                                                            context.contentResolver.openInputStream(localVideoUri!!)!!.use { it.readBytes() }
+                                                        }
+                                                        val mime = context.contentResolver.getType(localVideoUri!!) ?: "video/mp4"
+                                                        social.uploadBiteVideo(bytes, mime)
+                                                    } else videoUrl.trim()
+                                                    social.publishBite(caption, url)
+                                                    caption = ""; videoUrl = ""; localVideoUri = null; localVideoName = ""
                                                     status = "Published."
                                                     bites = social.bites(useCacheFirst = false)
                                                 } catch (e: Exception) {
                                                     status = e.message ?: "Publish failed."
-                                                } finally { loading = false }
+                                                } finally {
+                                                    publishing = false
+                                                }
                                             }
                                         },
-                                    ) { Text("Publish BanditBite") }
+                                        modifier = Modifier.heightIn(min = 48.dp),
+                                    ) {
+                                        if (publishing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                        else Text("Publish BanditBite")
+                                    }
                                 }
                             }
                         }
                     } else {
                         item {
-                            Text("Sign in to publish BanditBites. You can still scroll the public feed.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                "Sign in to publish BanditBites. You can still scroll and play the public feed.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                     itemsIndexed(bites, key = { _, b -> b.id }) { index, bite ->
@@ -192,21 +256,27 @@ fun BitesScreen(
                             canModerate = isOwnerAdmin,
                             onOpenProfile = { onOpenProfile(bite.author.handle) },
                             onLike = {
+                                // Optimistic like
+                                val was = bite.myReaction
+                                bites = bites.map {
+                                    if (it.id != bite.id) it
+                                    else it.copy(
+                                        myReaction = if (was == null) "like" else null,
+                                        reactionTotal = (it.reactionTotal + if (was == null) 1 else -1).coerceAtLeast(0),
+                                    )
+                                }
                                 scope.launch {
                                     try {
                                         social.reactBite(bite.id)
                                         status = "Liked ${bite.author.handle}'s BanditBite."
-                                        bites = social.bites(useCacheFirst = false)
-                                    } catch (e: Exception) { status = e.message ?: "Like failed." }
-                                }
-                            },
-                            onOpenVideo = {
-                                scope.launch { social.markBiteViewed(bite.id) }
-                                if (bite.videoUrl.isNotBlank()) {
-                                    runCatching {
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(bite.videoUrl)))
+                                    } catch (e: Exception) {
+                                        bites = bites.map { if (it.id == bite.id) bite else it }
+                                        status = e.message ?: "Like failed."
                                     }
                                 }
+                            },
+                            onViewed = {
+                                scope.launch { social.markBiteViewed(bite.id) }
                             },
                             onRemove = {
                                 scope.launch {
@@ -214,7 +284,9 @@ fun BitesScreen(
                                         social.removeBite(bite.id)
                                         status = "Removed BanditBite."
                                         bites = social.bites(useCacheFirst = false)
-                                    } catch (e: Exception) { status = e.message ?: "Remove failed." }
+                                    } catch (e: Exception) {
+                                        status = e.message ?: "Remove failed."
+                                    }
                                 }
                             },
                         )
@@ -245,7 +317,9 @@ fun BitesScreen(
                                                     posts = social.newsfeed()
                                                 } catch (e: Exception) {
                                                     status = e.message ?: "Post failed."
-                                                } finally { loading = false }
+                                                } finally {
+                                                    loading = false
+                                                }
                                             }
                                         },
                                     ) { Text("Post") }
@@ -254,7 +328,31 @@ fun BitesScreen(
                         }
                     }
                     itemsIndexed(posts, key = { _, p -> p.id }) { index, post ->
-                        PostCard(post, index, posts.size, onOpenProfile = { onOpenProfile(post.author.handle) })
+                        PostCard(
+                            post = post,
+                            index = index,
+                            total = posts.size,
+                            signedIn = signedIn,
+                            onOpenProfile = { onOpenProfile(post.author.handle) },
+                            onLike = {
+                                val liked = post.myReaction != null
+                                posts = posts.map {
+                                    if (it.id != post.id) it
+                                    else it.copy(
+                                        myReaction = if (liked) null else "like",
+                                        likes = (it.likes + if (liked) -1 else 1).coerceAtLeast(0),
+                                    )
+                                }
+                                scope.launch {
+                                    try {
+                                        if (liked) social.unlikePost(post.id) else social.likePost(post.id)
+                                    } catch (e: Exception) {
+                                        posts = posts.map { if (it.id == post.id) post else it }
+                                        status = e.message ?: "Like failed."
+                                    }
+                                }
+                            },
+                        )
                     }
                     item { Spacer(Modifier.heightIn(min = Spacing.lg)) }
                 }
@@ -272,9 +370,10 @@ private fun BiteCard(
     canModerate: Boolean,
     onOpenProfile: () -> Unit,
     onLike: () -> Unit,
-    onOpenVideo: () -> Unit,
+    onViewed: () -> Unit,
     onRemove: () -> Unit,
 ) {
+    var expanded by remember(bite.id) { mutableStateOf(false) }
     val authorLabel = buildString {
         append(bite.author.displayName)
         if (bite.author.verified) append(", verified")
@@ -283,6 +382,7 @@ private fun BiteCard(
     val summary = buildString {
         append("BanditBite ${index + 1} of $total. $authorLabel. ")
         if (bite.caption.isNotBlank()) append(bite.caption).append(". ")
+        if (bite.videoUrl.isNotBlank()) append("Has video. ")
         append("${bite.viewCount} views. ${bite.reactionTotal} reactions.")
     }
     Card(
@@ -305,10 +405,33 @@ private fun BiteCard(
                 }
             }
             if (bite.caption.isNotBlank()) Text(bite.caption, style = MaterialTheme.typography.bodyLarge)
+            if (bite.videoUrl.isNotBlank()) {
+                if (expanded) {
+                    BiteVideoPlayer(videoUrl = bite.videoUrl, autoPlay = true, onPlaying = onViewed)
+                    TextButton(onClick = { expanded = false }) { Text("Hide video") }
+                } else {
+                    Button(
+                        onClick = { expanded = true },
+                        modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Play BanditBite video" },
+                    ) {
+                        Icon(Icons.Default.Videocam, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Play video")
+                    }
+                }
+            }
             Text("${bite.viewCount} views · ${bite.reactionTotal} reactions", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                Button(onClick = onOpenVideo) { Text("Play video") }
-                if (signedIn) TextButton(onClick = onLike) { Text(if (bite.myReaction != null) "Liked" else "Like") }
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                if (signedIn) {
+                    TextButton(onClick = onLike) {
+                        Icon(
+                            if (bite.myReaction != null) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            contentDescription = null,
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (bite.myReaction != null) "Liked" else "Like")
+                    }
+                }
                 if (canModerate) TextButton(onClick = onRemove) { Text("Remove") }
             }
         }
@@ -316,7 +439,14 @@ private fun BiteCard(
 }
 
 @Composable
-private fun PostCard(post: SocialPost, index: Int, total: Int, onOpenProfile: () -> Unit) {
+private fun PostCard(
+    post: SocialPost,
+    index: Int,
+    total: Int,
+    signedIn: Boolean,
+    onOpenProfile: () -> Unit,
+    onLike: () -> Unit,
+) {
     val summary = buildString {
         append("Post ${index + 1} of $total. ${post.author.displayName}")
         if (post.author.verified) append(", verified")
@@ -338,7 +468,22 @@ private fun PostCard(post: SocialPost, index: Int, total: Int, onOpenProfile: ()
                 }
             }
             Text(post.body, style = MaterialTheme.typography.bodyLarge)
+            post.mediaUrls.firstOrNull()?.let { url ->
+                if (url.contains(".mp4") || url.contains("/media/")) {
+                    BiteVideoPlayer(videoUrl = url)
+                }
+            }
             Text("${post.likes} likes · ${post.comments} comments", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (signedIn) {
+                TextButton(onClick = onLike) {
+                    Icon(
+                        if (post.myReaction != null) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = null,
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(if (post.myReaction != null) "Liked" else "Like")
+                }
+            }
         }
     }
 }

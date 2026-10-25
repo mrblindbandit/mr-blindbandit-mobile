@@ -7,6 +7,11 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 ---
 
 
+
+## [2.0.12] - 2026-10-26 (Android)
+
+Android phone-feel parity with iOS TestFlight 2.2.0 (39): optimistic message Sent, Dialer keypad, US dial/ringback that survives LiveKit connect, slim inbox + send-ack + call-number APIs, CallWarmup, Clerk 3.5s token timeout. versionCode 16.
+
 ## 2.0.9 (25)
 - Voice messages: play and send announce clearly for VoiceOver; failed audio session / decode / upload speak the error. Successful play announces "Playing". Message rows no longer swallow the bubble with a container accessibilityLabel (DM + group).
 - Settings → Messages: confirm before send, large bubbles, link previews, auto-play voice, listen once, Magic Tap ends call, voice playback speed.

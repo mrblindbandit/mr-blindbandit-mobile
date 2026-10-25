@@ -264,11 +264,14 @@ class ClerkAuthService(context: Context) {
     suspend fun sessionToken(): String? {
         ensureConfigured()
         val session = Clerk.session ?: return null
-        var token: String? = null
-        session.fetchToken()
-            .onSuccess { token = it.jwt }
-            .onFailure { statusMessage = it.errorMessage }
-        return token
+        // Hard 3.5s limit so send/call never wait forever on Clerk (iOS TF 39 parity).
+        return withTimeoutOrNull(3_500L) {
+            var token: String? = null
+            session.fetchToken()
+                .onSuccess { token = it.jwt }
+                .onFailure { statusMessage = it.errorMessage }
+            token
+        }
     }
 
     suspend fun requestAccountDeletion(): Boolean {

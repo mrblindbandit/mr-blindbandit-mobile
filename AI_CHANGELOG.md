@@ -1,3 +1,12 @@
+## 2026-10-26 — Android 2.0.12 (16): phone-feel + join fix + native Bites video
+
+- **Send:** optimistic Sent caption + clear draft immediately; `client_msg_id` + `POST /v1/social/messages/send-ack`; E2EE race ≤350ms; Clerk session token hard 3.5s.
+- **Calls:** Dialer keypad; US dial → looping ringback until remote answers; voice-comm progress tones + resume after LiveKit mic.
+- **Answer/join:** connect LiveKit immediately (no serial awaitCallFrameKey); late frame key; do not `endOnServer` on transient join failure; clear stuck outbound ringing so Answer works; 12s answer-echo grace.
+- **Bites:** native compose (gallery pick → `/v1/media/uploads` or HTTPS URL), in-app VideoView play/pause, optimistic Like — no WebView / external Intent.
+- **APIs:** slim inbox + hydrate; call-number get/set/resolve; CallWarmup.
+- versionCode **16** / versionName **2.0.12** (2.0.11/15 still in Play review — ship newer).
+
 ## 2026-10-26 — TF 2.2.0 (39): phone-feel + native-speed client
 
 - **Ringback:** `connect()` no longer stops US ringback on local LiveKit connect; CallKit `didActivate` resumes progress; progress tones use playAndRecord (fixes LiveKit “recording not supported”).

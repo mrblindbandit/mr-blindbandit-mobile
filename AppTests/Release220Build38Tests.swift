@@ -75,13 +75,15 @@ final class Release220Build38Tests: XCTestCase {
                         "last_message": NSNull(),
                         "unread_count": 0
                     ],
-                    ["id": 123, "broken": true]
+                    // No id — soft decoder must skip (Int id alone still soft-accepts as String)
+                    ["broken": true, "updated_at": "nope"],
+                    ["id": "", "updated_at": 1]
                 ]
             ]
         ]
         let data = try JSONSerialization.data(withJSONObject: payload)
         let items = try BlindbanditAPI.softDecodeItems(BlindbanditConversation.self, from: data)
-        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items.count, 1, "corrupt/empty-id rows must be skipped")
         XCTAssertEqual(items.first?.id, "c1")
         XCTAssertEqual(items.first?.other?.handle, "alice")
     }

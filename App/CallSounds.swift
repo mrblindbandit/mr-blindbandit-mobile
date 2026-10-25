@@ -291,7 +291,10 @@ enum CallSounds {
         le32(16); le16(1); le16(1); le32(Int(sr)); le32(Int(sr) * 2); le16(2); le16(16)
         data.append(contentsOf: [0x64,0x61,0x74,0x61]) // data
         le32(dataSize)
-        for s in samples { le16(Int(s)) }
+        for s in samples {
+            // bitPattern: PCM sample can be negative; UInt16(Int) traps on < 0
+            data.append(contentsOf: withUnsafeBytes(of: UInt16(bitPattern: s).littleEndian) { Array($0) })
+        }
         do {
             dtmfPlayer = try AVAudioPlayer(data: data)
             dtmfPlayer?.volume = 0.7

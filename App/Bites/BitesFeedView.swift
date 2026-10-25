@@ -424,7 +424,6 @@ struct BiteRow: View {
                         }
                     }
                 )
-                .allowsHitTesting(false)
             }
         }
         .accessibilityElement(children: .combine)

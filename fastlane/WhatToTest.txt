@@ -3,6 +3,7 @@
 • More → Dialer (native landline keypad): opens with continuous US dial tone (350+440). First digit kills dial tone; every key plays classic ITU DTMF. Call resolves an assigned BlindBandit call number → places a native call (connecting dial tone, then US ringback while ringing). Unknown number → clear not-found + busy tone. End/leave stops all tones; reopen → dial tone again.
 • Outgoing call progress (any Call button): (1) dial/connecting = US dial tone; (2) remote ringing = US ringback (440+480, 2s on / 4s off). No legacy ringback_outgoing / call_initiated oneshot during outbound wait.
 • In-call keypad: DTMF beeps on 0–9 * #.
+• In-call Minimize: collapses full-screen call to a top mini pill (peer + timer). Mute/End on the pill; tap pill or Expand to return. Call audio/LiveKit/CallKit keep running — you can use Messages/Bites while on the call.
 • Messages: soft reconnect banner on timeout (“Still connecting…”) instead of full-screen “The request timed out.” Cache-first inbox/thread kept.
 • Settings → Messages & calls → BlindBandit call numbers: assign your number and map people ↔ dialable numbers (local + iCloud KVS; server sync next).
 

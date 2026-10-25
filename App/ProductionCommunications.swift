@@ -697,6 +697,8 @@ final class ProductionCommunicationsService: ObservableObject {
     @Published private(set) var myAvatarURL: String? = nil
     @Published private(set) var isLoading = false
     @Published private(set) var isInCall = false
+    /// Full-screen call UI collapsed — LiveKit/CallKit keep running; mini pill stays on tabs.
+    @Published var callUIMinimized = false
     @Published private(set) var isVideoCall = false
     @Published private(set) var micEnabled = true
     @Published private(set) var cameraEnabled = false
@@ -1609,6 +1611,7 @@ final class ProductionCommunicationsService: ObservableObject {
         hadRemote = !knownParticipantIDs.isEmpty
         aloneSince = nil
         isInCall = true
+        callUIMinimized = false
         callSeconds = 0
         startTicker()
         refreshParticipants()
@@ -1914,6 +1917,20 @@ final class ProductionCommunicationsService: ObservableObject {
     // MARK: Ending
 
     /// In-app End button. CallKit runs the end action, which calls finishCall.
+    func minimizeCallUI() {
+        guard isInCall else { return }
+        callUIMinimized = true
+        UIAccessibility.post(notification: .announcement, argument: "Call minimized. Tap the call banner to return.")
+        AppHaptics.light()
+    }
+
+    func expandCallUI() {
+        guard isInCall else { return }
+        callUIMinimized = false
+        UIAccessibility.post(notification: .announcement, argument: "Call expanded.")
+        AppHaptics.selection()
+    }
+
     func endCall() {
         guard let id = activeCallID else { finishCall(notifyServer: false, announcement: "Call ended."); return }
         CallKitManager.shared.requestEnd(callID: id) { [weak self] ok in
@@ -1943,6 +1960,7 @@ final class ProductionCommunicationsService: ObservableObject {
         roomObserver = nil
         activeCallID = nil
         isInCall = false
+        callUIMinimized = false
         isVideoCall = false
         cameraEnabled = false
         micEnabled = true
@@ -2088,6 +2106,7 @@ final class ProductionCommunicationsService: ObservableObject {
         roomObserver = nil
         activeCallID = nil
         isInCall = false
+        callUIMinimized = false
         isRinging = false
         ringTimeout?.cancel()
         CallSounds.stopLoop()

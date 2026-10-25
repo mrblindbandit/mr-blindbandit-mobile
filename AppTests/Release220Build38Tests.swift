@@ -91,4 +91,9 @@ final class Release220Build38Tests: XCTestCase {
         XCTAssertTrue(true)
     }
 
+    func testCallUIMinimizedKeyPathExists() {
+        _ = \ProductionCommunicationsService.callUIMinimized
+        XCTAssertTrue(true)
+    }
+
 }

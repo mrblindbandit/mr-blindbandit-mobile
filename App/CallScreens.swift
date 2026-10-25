@@ -103,6 +103,76 @@ struct IncomingCallScreen: View {
     }
 }
 
+
+// MARK: - Minimized call pill (tabs stay usable; LiveKit/CallKit keep running)
+
+struct MiniCallBanner: View {
+    @EnvironmentObject private var communications: ProductionCommunicationsService
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button {
+                communications.expandCallUI()
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: communications.isVideoCall ? "video.fill" : "phone.fill")
+                        .foregroundStyle(Brand.gold)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(communications.callPeerName.isEmpty ? "Call" : communications.callPeerName)
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+                        Text(communications.isOnHold ? "On hold" : communications.isRinging ? "Ringing…" : communications.callTimeLabel)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 4)
+                    Text("Tap to return")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Brand.goldDeep)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Expand call with \(communications.callPeerName.isEmpty ? "caller" : communications.callPeerName)")
+            .accessibilityHint("Returns to the full call screen. The call is still active.")
+            .accessibilityIdentifier("mini-call-expand")
+
+            Button {
+                communications.toggleMic()
+            } label: {
+                Image(systemName: communications.micEnabled ? "mic.fill" : "mic.slash.fill")
+                    .frame(width: 36, height: 36)
+                    .background(Color.primary.opacity(0.12), in: Circle())
+            }
+            .accessibilityLabel(communications.micEnabled ? "Mute" : "Unmute")
+            .accessibilityIdentifier("mini-call-mute")
+
+            Button {
+                communications.endCall()
+            } label: {
+                Image(systemName: "phone.down.fill")
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(Color.red, in: Circle())
+            }
+            .accessibilityLabel("End call")
+            .accessibilityIdentifier("mini-call-end")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Brand.gold.opacity(0.45), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
+        .padding(.horizontal, 12)
+        .padding(.top, 6)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("mini-call-banner")
+    }
+}
+
 // MARK: - Active call
 
 struct ActiveCallScreen: View {
@@ -159,6 +229,19 @@ struct ActiveCallScreen: View {
 
     private var header: some View {
         VStack(spacing: 4) {
+            HStack {
+                Button {
+                    communications.minimizeCallUI()
+                } label: {
+                    Label("Minimize", systemImage: "chevron.down.circle.fill")
+                        .labelStyle(.titleAndIcon)
+                        .font(.subheadline.weight(.semibold))
+                }
+                .accessibilityLabel("Minimize")
+                .accessibilityHint("Hides the full call screen. The call stays active so you can use Messages and other tabs.")
+                .accessibilityIdentifier("call-minimize")
+                Spacer()
+            }
             Text(communications.callPeerName.isEmpty ? "Call" : communications.callPeerName).font(.title2.bold())
             if !communications.callEncryptionLabel.isEmpty {
                 Label(communications.callEncryptionLabel, systemImage: communications.callEncrypted ? "lock.fill" : "lock.open")
@@ -241,6 +324,7 @@ struct ActiveCallScreen: View {
         Button(communications.handRaised ? "Lower hand" : "Raise hand") { communications.toggleHand() }
         Button("Open call chat") { showChat = true }
         Button(communications.isOnHold ? "Resume" : "Hold") { communications.setHold(!communications.isOnHold) }
+        Button("Minimize") { communications.minimizeCallUI() }
         Button("End call") { communications.endCall() }
     }
 
@@ -282,6 +366,7 @@ struct ActiveCallScreen: View {
                 if communications.isVideoCall {
                     control("phone.fill", "Voice only") { communications.downgradeToVoice() }
                 }
+                control("chevron.down", "Minimize") { communications.minimizeCallUI() }
                 control("phone.down.fill", communications.isRinging ? "Cancel" : "End call", destructive: true) { communications.endCall() }
             }
         }

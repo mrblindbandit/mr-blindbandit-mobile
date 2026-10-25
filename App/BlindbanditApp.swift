@@ -368,9 +368,20 @@ struct MainTabs: View {
         .onContinueUserActivity("INStartCallIntent") { activity in
             CallKitManager.shared.handle(userActivity: activity)
         }
-        .fullScreenCover(isPresented: Binding(get: { communications.isInCall || communications.incomingCall != nil }, set: { _ in })) {
+        .fullScreenCover(isPresented: Binding(
+            get: { (communications.isInCall && !communications.callUIMinimized) || communications.incomingCall != nil },
+            set: { _ in }
+        )) {
             CallContainerScreen()
         }
+        .overlay(alignment: .top) {
+            if communications.isInCall && communications.callUIMinimized {
+                MiniCallBanner()
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(50)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: communications.callUIMinimized)
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
             guard !StoreScreenshotMode.isActive else { return }
             Task {

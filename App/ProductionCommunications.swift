@@ -731,7 +731,7 @@ final class ProductionCommunicationsService: ObservableObject {
         let handle = conversation.other?.handle ?? ""
         let title: String = {
             guard let other = conversation.other else { return "Chat" }
-            if let name = other.display_name, !name.isEmpty { return name }
+            if !other.display_name.isEmpty { return other.display_name }
             return "@\(other.handle)"
         }()
         FeatureBehaviors220.onChatOpened(id: conversation.id, title: title, handle: handle)

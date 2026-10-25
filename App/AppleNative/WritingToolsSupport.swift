@@ -35,8 +35,8 @@ struct WritingToolsTextField: UIViewRepresentable {
 extension View {
     @ViewBuilder
     func banditWritingToolsEnabled(_ enabled: Bool = true) -> some View {
-        if #available(iOS 18.0, *) {
-            self.writingToolsBehavior(enabled ? .complete : .none)
+        if #available(iOS 18.0, *), enabled {
+            self.writingToolsBehavior(.complete)
         } else {
             self
         }

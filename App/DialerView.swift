@@ -341,7 +341,7 @@ struct CallNumberSettingsView: View {
         .navigationTitle("Call numbers")
         .task {
             myNumber = CallNumberDirectory.myCallNumber
-            if let remote = try? await BlindbanditAPI.getMyCallNumber(), let remote, !remote.isEmpty {
+            if let remote = try? await BlindbanditAPI.getMyCallNumber(), !remote.isEmpty {
                 CallNumberDirectory.myCallNumber = remote
                 myNumber = remote
             }

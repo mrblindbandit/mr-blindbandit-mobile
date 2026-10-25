@@ -84,8 +84,23 @@ struct WebResult: Decodable, Equatable { let title: String; let url: String; let
 
 enum WebSearch {
     static var allowed: Bool {
-        get { UserDefaults.standard.object(forKey: "ai.webSearch") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "ai.webSearch") }
+        get { UserDefaults.standard.object(forKey: SettingsKey.aiWebSearch) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: SettingsKey.aiWebSearch) }
+    }
+
+    /// Heuristic: current events, prices, scores, "who won", "latest", "today", "search the web", URLs, etc.
+    static func needsLiveInfo(_ question: String) -> Bool {
+        let q = question.lowercased()
+        let keys = [
+            "search the web", "search online", "look up", "google", "brave search",
+            "latest", "breaking", "today's", "todays", "right now", "current",
+            "who won", "score", "price of", "stock", "weather in", "news about",
+            "what happened", "headline", "according to", "on the internet"
+        ]
+        if keys.contains(where: { q.contains($0) }) { return true }
+        if q.contains("http://") || q.contains("https://") { return true }
+        if q.hasPrefix("search ") || q.hasPrefix("find online ") { return true }
+        return false
     }
 
     static func search(_ q: String) async -> String {

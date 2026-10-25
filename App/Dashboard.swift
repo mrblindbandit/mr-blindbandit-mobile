@@ -95,7 +95,7 @@ struct ProfessionalHome: View {
                     }
                     .buttonStyle(.plain)
 
-                    NavigationLink { Website(path: "/music/", title: "Music") } label: {
+                    NavigationLink { NativeMusicHubView() } label: {
                         WideDashboardCard(icon: "opticaldisc", title: "Releases", subtitle: "Albums and singles from Blindbandit Records")
                     }
                     .buttonStyle(.plain)
@@ -215,7 +215,7 @@ struct CreatorHubView: View {
             }
 
             Section("On mrblindbandit.net") {
-                NavigationLink { Website(path: "/media-tools/", title: "Media tools") } label: { Label("Online media tools", systemImage: "globe") }
+                NavigationLink { NativeMediaToolsHubView() } label: { Label("Online media tools", systemImage: "globe") }
             }
 
             Section("Musician Studio") {

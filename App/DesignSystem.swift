@@ -115,6 +115,41 @@ enum SettingsKey {
     static let shakeToRead = "a11y.shakeToRead"
     static let audioDuckAmount = "a11y.audioDuck" // soft | medium | hard
     static let missedCallCallbackSuggest = "calls.missedCallbackSuggest"
+
+    // Bandit Feed
+    static let bitesSwipeToLike = "bites.swipeToLike"
+    static let bitesShowLikeHints = "bites.showLikeHints"
+    static let bitesComposerDraft = "bites.composerDraft"
+    static let bitesAutoPlayVideos = "bites.autoPlayVideos"
+    static let bitesDataSaverMedia = "bites.dataSaverMedia"
+    static let bitesHideLikedCounts = "bites.hideLikedCounts"
+    static let bitesNotifyNewFollowers = "bites.notifyNewFollowers"
+    static let bitesNotifyComments = "bites.notifyComments"
+    static let bitesNotifyMentions = "bites.notifyMentions"
+    static let bitesNotifyReactions = "bites.notifyReactions"
+
+    // AI prefs
+    static let aiWebSearch = "ai.webSearch"
+    static let aiPreferOnDevice = "ai.preferOnDevice"
+    static let aiSpeakReplies = "ai.speakReplies"
+    static let aiPersonaMode = "ai.personaMode" // friend | bandit | concise | coach
+    static let aiCloudFallback = "ai.cloudFallback"
+    static let aiTranslateDefault = "ai.translateDefaultLang"
+    static let aiCaptionHelper = "ai.captionHelper"
+
+    // Appearance / language / security extras
+    static let appLanguageHint = "appearance.languageHint"
+    static let reduceAppAnimations = "a11y.reduceAppAnimations"
+    static let boldFeedText = "appearance.boldFeedText"
+    static let compactFeedDensity = "appearance.compactFeed"
+    static let showOnlineStatus = "privacy.showOnlineStatus"
+    static let blockUnknownCallers = "privacy.blockUnknownCallers"
+    static let lockWithFaceIDOnOpen = "security.lockOnOpen"
+    static let autoLockMinutes = "security.autoLockMinutes"
+    static let notifyBites = "notify.bites"
+    static let notifyFollows = "notify.follows"
+    static let feedPrefFollowingOnly = "feed.followingOnly"
+    static let feedPrefHideReposts = "feed.hideReposts"
 }
 
 enum MediaAutoDownload: String, CaseIterable, Identifiable {

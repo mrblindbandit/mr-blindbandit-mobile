@@ -193,6 +193,7 @@ enum NotificationsAPI {
 
 // MARK: - Messaging polish: search / pin / mute
 
+@MainActor
 enum ChatListPrefs {
     private static let pinnedKey = "chats.pinned.v1"
     private static let mutedKey = "chats.muted.v1"

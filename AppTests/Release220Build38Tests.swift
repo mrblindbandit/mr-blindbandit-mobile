@@ -83,7 +83,7 @@ final class Release220Build38Tests: XCTestCase {
         let items = try BlindbanditAPI.softDecodeItems(BlindbanditConversation.self, from: data)
         XCTAssertEqual(items.count, 1)
         XCTAssertEqual(items.first?.id, "c1")
-        XCTAssertEqual(items.first?.other.handle, "alice")
+        XCTAssertEqual(items.first?.other?.handle, "alice")
     }
 
     func testSoftBannerKeyPathExists() {

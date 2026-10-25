@@ -1,3 +1,8 @@
+## 2026-10-26 — Ship dual-RTC Agora build (iOS 2.2.0/40, Android 2.0.13/17)
+
+- Version bump only so TestFlight / Play can pick up merged PR #92 dual-RTC clients.
+- Server join latency fix already live Sites v151.
+
 ## 2026-10-26 — Dual RTC Agora (iOS + Android)
 
 - Parse `provider` + nested/flat Agora grants from create/join/accept; keep LiveKit nested+flat.

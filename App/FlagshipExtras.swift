@@ -69,6 +69,7 @@ struct PeopleSearchView: View {
     }
 }
 
+@MainActor
 enum DiscoveryAPI {
     static func searchPeople(_ q: String) async throws -> [BiteAuthor] {
         let encoded = BlindbanditAPI.escape(q)
@@ -173,6 +174,7 @@ struct AppNotificationItem: Identifiable, Decodable, Equatable {
     }
 }
 
+@MainActor
 enum NotificationsAPI {
     static func fetch() async throws -> [AppNotificationItem] {
         let paths = ["api/v1/notifications?limit=50", "v1/social/notifications?limit=50"]

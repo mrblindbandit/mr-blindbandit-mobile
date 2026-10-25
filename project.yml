@@ -84,10 +84,7 @@ targets:
         embed: true
       - target: NotificationService
         embed: true
-      - target: BlindbanditWidgets
-        embed: true
-      - target: BlindbanditWatch
-        embed: true
+      # BlindbanditWidgets / BlindbanditWatch: source kept; embed after ASC App IDs + Fastfile sigh
   BlindbanditWidgets:
     type: app-extension
     platform: iOS
@@ -211,8 +208,6 @@ schemes:
     build:
       targets:
         Blindbandit: all
-        BlindbanditWidgets: all
-        BlindbanditWatch: all
         BlindbanditTests: [test]
         BlindbanditUITests: [test]
     test:

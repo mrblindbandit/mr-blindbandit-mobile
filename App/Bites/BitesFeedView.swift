@@ -305,195 +305,160 @@ struct BiteRow: View {
     @State private var likeFlash = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                NavigationLink {
-                    NativeProfileView(handle: item.author.handle)
-                } label: {
-                    HStack(spacing: 10) {
-                        ProfileAvatar(
-                            urlString: item.author.avatar_url,
-                            displayName: item.author.display_name,
-                            size: 40,
-                            verified: item.author.verified,
-                            decorative: true
-                        )
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 4) {
-                                Text(item.author.display_name)
-                                    .font(.headline)
-                                    .dynamicTypeSize(...DynamicTypeSize.accessibility3)
-                                if item.author.verified { VerifiedBadge() }
-                            }
-                            Text("@\(item.author.handle) · \(relative(item.created_at))")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+        cardContent
+            .padding(.vertical, 6)
+            .background(likeFlashBackground)
+            .overlay { swipeLikeOverlay }
+            .modifier(BiteRowChrome(
+                item: item,
+                swipeToLikeEnabled: swipeToLikeEnabled,
+                onLike: onLike,
+                onMuteAuthor: onMuteAuthor,
+                onHide: onHide,
+                onDeleted: onDeleted,
+                showComments: $showComments,
+                showReactions: $showReactions,
+                showReport: $showReport,
+                reportNote: $reportNote,
+                openProfile: $openProfile,
+                onReact: onReact
+            ))
+    }
+
+    private var likeFlashBackground: some View {
+        RoundedRectangle(cornerRadius: 12)
+            .fill(likeFlash ? Color.red.opacity(0.12) : Color.clear)
+            .animation(.easeOut(duration: 0.25), value: likeFlash)
+    }
+
+    @ViewBuilder
+    private var swipeLikeOverlay: some View {
+        if swipeToLikeEnabled {
+            BiteSwipeLikeOverlay(
+                enabled: true,
+                onSwipeUp: {
+                    if !item.liked_by_me {
+                        likeFlash = true
+                        onLike()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { likeFlash = false }
+                    } else {
+                        AppHaptics.selection()
+                        UIAccessibility.post(notification: .announcement, argument: "Already liked")
+                    }
+                },
+                onSwipeDown: {
+                    if item.liked_by_me {
+                        onLike()
+                    } else {
+                        AppHaptics.light()
+                        UIAccessibility.post(notification: .announcement, argument: "Not liked")
                     }
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(item.author.verified
-                    ? "\(item.author.display_name), Verified, @\(item.author.handle)"
-                    : "\(item.author.display_name), @\(item.author.handle)")
-                Spacer(minLength: 0)
-                if BitesLocalPrefs.isBookmarked(item.id) {
-                    Image(systemName: "bookmark.fill")
-                        .foregroundStyle(Brand.goldDeep)
-                        .accessibilityLabel("Saved")
-                }
-            }
+            )
+        }
+    }
 
+    private var cardContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            authorHeader
             if !item.displayText.isEmpty {
                 Text(item.displayText)
                     .font(.body)
                     .textSelection(.enabled)
                     .dynamicTypeSize(...DynamicTypeSize.accessibility4)
             }
-
-            if let video = item.video_url, !video.isEmpty {
-                Label("Short video Bite", systemImage: "play.rectangle.fill")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("Short video Bite attached")
-            } else if !item.media.isEmpty {
-                Label("\(item.media.count) media", systemImage: "photo.on.rectangle")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            HStack(spacing: 18) {
-                Button(action: onLike) {
-                    Label("\(item.likes)", systemImage: item.liked_by_me ? "heart.fill" : "heart")
-                }
-                .accessibilityLabel(item.liked_by_me ? "Unlike, \(item.likes) likes" : "Like, \(item.likes) likes")
-                .tint(item.liked_by_me ? .red : .primary)
-
-                Button { showComments = true } label: {
-                    Label("\(item.comments)", systemImage: "bubble.right")
-                }
-                .accessibilityLabel("Comments, \(item.comments)")
-
-                Button { showReactions = true } label: {
-                    Label(item.my_reaction.map { "Reacted \($0)" } ?? "React", systemImage: "face.smiling")
-                }
-                .accessibilityLabel(item.my_reaction.map { "Change reaction, currently \($0)" } ?? "Add reaction")
-
-                ShareLink(item: shareText) {
-                    Label("Share", systemImage: "square.and.arrow.up")
-                }
-                .accessibilityLabel("Share Bite")
-
-                Button {
-                    BitesLocalPrefs.toggleBookmark(item)
-                    AppHaptics.selection()
-                    UIAccessibility.post(notification: .announcement, argument: BitesLocalPrefs.isBookmarked(item.id) ? "Saved" : "Removed from saved")
-                } label: {
-                    Image(systemName: BitesLocalPrefs.isBookmarked(item.id) ? "bookmark.fill" : "bookmark")
-                }
-                .accessibilityLabel(BitesLocalPrefs.isBookmarked(item.id) ? "Remove from saved Bites" : "Save Bite")
-            }
-            .buttonStyle(.borderless)
-            .font(.subheadline)
+            mediaHint
+            actionBar
         }
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(likeFlash ? Color.red.opacity(0.12) : Color.clear)
-                .animation(.easeOut(duration: 0.25), value: likeFlash)
-        )
-        .overlay {
-            if swipeToLikeEnabled {
-                BiteSwipeLikeOverlay(
-                    enabled: true,
-                    onSwipeUp: {
-                        if !item.liked_by_me {
-                            likeFlash = true
-                            onLike()
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { likeFlash = false }
-                        } else {
-                            AppHaptics.selection()
-                            UIAccessibility.post(notification: .announcement, argument: "Already liked")
+    }
+
+    private var authorHeader: some View {
+        HStack(spacing: 10) {
+            NavigationLink {
+                NativeProfileView(handle: item.author.handle)
+            } label: {
+                HStack(spacing: 10) {
+                    ProfileAvatar(
+                        urlString: item.author.avatar_url,
+                        displayName: item.author.display_name,
+                        size: 40,
+                        verified: item.author.verified,
+                        decorative: true
+                    )
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 4) {
+                            Text(item.author.display_name)
+                                .font(.headline)
+                                .dynamicTypeSize(...DynamicTypeSize.accessibility3)
+                            if item.author.verified { VerifiedBadge() }
                         }
-                    },
-                    onSwipeDown: {
-                        if item.liked_by_me {
-                            onLike()
-                        } else {
-                            AppHaptics.light()
-                            UIAccessibility.post(notification: .announcement, argument: "Not liked")
-                        }
+                        Text("@\(item.author.handle) · \(relative(item.created_at))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                )
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(item.author.verified
+                ? "\(item.author.display_name), Verified, @\(item.author.handle)"
+                : "\(item.author.display_name), @\(item.author.handle)")
+            Spacer(minLength: 0)
+            if BitesLocalPrefs.isBookmarked(item.id) {
+                Image(systemName: "bookmark.fill")
+                    .foregroundStyle(Brand.goldDeep)
+                    .accessibilityLabel("Saved")
             }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(item.accessibilitySummary)
-        .accessibilityHint(swipeToLikeEnabled ? "Swipe up to like, swipe down to unlike" : "")
-        .accessibilityAction(named: Text(item.liked_by_me ? "Unlike" : "Like")) { onLike() }
-        .accessibilityAction(named: Text("Open profile")) { openProfile = true }
-        .accessibilityAction(named: Text("Comment")) { showComments = true }
-        .accessibilityAction(named: Text("Share")) {
-            // ShareLink handles UI share; announce for VO users who pick the action.
-            UIAccessibility.post(notification: .announcement, argument: "Use the Share button on this Bite")
+    }
+
+    @ViewBuilder
+    private var mediaHint: some View {
+        if let video = item.video_url, !video.isEmpty {
+            Label("Short video Bite", systemImage: "play.rectangle.fill")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Short video Bite attached")
+        } else if !item.media.isEmpty {
+            Label("\(item.media.count) media", systemImage: "photo.on.rectangle")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
         }
-        .accessibilityAction(named: Text(BitesLocalPrefs.isBookmarked(item.id) ? "Unsave" : "Save")) {
-            BitesLocalPrefs.toggleBookmark(item)
-        }
-        .accessibilityAction(named: Text("Hide Bite")) { onHide() }
-        .accessibilityAction(named: Text("Mute @\(item.author.handle)")) { onMuteAuthor() }
-        .contextMenu {
-            Button { onLike() } label: {
-                Label(item.liked_by_me ? "Unlike" : "Like", systemImage: item.liked_by_me ? "heart.slash" : "heart")
+    }
+
+    private var actionBar: some View {
+        HStack(spacing: 18) {
+            Button(action: onLike) {
+                Label("\(item.likes)", systemImage: item.liked_by_me ? "heart.fill" : "heart")
             }
-            Button { showReactions = true } label: { Label("React", systemImage: "face.smiling") }
-            Button { showComments = true } label: { Label("Comment", systemImage: "bubble.right") }
+            .accessibilityLabel(item.liked_by_me ? "Unlike, \(item.likes) likes" : "Like, \(item.likes) likes")
+            .tint(item.liked_by_me ? .red : .primary)
+
+            Button { showComments = true } label: {
+                Label("\(item.comments)", systemImage: "bubble.right")
+            }
+            .accessibilityLabel("Comments, \(item.comments)")
+
+            Button { showReactions = true } label: {
+                Label(item.my_reaction.map { "Reacted \($0)" } ?? "React", systemImage: "face.smiling")
+            }
+            .accessibilityLabel(item.my_reaction.map { "Change reaction, currently \($0)" } ?? "Add reaction")
+
+            ShareLink(item: shareText) {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+            .accessibilityLabel("Share Bite")
+
             Button {
                 BitesLocalPrefs.toggleBookmark(item)
+                AppHaptics.selection()
+                UIAccessibility.post(notification: .announcement, argument: BitesLocalPrefs.isBookmarked(item.id) ? "Saved" : "Removed from saved")
             } label: {
-                Label(BitesLocalPrefs.isBookmarked(item.id) ? "Unsave" : "Save", systemImage: "bookmark")
+                Image(systemName: BitesLocalPrefs.isBookmarked(item.id) ? "bookmark.fill" : "bookmark")
             }
-            Button { onHide() } label: { Label("Hide this Bite", systemImage: "eye.slash") }
-            Button { onMuteAuthor() } label: { Label("Mute @\(item.author.handle)", systemImage: "speaker.slash") }
-            Button { showReport = true } label: { Label("Report", systemImage: "flag") }
-            if item.author.handle.lowercased() == communications.myHandle.lowercased() {
-                Button(role: .destructive) {
-                    Task {
-                        try? await BitesAPI.deletePost(id: item.id)
-                        onDeleted()
-                        UIAccessibility.post(notification: .announcement, argument: "Bite deleted")
-                    }
-                } label: {
-                    Label("Delete", systemImage: "trash")
-                }
-            }
+            .accessibilityLabel(BitesLocalPrefs.isBookmarked(item.id) ? "Remove from saved Bites" : "Save Bite")
         }
-        .sheet(isPresented: $showComments) {
-            NavigationStack {
-                BiteDetailView(item: item, onDeleted: onDeleted)
-            }
-        }
-        .confirmationDialog("React", isPresented: $showReactions, titleVisibility: .visible) {
-            ForEach(["like", "love", "fire", "laugh", "wow", "sad"], id: \.self) { r in
-                Button(r.capitalized) { onReact(r) }
-            }
-            Button("Cancel", role: .cancel) {}
-        }
-        .navigationDestination(isPresented: $openProfile) {
-            NativeProfileView(handle: item.author.handle)
-        }
-        .alert("Report Bite", isPresented: $showReport) {
-            TextField("What is wrong?", text: $reportNote)
-            Button("Submit") {
-                Task {
-                    try? await BitesAPI.report(targetType: "post", targetID: item.id, reason: "user_report", details: reportNote)
-                    UIAccessibility.post(notification: .announcement, argument: "Report sent")
-                    reportNote = ""
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Reports go to Blindbandit moderators.")
-        }
+        .buttonStyle(.borderless)
+        .font(.subheadline)
     }
 
     private var shareText: String {
@@ -504,6 +469,98 @@ struct BiteRow: View {
         let seconds = ms > 1_000_000_000_000 ? ms / 1000 : ms
         guard seconds > 0 else { return "" }
         return Date(timeIntervalSince1970: seconds).formatted(.relative(presentation: .named))
+    }
+}
+
+
+/// Split out of `BiteRow` so the main `body` type-checks under Swift 6 / Xcode 26.
+private struct BiteRowChrome: ViewModifier {
+    let item: BiteItem
+    var swipeToLikeEnabled: Bool
+    var onLike: () -> Void
+    var onMuteAuthor: () -> Void
+    var onHide: () -> Void
+    var onDeleted: () -> Void
+    @Binding var showComments: Bool
+    @Binding var showReactions: Bool
+    @Binding var showReport: Bool
+    @Binding var reportNote: String
+    @Binding var openProfile: Bool
+    var onReact: (String) -> Void
+    @EnvironmentObject private var communications: ProductionCommunicationsService
+
+    func body(content: Content) -> some View {
+        content
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(item.accessibilitySummary)
+            .accessibilityHint(swipeToLikeEnabled ? "Swipe up to like, swipe down to unlike" : "")
+            .accessibilityAction(named: Text(item.liked_by_me ? "Unlike" : "Like")) { onLike() }
+            .accessibilityAction(named: Text("Open profile")) { openProfile = true }
+            .accessibilityAction(named: Text("Comment")) { showComments = true }
+            .accessibilityAction(named: Text("Share")) {
+                UIAccessibility.post(notification: .announcement, argument: "Use the Share button on this Bite")
+            }
+            .accessibilityAction(named: Text(BitesLocalPrefs.isBookmarked(item.id) ? "Unsave" : "Save")) {
+                BitesLocalPrefs.toggleBookmark(item)
+            }
+            .accessibilityAction(named: Text("Hide Bite")) { onHide() }
+            .accessibilityAction(named: Text("Mute @\(item.author.handle)")) { onMuteAuthor() }
+            .contextMenu { contextMenuButtons }
+            .sheet(isPresented: $showComments) {
+                NavigationStack {
+                    BiteDetailView(item: item, onDeleted: onDeleted)
+                }
+            }
+            .confirmationDialog("React", isPresented: $showReactions, titleVisibility: .visible) {
+                ForEach(["like", "love", "fire", "laugh", "wow", "sad"], id: \.self) { r in
+                    Button(r.capitalized) { onReact(r) }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
+            .navigationDestination(isPresented: $openProfile) {
+                NativeProfileView(handle: item.author.handle)
+            }
+            .alert("Report Bite", isPresented: $showReport) {
+                TextField("What is wrong?", text: $reportNote)
+                Button("Submit") {
+                    Task {
+                        try? await BitesAPI.report(targetType: "post", targetID: item.id, reason: "user_report", details: reportNote)
+                        UIAccessibility.post(notification: .announcement, argument: "Report sent")
+                        reportNote = ""
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Reports go to Blindbandit moderators.")
+            }
+    }
+
+    @ViewBuilder
+    private var contextMenuButtons: some View {
+        Button { onLike() } label: {
+            Label(item.liked_by_me ? "Unlike" : "Like", systemImage: item.liked_by_me ? "heart.slash" : "heart")
+        }
+        Button { showReactions = true } label: { Label("React", systemImage: "face.smiling") }
+        Button { showComments = true } label: { Label("Comment", systemImage: "bubble.right") }
+        Button {
+            BitesLocalPrefs.toggleBookmark(item)
+        } label: {
+            Label(BitesLocalPrefs.isBookmarked(item.id) ? "Unsave" : "Save", systemImage: "bookmark")
+        }
+        Button { onHide() } label: { Label("Hide this Bite", systemImage: "eye.slash") }
+        Button { onMuteAuthor() } label: { Label("Mute @\(item.author.handle)", systemImage: "speaker.slash") }
+        Button { showReport = true } label: { Label("Report", systemImage: "flag") }
+        if item.author.handle.lowercased() == communications.myHandle.lowercased() {
+            Button(role: .destructive) {
+                Task {
+                    try? await BitesAPI.deletePost(id: item.id)
+                    onDeleted()
+                    UIAccessibility.post(notification: .announcement, argument: "Bite deleted")
+                }
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
     }
 }
 

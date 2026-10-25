@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Bandit Bites / social feed models (flexible decode for live API)
 
-struct BiteAuthor: Identifiable, Codable, Equatable, Hashable {
+struct BiteAuthor: Identifiable, Decodable, Equatable, Hashable {
     var id: String
     var handle: String
     var display_name: String
@@ -33,7 +33,7 @@ struct BiteAuthor: Identifiable, Codable, Equatable, Hashable {
     enum CodingKeys: String, CodingKey { case id, handle, username, display_name, avatar_url, verified }
 }
 
-struct BiteReactions: Codable, Equatable {
+struct BiteReactions: Decodable, Equatable {
     var like: Int = 0
     var love: Int = 0
     var fire: Int = 0

@@ -29,8 +29,8 @@ enum BanditTips {
     }
 }
 
-struct BanditTipBanner: View {
-    var tip: any Tip
+struct BanditTipBanner<T: Tip>: View {
+    var tip: T
     var body: some View {
         TipView(tip)
             .tipBackground(.ultraThinMaterial)

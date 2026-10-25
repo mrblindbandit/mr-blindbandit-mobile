@@ -222,7 +222,7 @@ struct BitesFeedView: View {
         }
         .safeAreaInset(edge: .top) {
             if UserDefaults.standard.object(forKey: SettingsKey.tipKitEnabled) as? Bool ?? true {
-                TipView(SwipeToLikeTip())
+                BanditTipBanner(tip: SwipeToLikeTip())
                     .padding(.horizontal)
             }
         }

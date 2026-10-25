@@ -5,6 +5,12 @@
 - **Admin (owner @kheck only):** Verify/Unverify via `/v1/social/admin/users/{id}/verify|unverify`, report queue, hide/delete Bite, ban/reinstate, overview stats. `AdminGate` hardcodes owner handle/id until `/me` returns role.
 - Keeps 28 voice temp-.m4a + auto-translate + call icons + settings mega.
 
+
+## 2026-10-26 — TF 2.2.0 (38): Messages timeout soft-recover + US ringback
+
+- **Client (iOS):** Parallel `/me` + inbox bootstrap; never clear ChatCache / set hard `loadError` on transient network (timeout/offline); soft banner + exponential soft-retry; `BlindbanditAPI.softDecodeItems` + thread soft decode; inbox/thread request timeout 20s; ChatCache file protection `completeUntilFirstUserAuthentication`.
+- **Server (Sites native-speed batch):** Slim inbox + `since=` incremental sync, call-number resolve/set/directory, multi-thread hydrate, presence/read batch fast paths (see Sites release notes).
+- **Calls:** US dial → US ringback (PR #87).
 ## 2026-10-25 — iOS 2.0.10 (28), branch `feat/ios-2010-public-profile-pictures`
 - **Voice play (device proof path):** write decrypted AAC to temp `.m4a` and `AVAudioPlayer(contentsOf:)` (Android MediaPlayer file parity). Session falls back to `.playback` when `.playAndRecord` fails. Keeps 27’s URL resolve / base64url / Bearer /blob / VoiceLog / test tone.
 - **Auto-translate E2E:** honor per-chat Security Auto-translate; CloudAI.translate fallback; `LanguageID.detectLoose` for short bubbles.

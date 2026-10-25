@@ -32,7 +32,7 @@ final class MessageStatusUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Couldn't load"].exists, "Empty inbox must not show Couldn't load")
     }
 
-    /// Dial-tone harness exposes the US dial tone accessibility name used for outgoing ringback.
+    /// Dial/ringback harness exposes US dial tone + US ringback accessibility names.
     func testOutgoingDialToneNameIsUSDialTone() {
         let app = XCUIApplication()
         app.launchArguments += ["-UITestDialTone", "-UITestSkipAppLock"]
@@ -41,5 +41,15 @@ final class MessageStatusUITests: XCTestCase {
         let tone = app.descendants(matching: .any)["outgoing-dial-tone"]
         XCTAssertTrue(tone.waitForExistence(timeout: 20))
         XCTAssertEqual(tone.label, "US dial tone")
+    }
+
+    func testOutgoingRingbackToneNameIsUSRingback() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-UITestDialTone", "-UITestSkipAppLock"]
+        app.launch()
+
+        let tone = app.descendants(matching: .any)["outgoing-ringback-tone"]
+        XCTAssertTrue(tone.waitForExistence(timeout: 20))
+        XCTAssertEqual(tone.label, "US ringback")
     }
 }

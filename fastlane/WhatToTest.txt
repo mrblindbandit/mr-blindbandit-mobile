@@ -1,8 +1,10 @@
-2.2.0 (37) — Messenger/WhatsApp-parity Messages + US dial tone
+2.2.0 (38) — Landline Dialer + dial→ringback + DTMF + Messages soft timeout
 
-• Messages: cache-first inbox — no false "Couldn't load" when signed in / cache exists; soft LastMessage decode so one bad preview cannot blank the list; empty inbox OK.
-• Send status: Sending → Sent on HTTP OK (local- id swapped to server id immediately); then Delivered → Read via poll/reload. Caption no longer sticks on "Sending…".
-• Outgoing call: classic US dial tone (continuous 350 Hz + 440 Hz) via ringback_us_dialtone before startCall returns.
-• Optimistic VO "Sent" + ring still fire before network (build 36); this build hardens load + receipt captions + dial.
+• More → Dialer (native landline keypad): opens with continuous US dial tone (350+440). First digit kills dial tone; every key plays classic ITU DTMF. Call resolves an assigned BlindBandit call number → places a native call (connecting dial tone, then US ringback while ringing). Unknown number → clear not-found + busy tone. End/leave stops all tones; reopen → dial tone again.
+• Outgoing call progress (any Call button): (1) dial/connecting = US dial tone; (2) remote ringing = US ringback (440+480, 2s on / 4s off). No legacy ringback_outgoing / call_initiated oneshot during outbound wait.
+• In-call keypad: DTMF beeps on 0–9 * #.
+• In-call Minimize: collapses full-screen call to a top mini pill (peer + timer). Mute/End on the pill; tap pill or Expand to return. Call audio/LiveKit/CallKit keep running — you can use Messages/Bites while on the call.
+• Messages: soft reconnect banner on timeout (“Still connecting…”) instead of full-screen “The request timed out.” Cache-first inbox/thread kept.
+• Settings → Messages & calls → BlindBandit call numbers: assign your number and map people ↔ dialable numbers (local + iCloud KVS; server sync next).
 
-Please try (VoiceOver): open Messages (list or empty — not "Couldn't load" after sign-in); send a DM (status under bubble: Sending→Sent→Delivered→Read); place a voice call (US dial tone immediately).
+Please try (VoiceOver): More → Dialer — hear dial tone on open; dial digits (DTMF); Call to an assigned number; hang up mid-dial and mid-ring. Place a normal voice call from a profile — dial then ringback. Open Messages offline/slow network — soft banner, not full-screen timeout.

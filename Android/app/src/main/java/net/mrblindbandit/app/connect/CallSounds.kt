@@ -80,7 +80,7 @@ class CallSounds(private val context: Context) {
                 listOf(
                     "call_initiated", "call_connected", "hangup", "busy_tone",
                     "message_sent", "voicenote_sent", "attachment_sent",
-                    "typing_ping", "ringback_outgoing"
+                    "typing_ping"
                 )
             )
         }.distinct()
@@ -105,8 +105,13 @@ class CallSounds(private val context: Context) {
         pool?.play(id, volume, volume, 1, 0, 1f)
     }
 
-    fun startRingback() {
+    private enum class OutgoingProgress { Idle, DialTone, Ringback }
+    private var outgoingProgress = OutgoingProgress.Idle
+
+    /** Phase 1 — dialing / connecting: continuous US dial tone (350 + 440 Hz). */
+    fun startDialTone() {
         if (!playUISounds) return
+        if (outgoingProgress == OutgoingProgress.DialTone && ringbackPlayer?.isPlaying == true) return
         stopRingback()
         val resId = context.resources.getIdentifier("ringback_us_dialtone", "raw", context.packageName)
         if (resId == 0) return
@@ -115,16 +120,61 @@ class CallSounds(private val context: Context) {
             setVolume(0.42f, 0.42f)
             start()
         }
+        outgoingProgress = OutgoingProgress.DialTone
         CallHaptics.outgoingStart(context)
+    }
+
+    /** Phase 2 — remote ringing: US ringback (440 + 480 Hz, 2s on / 4s off). */
+    fun startRingback() {
+        if (!playUISounds) return
+        if (outgoingProgress == OutgoingProgress.Ringback && ringbackPlayer?.isPlaying == true) return
+        stopRingback()
+        var resId = context.resources.getIdentifier("ringback_us_ringback", "raw", context.packageName)
+        if (resId == 0) resId = context.resources.getIdentifier("ringback_us_dialtone", "raw", context.packageName)
+        if (resId == 0) return
+        ringbackPlayer = MediaPlayer.create(context, resId)?.apply {
+            isLooping = true
+            setVolume(0.42f, 0.42f)
+            start()
+        }
+        outgoingProgress = OutgoingProgress.Ringback
     }
 
     fun stopRingback() {
         try { ringbackPlayer?.stop() } catch (_: Exception) {}
         ringbackPlayer?.release()
         ringbackPlayer = null
+        outgoingProgress = OutgoingProgress.Idle
     }
 
-    fun callInitiated() { startRingback(); play("call_initiated", 0.55f) }
+    fun stopOutgoingProgress() = stopRingback()
+
+    /** Classic telephone DTMF (ITU) for in-call keypad. */
+    fun playDTMF(key: String) {
+        if (!playUISounds) return
+        val tone = when (key) {
+            "0" -> android.media.ToneGenerator.TONE_DTMF_0
+            "1" -> android.media.ToneGenerator.TONE_DTMF_1
+            "2" -> android.media.ToneGenerator.TONE_DTMF_2
+            "3" -> android.media.ToneGenerator.TONE_DTMF_3
+            "4" -> android.media.ToneGenerator.TONE_DTMF_4
+            "5" -> android.media.ToneGenerator.TONE_DTMF_5
+            "6" -> android.media.ToneGenerator.TONE_DTMF_6
+            "7" -> android.media.ToneGenerator.TONE_DTMF_7
+            "8" -> android.media.ToneGenerator.TONE_DTMF_8
+            "9" -> android.media.ToneGenerator.TONE_DTMF_9
+            "*" -> android.media.ToneGenerator.TONE_DTMF_S
+            "#" -> android.media.ToneGenerator.TONE_DTMF_P
+            else -> return
+        }
+        try {
+            val tg = android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 80)
+            tg.startTone(tone, 140)
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ tg.release() }, 200)
+        } catch (_: Exception) {}
+    }
+
+    fun callInitiated() { startDialTone() /* dial tone only — no legacy call_initiated oneshot */ }
     fun callConnecting() = CallHaptics.connecting(context)
     fun callConnected() {
         stopRingback()

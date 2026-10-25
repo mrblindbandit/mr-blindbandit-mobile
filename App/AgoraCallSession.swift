@@ -18,9 +18,7 @@ final class AgoraCallSession: NSObject {
         leave()
         let config = AgoraRtcEngineConfig()
         config.appId = appId
-        guard let eng = AgoraRtcEngineKit.sharedEngine(with: config, delegate: self) else {
-            throw CommunicationsError.server("Could not start Agora RTC engine.")
-        }
+        let eng = AgoraRtcEngineKit.sharedEngine(with: config, delegate: self)
         eng.setChannelProfile(.communication)
         eng.setClientRole(.broadcaster)
         eng.enableAudio()

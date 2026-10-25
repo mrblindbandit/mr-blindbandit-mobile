@@ -225,7 +225,11 @@ final class E2EEService: ObservableObject {
             }
         }
         if missingPlaintext { return [] }
-        if let mine = try? await devices(for: "me") { all += mine.filter { $0.device_id != identity?.deviceID } }
+        // Multi-device fan-out is optional: never wait long on soft-missing GET …/bundles/me (404 ~0.7s).
+        let mine = await withHardTimeout(seconds: 0.25) { try await self.devices(for: "me") }
+        if let mine {
+            all += mine.filter { $0.device_id != identity?.deviceID }
+        }
         return Array(all.prefix(64))
     }
 
@@ -242,10 +246,10 @@ final class E2EEService: ObservableObject {
         guard ready, let id = identity, ServerFeatures.shared.isAvailable(.keys) else { return nil }
         let key = chatKey ?? "dmh:\(handle.lowercased())"
         if isE2EEDisabled(key) { return nil }
-        // Cap key fetch at 3s so a cold/hung bundles endpoint never blocks plaintext fallback for ~20–40s.
+        // Cap key fetch at 500ms — soft-missing bundles/me (~0.7s 404) must not burn a multi-second budget.
         let devs: [E2EEDeviceBundle]
         do {
-            let fetched = await withHardTimeout(seconds: 3) { try await self.recipients(handles: [handle]) }
+            let fetched = await withHardTimeout(seconds: 0.5) { try await self.recipients(handles: [handle]) }
             guard let got = fetched else { return nil }
             devs = got
         } catch is NeedsServerUpdate { return nil }

@@ -4,7 +4,7 @@ import SwiftUI
 
 struct BanditFocusFilter: SetFocusFilterIntent {
     static var title: LocalizedStringResource = "Blind Bandit Focus"
-    static var description = IntentDescription("Quiet Hours / Work: hide Bites or mute notification categories the Apple way.")
+    static var description = IntentDescription("Quiet Hours / Work: hide Bites or mute notification categories the system Focus way.")
 
     @Parameter(title: "Hide Bites tab")
     var hideBites: Bool

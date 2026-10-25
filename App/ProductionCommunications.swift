@@ -381,8 +381,8 @@ enum BlindbanditAPI {
     }
 
     static func sendMessage(handle: String, body: String, silent: Bool = false) async throws -> BlindbanditMessageResponse {
-        // Race E2EE (includes key fetch) so a hung encrypt path never delays plaintext for tens of seconds.
-        let e2ee: BlindbanditMessageResponse? = await withHardTimeout(seconds: 4) {
+        // Race E2EE (includes key fetch) ≤500ms; soft-missing bundles/me must not feel like multi-second lag.
+        let e2ee: BlindbanditMessageResponse? = await withHardTimeout(seconds: 0.5) {
             try await E2EEService.shared.sendDM(handle: handle, payload: E2EEPayload(t: "text", body: body, silent: silent ? true : nil))
         } ?? nil
         if let sent = e2ee { return sent }
@@ -823,11 +823,17 @@ final class ProductionCommunicationsService: ObservableObject {
         pollTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self, UIApplication.shared.applicationState == .active else { return }
-                await self.refreshConversations()
-                await E2EEService.shared.pollRelay()
-                await ScheduledSender.flushDue(self)
-                if let id = self.openConversationID { await self.reloadThread(id) }
-                await self.checkIncomingCalls()
+                // Parallel: relay/E2EE must not serialize behind conversation refresh (PR #84 claimed this; ship it).
+                async let conversations: Void = self.refreshConversations()
+                async let relay: Void = E2EEService.shared.pollRelay()
+                async let scheduled: Void = ScheduledSender.flushDue(self)
+                async let incoming: Void = self.checkIncomingCalls()
+                if let id = self.openConversationID {
+                    async let thread: Void = self.reloadThread(id)
+                    _ = await (conversations, relay, scheduled, thread, incoming)
+                } else {
+                    _ = await (conversations, relay, scheduled, incoming)
+                }
             }
         }
     }
@@ -915,14 +921,14 @@ final class ProductionCommunicationsService: ObservableObject {
             messages.append(m)
         }
         AppHaptics.light()
-        // VoiceOver: announce immediately so send does not feel blocked by network/poll.
+        // VoiceOver: "Sending" then optimistic "Sent" before any network — felt lag was await BlindbanditAPI.sendMessage.
         UIAccessibility.post(notification: .announcement, argument: "Sending")
+        CallSounds.messageSent()
+        UIAccessibility.post(notification: .announcement, argument: "Sent")
+        statusMessage = "Message sent to @\(handle)."
         do {
             let response = try await BlindbanditAPI.sendMessage(handle: handle, body: String(text.prefix(4000)), silent: silent)
-            CallSounds.messageSent()
-            statusMessage = "Message sent to @\(handle)."
-            UIAccessibility.post(notification: .announcement, argument: "Sent")
-            // Reconcile off the critical path so Send feels instant (optimistic bubble already shown).
+            // Reconcile off the critical path (optimistic bubble + VO already done).
             let convID = response.conversation_id
             Task { [weak self] in
                 await self?.refreshConversations()
@@ -930,6 +936,7 @@ final class ProductionCommunicationsService: ObservableObject {
             }
             return response.conversation_id
         } catch let error as URLError where [URLError.Code.notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotConnectToHost].contains(error.code) {
+            if let localID { messages.removeAll { $0.id == localID } }
             pendingMessages.append(PendingMessage(handle: handle, body: String(text.prefix(4000))))
             LocalComms.pending = pendingMessages
             statusMessage = "You're offline. The message to @\(handle) will send when you're back online."
@@ -938,7 +945,8 @@ final class ProductionCommunicationsService: ObservableObject {
             return nil
         } catch {
             if let localID { messages.removeAll { $0.id == localID } }
-            statusMessage = error.localizedDescription
+            statusMessage = "Couldn't send: \(error.localizedDescription)"
+            UIAccessibility.post(notification: .announcement, argument: statusMessage)
             AppHaptics.error()
             return nil
         }
@@ -1024,6 +1032,9 @@ final class ProductionCommunicationsService: ObservableObject {
         callGroupID = groupID
         callGroupName = groupName
         callIsIncoming = false
+        // Ringback before await startCall — server mint/notify must not gate local ringing UX.
+        beginOutgoingRinging()
+        CallTiming.step("ringback started (pre-server)")
         var createdID: String?
         do {
             // Server call creation returns the LiveKit token in the same round trip (no separate token fetch).
@@ -1041,10 +1052,7 @@ final class ProductionCommunicationsService: ObservableObject {
                 return
             }
             callKeyPeerHandle = handle
-            // Ring the local UI immediately after the server creates the call (push already fan-outs
-            // to the callee). Never wait on LiveKit connect / call-key E2EE — that was the ~40s stall.
-            beginOutgoingRinging()
-            CallTiming.step("ringback started (pre-LiveKit)")
+            CallTiming.step("ringback already running (pre-LiveKit)")
             // Call key is generated locally; delivery and LiveKit connect run in parallel.
             let msg = CallKeyMessage(call_id: response.id, key: E2EECrypto.b64u(CallKeyStore.newKey()), index: 0)
             async let delivered = sendCallKey(msg, handle: handle, groupID: groupID)

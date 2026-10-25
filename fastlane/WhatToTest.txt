@@ -1,7 +1,9 @@
-2.2.0 (35) — send/call speed
+2.2.0 (36) — optimistic send/call (felt lag was client)
 
-• Relay poll no longer stalls the 5s message/call loop (device_id query + parallel poll).
-• VoiceOver announces "Sending" immediately on send; "Sent" after the network succeeds.
-• Pairs with server fix: relay/pending returns empty instead of ~6s DEVICE_NOT_FOUND 404; startCall pushes before LiveKit mint.
+• "Sent" + send sound before network; failure announced if POST fails.
+• Outgoing ringback starts before await startCall (CallKit already early).
+• E2EE race cut to ≤500ms (nested recipients ≤500ms; bundles/me soft-skip ≤250ms) then plaintext.
+• Poll loop actually parallel (relay no longer serial behind conversation refresh).
+• Server Sites v147/v148 already live (relay fail-fast + non-blocking APNs); this build fixes remaining client awaits.
 
-Please try: send a DM (should feel instant in VO), place a voice call (callee should ring sooner).
+Please try: send a DM (VO "Sent" should be immediate), place a voice call (ringback before server returns).

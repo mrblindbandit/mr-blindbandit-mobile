@@ -1470,13 +1470,18 @@ struct MessagesEmptyUITestView: View {
     }
 }
 
-/// Exposes the outgoing US dial tone name for simulator UI tests (asset is ringback_us_dialtone).
+/// Exposes outgoing dial + ringback tone names for simulator UI tests.
 struct DialToneUITestView: View {
     var body: some View {
-        Text(CallSounds.outgoingProgressToneName)
-            .accessibilityIdentifier("outgoing-dial-tone")
-            .accessibilityLabel(CallSounds.outgoingProgressToneName)
-            .padding()
+        VStack(alignment: .leading, spacing: 8) {
+            Text(CallSounds.outgoingDialToneName)
+                .accessibilityIdentifier("outgoing-dial-tone")
+                .accessibilityLabel(CallSounds.outgoingDialToneName)
+            Text(CallSounds.outgoingRingbackToneName)
+                .accessibilityIdentifier("outgoing-ringback-tone")
+                .accessibilityLabel(CallSounds.outgoingRingbackToneName)
+        }
+        .padding()
     }
 }
 

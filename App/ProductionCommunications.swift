@@ -1074,6 +1074,7 @@ final class ProductionCommunicationsService: ObservableObject {
         let localID = "local-" + UUID().uuidString
         CallKitManager.shared.startOutgoing(callID: localID, handle: handle ?? "", displayName: displayName ?? label, video: video, groupID: groupID, memberCount: memberCount)
         CallTiming.step("CallKit start requested")
+        // Phase 1: US dial tone while dialing / connecting (before remote ring).
         CallSounds.callInitiated()
         statusMessage = "Calling \(label)…"
         UIAccessibility.post(notification: .announcement, argument: statusMessage)
@@ -1081,9 +1082,7 @@ final class ProductionCommunicationsService: ObservableObject {
         callGroupID = groupID
         callGroupName = groupName
         callIsIncoming = false
-        // Ringback before await startCall — server mint/notify must not gate local ringing UX.
-        beginOutgoingRinging()
-        CallTiming.step("ringback started (pre-server)")
+        CallTiming.step("dial tone started (pre-server)")
         var createdID: String?
         do {
             // Server call creation returns the LiveKit token in the same round trip (no separate token fetch).
@@ -1096,12 +1095,15 @@ final class ProductionCommunicationsService: ObservableObject {
             CallKitManager.shared.rebind(from: localID, to: response.id)
             if EndedCalls.contains(localID) {
                 // User hung up while we were creating the call.
+                CallSounds.stopOutgoingProgress()
                 await BlindbanditAPI.endCall(id: response.id)
                 CallKitManager.shared.reportEnded(callID: response.id, reason: nil)
                 return
             }
             callKeyPeerHandle = handle
-            CallTiming.step("ringback already running (pre-LiveKit)")
+            // Phase 2: server minted the call (status typically ringing) — switch dial → US ringback.
+            beginOutgoingRinging()
+            CallTiming.step("ringback started (remote ringing)")
             // Call key is generated locally; delivery and LiveKit connect run in parallel.
             let msg = CallKeyMessage(call_id: response.id, key: E2EECrypto.b64u(CallKeyStore.newKey()), index: 0)
             async let delivered = sendCallKey(msg, handle: handle, groupID: groupID)
@@ -1132,7 +1134,9 @@ final class ProductionCommunicationsService: ObservableObject {
     }
 
     private func beginOutgoingRinging() {
-        guard room?.remoteParticipants.isEmpty ?? false else {
+        // room == nil (pre-LiveKit) means nobody has joined yet — treat as still ringing.
+        let noRemoteYet = room?.remoteParticipants.isEmpty ?? true
+        guard noRemoteYet else {
             if let id = activeCallID { CallKitManager.shared.reportOutgoingConnected(callID: id) }
             return
         }

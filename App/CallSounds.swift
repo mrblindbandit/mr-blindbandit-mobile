@@ -209,15 +209,41 @@ enum CallSounds {
         loopPlayer = nil
     }
 
-    /// Outgoing call progress = classic United States dial tone (continuous 350 Hz + 440 Hz), seamless 2 s loop.
-    static let outgoingProgressToneName = "US dial tone"
-    static func startRingback() {
-        if loopPlayer?.isPlaying == true, loopIsRingback { return }
-        playLoop(named: url(named: "ringback_us_dialtone") != nil ? "ringback_us_dialtone" : "ringback_outgoing", volume: 0.42)
-        loopIsRingback = true
+    /// Outgoing progress names (UITest / VoiceOver harnesses).
+    static let outgoingDialToneName = "US dial tone"
+    static let outgoingRingbackToneName = "US ringback"
+    /// Compatibility alias used by the dial-tone UITest harness (phase 1 name).
+    static let outgoingProgressToneName = outgoingDialToneName
+
+    private enum OutgoingProgress {
+        case idle, dialTone, ringback
     }
-    private static var loopIsRingback = false
-    static func stopRingback() { loopIsRingback = false; stopLoop() }
+    private static var outgoingProgress: OutgoingProgress = .idle
+
+    /// Phase 1 — dialing / connecting: continuous US dial tone (350 Hz + 440 Hz).
+    static func startDialTone() {
+        if outgoingProgress == .dialTone, loopPlayer?.isPlaying == true { return }
+        let name = url(named: "ringback_us_dialtone") != nil ? "ringback_us_dialtone" : "ringback_outgoing"
+        playLoop(named: name, volume: 0.42)
+        outgoingProgress = .dialTone
+    }
+
+    /// Phase 2 — remote ringing: US ringback (440 Hz + 480 Hz, 2 s on / 4 s off).
+    static func startRingback() {
+        if outgoingProgress == .ringback, loopPlayer?.isPlaying == true { return }
+        let name = url(named: "ringback_us_ringback") != nil ? "ringback_us_ringback"
+            : (url(named: "ringback_us_dialtone") != nil ? "ringback_us_dialtone" : "ringback_outgoing")
+        playLoop(named: name, volume: 0.42)
+        outgoingProgress = .ringback
+    }
+
+    static func stopRingback() {
+        outgoingProgress = .idle
+        stopLoop()
+    }
+
+    /// Stops dial tone and/or ringback (answer / hangup / fail).
+    static func stopOutgoingProgress() { stopRingback() }
 
     static func playRingtone(preview: Bool = false) {
         if preview {
@@ -229,7 +255,7 @@ enum CallSounds {
     }
 
     static func callInitiated() {
-        startRingback()
+        startDialTone()
         playOneShot(named: "call_initiated", volume: 0.55)
         CallHaptics.outgoingStart()
         CallHaptics.startRingingPulse()

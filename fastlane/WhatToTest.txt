@@ -1,8 +1,9 @@
-2.2.0 (37) — Messenger/WhatsApp-parity Messages + US dial tone
+2.2.0 (38) — Outgoing call: US dial tone then US ringback
 
-• Messages: cache-first inbox — no false "Couldn't load" when signed in / cache exists; soft LastMessage decode so one bad preview cannot blank the list; empty inbox OK.
-• Send status: Sending → Sent on HTTP OK (local- id swapped to server id immediately); then Delivered → Read via poll/reload. Caption no longer sticks on "Sending…".
-• Outgoing call: classic US dial tone (continuous 350 Hz + 440 Hz) via ringback_us_dialtone before startCall returns.
-• Optimistic VO "Sent" + ring still fire before network (build 36); this build hardens load + receipt captions + dial.
+• Outgoing call progress (two phases):
+  1) Dial / connecting: classic US dial tone (continuous 350 Hz + 440 Hz) via ringback_us_dialtone as soon as you tap Call.
+  2) Remote ringing: switches to US ringback (440 Hz + 480 Hz, 2 seconds on / 4 seconds off) via ringback_us_ringback once the server call is created / callee is ringing.
+• Both tones stop on answer, hang-up, or fail. Build 37 dial-only path corrected — owner wanted ringback while the other phone rings, not continuous dial for the whole wait.
+• Messages cache-first + Sending→Sent receipts from build 37 unchanged.
 
-Please try (VoiceOver): open Messages (list or empty — not "Couldn't load" after sign-in); send a DM (status under bubble: Sending→Sent→Delivered→Read); place a voice call (US dial tone immediately).
+Please try (VoiceOver): place a voice call — hear dial tone immediately, then US ringback (ring… pause… ring…) until answer/no-answer; hang up mid-dial and mid-ring (tones stop).

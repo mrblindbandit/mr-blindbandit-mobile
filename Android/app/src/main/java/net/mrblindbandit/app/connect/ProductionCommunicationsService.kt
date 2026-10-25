@@ -54,6 +54,7 @@ class ProductionCommunicationsService(
     var encryptionStatus by mutableStateOf("Encryption not initialized"); private set
     val local = LocalComms(appContext)
     private val conversationCache = ConversationCache(appContext)
+    private val callSounds = CallSounds(appContext)
 
     var openGroupId by mutableStateOf<String?>(null)
     val conversations = mutableStateListOf<ServerConversation>()
@@ -466,19 +467,22 @@ class ProductionCommunicationsService(
             return
         }
         if (isInCall || isRinging) return
-        // Optimistic ring UI before any network — matches iOS CallKit-first path.
+        // Phase 1: US dial tone while dialing / connecting (before remote ring).
         callPeerName = "@$target"
         callPeerHandle = target
         isRinging = true
         statusMessage = "Calling @$target…"
         Announcer.announce(appContext, statusMessage)
+        callSounds.callInitiated()
         var callId: String? = null
         try {
             val response = request("/v1/social/calls", method = "POST", body = JSONObject().put("handle", target).put("kind", if (video) "video" else "voice"))
             callId = response.lString("id", "call_id").ifBlank { null }
             callPeerName = response.optJSONObject("recipient")?.lString("display_name").orEmpty().ifBlank { "@$target" }
             callPeerHandle = target
+            // Phase 2: server minted the call — switch dial → US ringback.
             statusMessage = "Ringing ${callPeerName}…"
+            callSounds.startRingback()
             // Do NOT await call-key E2EE before LiveKit — that serial wait was a multi-second stall.
             // Connect immediately; deliver frame key in parallel (connectCall tolerates null key).
             val id = callId
@@ -495,6 +499,7 @@ class ProductionCommunicationsService(
         } catch (e: Exception) {
             // Always end the call on the server so it never stays "ringing".
             isRinging = false
+            callSounds.busyOrFailed()
             callId?.let { id -> scope.launch { endOnServer(id) } }
             cleanupRoom()
             statusMessage = "Call failed: ${friendly(e, "Unknown error")}"
@@ -628,6 +633,7 @@ class ProductionCommunicationsService(
                 delay(500)
             }
             isRinging = false
+            callSounds.callConnected()
             if (room !== newRoom) return
         }
         isInCall = true
@@ -756,6 +762,7 @@ class ProductionCommunicationsService(
         activeCallId = null
         isInCall = false
         isRinging = false
+        if (wasConnected) callSounds.hangup() else callSounds.stopOutgoingProgress()
         isVideoCall = false
         cameraEnabled = false
         callSeconds = 0
@@ -774,6 +781,7 @@ class ProductionCommunicationsService(
     }
 
     private fun cleanupRoom() {
+        callSounds.stopOutgoingProgress()
         activeCallId?.let { encryption?.callKeys?.clear(it) }
         callKeyProvider = null
         callEncryptionLabel = "Media encrypted in transit"

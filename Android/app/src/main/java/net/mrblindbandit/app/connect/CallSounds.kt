@@ -105,8 +105,13 @@ class CallSounds(private val context: Context) {
         pool?.play(id, volume, volume, 1, 0, 1f)
     }
 
-    fun startRingback() {
+    private enum class OutgoingProgress { Idle, DialTone, Ringback }
+    private var outgoingProgress = OutgoingProgress.Idle
+
+    /** Phase 1 — dialing / connecting: continuous US dial tone (350 + 440 Hz). */
+    fun startDialTone() {
         if (!playUISounds) return
+        if (outgoingProgress == OutgoingProgress.DialTone && ringbackPlayer?.isPlaying == true) return
         stopRingback()
         val resId = context.resources.getIdentifier("ringback_us_dialtone", "raw", context.packageName)
         if (resId == 0) return
@@ -115,16 +120,36 @@ class CallSounds(private val context: Context) {
             setVolume(0.42f, 0.42f)
             start()
         }
+        outgoingProgress = OutgoingProgress.DialTone
         CallHaptics.outgoingStart(context)
+    }
+
+    /** Phase 2 — remote ringing: US ringback (440 + 480 Hz, 2s on / 4s off). */
+    fun startRingback() {
+        if (!playUISounds) return
+        if (outgoingProgress == OutgoingProgress.Ringback && ringbackPlayer?.isPlaying == true) return
+        stopRingback()
+        var resId = context.resources.getIdentifier("ringback_us_ringback", "raw", context.packageName)
+        if (resId == 0) resId = context.resources.getIdentifier("ringback_us_dialtone", "raw", context.packageName)
+        if (resId == 0) return
+        ringbackPlayer = MediaPlayer.create(context, resId)?.apply {
+            isLooping = true
+            setVolume(0.42f, 0.42f)
+            start()
+        }
+        outgoingProgress = OutgoingProgress.Ringback
     }
 
     fun stopRingback() {
         try { ringbackPlayer?.stop() } catch (_: Exception) {}
         ringbackPlayer?.release()
         ringbackPlayer = null
+        outgoingProgress = OutgoingProgress.Idle
     }
 
-    fun callInitiated() { startRingback(); play("call_initiated", 0.55f) }
+    fun stopOutgoingProgress() = stopRingback()
+
+    fun callInitiated() { startDialTone(); play("call_initiated", 0.55f) }
     fun callConnecting() = CallHaptics.connecting(context)
     fun callConnected() {
         stopRingback()

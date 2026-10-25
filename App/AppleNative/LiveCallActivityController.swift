@@ -46,7 +46,7 @@ enum BitePostActivityController {
 
     static func start(preview: String) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        end()
+        end(success: false)
         let attrs = BitePostActivityAttributes(draftPreview: String(preview.prefix(80)))
         let state = BitePostActivityAttributes.ContentState(stage: "uploading", progress: 0.05, detail: "Uploading Bite…")
         do {

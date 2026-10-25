@@ -1,3 +1,11 @@
+## 2026-10-26 — TF 2.2.0 (39): phone-feel + native-speed client
+
+- **Ringback:** `connect()` no longer stops US ringback on local LiveKit connect; CallKit `didActivate` resumes progress; progress tones use playAndRecord (fixes LiveKit “recording not supported”).
+- **Dialer:** Calls tab front-door keypad; server call-number resolve/set; Profile path kept.
+- **Send:** optimistic Sent caption; `client_msg_id` + send-ack; tighter E2EE/plain timeouts; clerk token 3.5s.
+- **Inbox:** hard-wire `GET /v1/social/inbox` + hydrate prefetch (Sites bb031a35 live).
+- Build **39** / marketing 2.2.0.
+
 ## 2026-10-25 — iOS 2.0.10 (29), branch `feat/ios-2010-public-profile-pictures`
 - **Bites (P0):** native tab over `/v1/social/newsfeed` + `/v1/social/bites`; composer → posts; like/comment/share/report/delete; disk cache for instant open. `docs/BITES_API.md`.
 - **Native Profile:** `/profiles/{handle}/full`, followers/following lists, follow/unfollow optimistic; author tap + People rows.

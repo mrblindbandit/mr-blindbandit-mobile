@@ -240,7 +240,7 @@ final class OnceGate: @unchecked Sendable {
 
 /// Clerk session token with a hard 8 s limit so no screen can wait on Clerk forever.
 func clerkTokenWithTimeout() async -> String? {
-    let token: String?? = await withHardTimeout(seconds: 8) { @MainActor in try await Clerk.shared.auth.getToken() }
+    let token: String?? = await withHardTimeout(seconds: 3.5) { @MainActor in try await Clerk.shared.auth.getToken() }
     guard let value = token ?? nil, !value.isEmpty else { return nil }
     return value
 }

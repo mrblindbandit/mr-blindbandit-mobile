@@ -108,7 +108,7 @@ class CallSounds(private val context: Context) {
     fun startRingback() {
         if (!playUISounds) return
         stopRingback()
-        val resId = context.resources.getIdentifier("ringback_outgoing", "raw", context.packageName)
+        val resId = context.resources.getIdentifier("ringback_us_dialtone", "raw", context.packageName)
         if (resId == 0) return
         ringbackPlayer = MediaPlayer.create(context, resId)?.apply {
             isLooping = true

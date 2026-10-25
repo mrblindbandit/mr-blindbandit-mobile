@@ -622,6 +622,9 @@ final class ProductionCommunicationsService: ObservableObject {
         guard force || !bootstrapped else { return }
         isLoading = true
         defer { isLoading = false }
+        // Instant inbox: render on-device cache before any network so a slow/transient failure never shows "Couldn't load".
+        loadCachedConversations()
+        if !conversations.isEmpty { loadError = "" }
         do {
             // GET /v1/social/me creates the profile on first use; other social endpoints require it.
             let profile = try await BlindbanditAPI.currentProfile()
@@ -639,15 +642,30 @@ final class ProductionCommunicationsService: ObservableObject {
             E2EEService.shared.myUserID = profile.id
             Task { await HistoryBackup.restoreIfNeeded(); await AIChatBackup.restoreIfNeeded() }
             Task { await E2EEService.shared.bootstrap(handle: profile.handle) }
-            conversations = try await BlindbanditAPI.conversations()
+            do {
+                conversations = try await BlindbanditAPI.conversations()
+            } catch {
+                // One quick retry for transient token-refresh / network blips before surfacing an error.
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                conversations = try await BlindbanditAPI.conversations()
+            }
             bootstrapped = true
             statusMessage = ""
             loadError = ""
             startPolling()
             await flushPendingMessages()
         } catch {
-            loadError = error.localizedDescription
-            statusMessage = error.localizedDescription
+            // Keep showing cached threads; only show the Retry screen when there is truly nothing to show.
+            if conversations.isEmpty {
+                loadError = error.localizedDescription
+                statusMessage = error.localizedDescription
+            } else {
+                loadError = ""
+                Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    await self?.bootstrap(force: true)
+                }
+            }
         }
     }
 
@@ -683,7 +701,7 @@ final class ProductionCommunicationsService: ObservableObject {
             prefetchThreads()
             loadError = ""
         } catch {
-            loadError = error.localizedDescription
+            if conversations.isEmpty { loadError = error.localizedDescription }
         }
     }
 
@@ -928,7 +946,19 @@ final class ProductionCommunicationsService: ObservableObject {
         statusMessage = "Message sent to @\(handle)."
         do {
             let response = try await BlindbanditAPI.sendMessage(handle: handle, body: String(text.prefix(4000)), silent: silent)
-            // Reconcile off the critical path (optimistic bubble + VO already done).
+            // HTTP OK: flip the optimistic bubble to the real server message now so it never sticks on "Sending…".
+            if let localID, let i = messages.firstIndex(where: { $0.id == localID }) {
+                if messages.contains(where: { $0.id == response.id }) {
+                    messages.remove(at: i)
+                } else {
+                    var real = messages[i]
+                    real = BlindbanditServerMessage(id: response.id, sender_id: real.sender_id, body: real.body,
+                                                    created_at: response.created_at > 0 ? response.created_at : real.created_at)
+                    real.client_msg_id = localID
+                    messages[i] = real
+                }
+            }
+            // Reconcile off the critical path (Delivered/Read arrive via thread reload / relay / poll).
             let convID = response.conversation_id
             Task { [weak self] in
                 await self?.refreshConversations()

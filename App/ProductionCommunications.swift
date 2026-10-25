@@ -280,68 +280,78 @@ struct BlindbanditCallResponse: Decodable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         if let value = try? c.decode(String.self, forKey: .id) { id = value } else { id = try c.decode(String.self, forKey: .call_id) }
-        room = (try? c.decode(String.self, forKey: .room)) ?? ""
+        let roomValue = (try? c.decode(String.self, forKey: .room)) ?? ""
+        room = roomValue
         kind = (try? c.decode(String.self, forKey: .kind)) ?? "voice"
         status = (try? c.decode(String.self, forKey: .status)) ?? "ringing"
-        provider = (try? c.decodeIfPresent(String.self, forKey: .provider))
+        let providerValue = (try? c.decodeIfPresent(String.self, forKey: .provider))
             ?? (try? c.decodeIfPresent(String.self, forKey: .rtc_provider))
+        provider = providerValue
 
         let nestedLivekit = try? c.decodeIfPresent(BlindbanditLiveKitGrant.self, forKey: .livekit)
         let nestedAgora = try? c.decodeIfPresent(BlindbanditAgoraGrant.self, forKey: .agora)
 
         let flatAppId = (try? c.decodeIfPresent(String.self, forKey: .agora_app_id))
             ?? (try? c.decodeIfPresent(String.self, forKey: .app_id))
-        let flatToken = (try? c.decodeIfPresent(String.self, forKey: .agora_token))
+        let flatAgoraToken = (try? c.decodeIfPresent(String.self, forKey: .agora_token))
             ?? (try? c.decodeIfPresent(String.self, forKey: .token))
-        let flatChannel = (try? c.decodeIfPresent(String.self, forKey: .channel)) ?? (room.isEmpty ? nil : room)
-        let flatUid: UInt? = {
-            if let n = try? c.decodeIfPresent(UInt.self, forKey: .uid) { return n }
-            if let i = try? c.decodeIfPresent(Int.self, forKey: .uid), i >= 0 { return UInt(i) }
-            if let s = try? c.decodeIfPresent(String.self, forKey: .uid), let n = UInt(s) { return n }
-            return nil
-        }()
-        let flatAgora: BlindbanditAgoraGrant? = {
-            guard let flatAppId, !flatAppId.isEmpty,
-                  let flatToken, !flatToken.isEmpty,
-                  let flatChannel, !flatChannel.isEmpty,
-                  let flatUid else { return nil }
-            return BlindbanditAgoraGrant(appId: flatAppId, token: flatToken, channel: flatChannel, uid: flatUid)
-        }()
+        let flatChannel = (try? c.decodeIfPresent(String.self, forKey: .channel))
+            ?? (roomValue.isEmpty ? nil : roomValue)
+        var flatUid: UInt? = nil
+        if let n = try? c.decodeIfPresent(UInt.self, forKey: .uid) {
+            flatUid = n
+        } else if let i = try? c.decodeIfPresent(Int.self, forKey: .uid), i >= 0 {
+            flatUid = UInt(i)
+        } else if let s = try? c.decodeIfPresent(String.self, forKey: .uid), let n = UInt(s) {
+            flatUid = n
+        }
 
-        let flatLivekit: BlindbanditLiveKitGrant? = {
-            // Only when no agora app_id — LiveKit mint sets app_id=null and still may send channel/uid.
-            guard flatAppId == nil || flatAppId?.isEmpty == true else { return nil }
-            guard let tok = try? c.decodeIfPresent(String.self, forKey: .token), !tok.isEmpty else { return nil }
-            return BlindbanditLiveKitGrant(
-                token: tok,
-                identity: nil,
-                room: room,
-                expires_at: nil,
-                url: try? c.decodeIfPresent(String.self, forKey: .livekit_url)
-            )
-        }()
+        var flatAgora: BlindbanditAgoraGrant? = nil
+        if let flatAppId, !flatAppId.isEmpty,
+           let flatAgoraToken, !flatAgoraToken.isEmpty,
+           let flatChannel, !flatChannel.isEmpty,
+           let flatUid {
+            flatAgora = BlindbanditAgoraGrant(appId: flatAppId, token: flatAgoraToken, channel: flatChannel, uid: flatUid)
+        }
+
+        var flatLivekit: BlindbanditLiveKitGrant? = nil
+        // Only when no agora app_id — LiveKit mint sets app_id=null and still may send channel/uid.
+        if flatAppId == nil || flatAppId?.isEmpty == true {
+            if let tok = try? c.decodeIfPresent(String.self, forKey: .token), !tok.isEmpty {
+                flatLivekit = BlindbanditLiveKitGrant(
+                    token: tok,
+                    identity: nil,
+                    room: roomValue,
+                    expires_at: nil,
+                    url: try? c.decodeIfPresent(String.self, forKey: .livekit_url)
+                )
+            }
+        }
 
         let agoraGrant = nestedAgora ?? flatAgora
         let livekitGrant = nestedLivekit ?? (agoraGrant == nil ? flatLivekit : nil)
 
-        // If provider forces livekit, prefer livekit even when flat agora-looking fields appear.
-        let p = provider?.lowercased()
+        let resolvedLivekit: BlindbanditLiveKitGrant?
+        let resolvedAgora: BlindbanditAgoraGrant?
+        let p = providerValue?.lowercased()
         if p == "agora" {
-            livekit = nestedLivekit
-            agora = agoraGrant
+            resolvedLivekit = nestedLivekit
+            resolvedAgora = agoraGrant
         } else if p == "livekit" {
-            livekit = livekitGrant ?? nestedLivekit ?? flatLivekit
-            agora = nestedAgora
+            resolvedLivekit = livekitGrant ?? nestedLivekit ?? flatLivekit
+            resolvedAgora = nestedAgora
         } else {
-            livekit = livekitGrant
-            agora = agoraGrant
+            resolvedLivekit = livekitGrant
+            resolvedAgora = agoraGrant
         }
 
-        if livekit == nil && agora == nil {
+        guard resolvedLivekit != nil || resolvedAgora != nil else {
             throw DecodingError.dataCorrupted(
                 .init(codingPath: c.codingPath, debugDescription: "Missing livekit or agora RTC grant")
             )
         }
+        livekit = resolvedLivekit
+        agora = resolvedAgora
     }
 
     enum CodingKeys: String, CodingKey {

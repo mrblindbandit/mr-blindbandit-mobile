@@ -106,11 +106,22 @@ struct NativeProfileView: View {
                                 Label("Message", systemImage: "message.fill")
                             }
                             .buttonStyle(.bordered)
+                            Button {
+                                Task {
+                                    await communications.startCall(recipient: profile.handle, video: false)
+                                }
+                            } label: {
+                                Label("Call", systemImage: "phone.fill")
+                            }
+                            .buttonStyle(.bordered)
+                            .accessibilityHint("Start a voice call with @\(profile.handle)")
                         }
                         .buttonStyle(.borderless)
                     }
                 } else {
                     Section("Your account") {
+                        NavigationLink("Edit display name") { DisplayNameEditor() }
+                        NavigationLink("Edit profile picture") { ProfilePictureEditor() }
                         NavigationLink("Edit username") { UsernameEditor().navigationTitle("Username") }
                         NavigationLink("Settings") { Settings() }
                         if AdminGate.isAdmin(handle: communications.myHandle, profileID: communications.myProfileID) {

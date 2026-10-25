@@ -152,6 +152,9 @@ struct Settings: View {
                 Label("Edit display name", systemImage: "person.text.rectangle")
             }
             NavigationLink("Edit username") { UsernameEditor().navigationTitle("Username") }
+            NavigationLink { NativeProfileView(handle: "", isMe: true) } label: {
+                Label("Open native profile", systemImage: "person.crop.circle.fill")
+            }
             NavigationLink { Website(url: AppConfig.accountURL, title: "Profile & account") } label: {
                 Label("Edit email and password on the web", systemImage: "person.crop.circle")
             }

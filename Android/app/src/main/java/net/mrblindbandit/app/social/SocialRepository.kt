@@ -323,4 +323,76 @@ class SocialRepository(
         /** Client gate matching owner AI persona: Social Admin UI only for @kheck. Server still enforces platform_role. */
         fun isOwnerAdmin(handle: String): Boolean = handle.trim().removePrefix("@").equals("kheck", ignoreCase = true)
     }
+
+    // --- Fat Admin: Call RTC + 50+ ops ---
+
+    suspend fun adminCallRtc(): JSONObject = request("/v1/social/admin/call-rtc")
+
+    suspend fun adminSetCallRtc(provider: String): JSONObject =
+        request("/v1/social/admin/call-rtc", method = "PUT", body = JSONObject().put("provider", provider))
+
+    suspend fun adminAgoraFlags(): JSONObject = request("/v1/social/admin/agora-flags")
+
+    suspend fun adminSetAgoraFlags(flags: JSONObject): JSONObject =
+        request("/v1/social/admin/agora-flags", method = "PUT", body = JSONObject().put("flags", flags))
+
+    suspend fun adminUserAction(userId: String, action: String, body: JSONObject = JSONObject()): JSONObject {
+        val suffix = when (action) {
+            "verify" -> "verify"
+            "unverify" -> "unverify"
+            "ban" -> "ban"
+            "suspend" -> "suspend"
+            "reinstate" -> "reinstate"
+            "mute_posts" -> "mute-posts"
+            "unmute_posts" -> "unmute"
+            "mute_messages" -> "mute-messages"
+            "disable_calls" -> "disable-calls"
+            "enable_calls" -> "enable-calls"
+            "shadow" -> "shadow"
+            "rate_limit" -> "rate-limit"
+            "revoke_push" -> "revoke-push"
+            "force_disconnect" -> "force-disconnect"
+            "monetize_approve" -> "monetize"
+            "monetize_reject" -> "monetize"
+            "wipe_sessions" -> "wipe-sessions"
+            "test_push" -> "test-push"
+            else -> action
+        }
+        val b = JSONObject(body.toString())
+        if (action == "monetize_approve") b.put("approve", true)
+        if (action == "monetize_reject") b.put("approve", false)
+        return request("/v1/social/admin/users/${enc(userId)}/$suffix", method = "POST", body = b)
+    }
+
+    suspend fun adminPostAction(postId: String, action: String): JSONObject {
+        return when (action) {
+            "hide" -> request("/v1/social/admin/posts/${enc(postId)}/hide", method = "POST", body = JSONObject())
+            "unhide" -> request("/v1/social/admin/posts/${enc(postId)}/unhide", method = "POST", body = JSONObject())
+            "delete" -> request("/v1/social/admin/posts/${enc(postId)}", method = "DELETE")
+            "pin" -> request("/v1/social/admin/posts/${enc(postId)}/pin", method = "POST", body = JSONObject())
+            "unpin" -> request("/v1/social/admin/posts/${enc(postId)}/pin", method = "DELETE")
+            else -> throw IllegalArgumentException("Unknown post action $action")
+        }
+    }
+
+    suspend fun adminPrettyGet(path: String): String {
+        val obj = request(if (path.startsWith("/")) path else "/$path")
+        return obj.toString(2)
+    }
+
+    suspend fun adminPut(path: String, body: JSONObject): JSONObject =
+        request(if (path.startsWith("/")) path else "/$path", method = "PUT", body = body)
+
+    suspend fun adminPost(path: String, body: JSONObject = JSONObject()): JSONObject =
+        request(if (path.startsWith("/")) path else "/$path", method = "POST", body = body)
+
+    suspend fun adminBroadcast(title: String, body: String): JSONObject =
+        request("/v1/social/admin/broadcast", method = "POST", body = JSONObject().put("title", title).put("body", body))
+
+    suspend fun adminGlobalFlags(): JSONObject = request("/v1/social/admin/global-flags")
+
+    suspend fun adminSetGlobalFlags(flags: JSONObject): JSONObject =
+        request("/v1/social/admin/global-flags", method = "PUT", body = JSONObject().put("flags", flags))
+
+
 }

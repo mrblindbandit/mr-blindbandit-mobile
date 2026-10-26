@@ -8,7 +8,7 @@ settings:
   base:
     # Single source of truth for every target (app + all extensions + watch). Bump here only.
     MARKETING_VERSION: '2.2.0'
-    CURRENT_PROJECT_VERSION: '40'
+    CURRENT_PROJECT_VERSION: '41'
     SWIFT_VERSION: '5.0'
     CODE_SIGNING_ALLOWED: NO
     TARGETED_DEVICE_FAMILY: '1'

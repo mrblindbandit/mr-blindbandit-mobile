@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-/// Opt-in "Cloud AI (uses server)": Cloudflare Workers AI behind mrblindbandit.net.
+/// Cloud AI (uses server): Gemini-backed `/v1/ai/*` on api.mrblindbandit.net (Workers AI fallback).
 /// Nothing is sent unless Cloud AI and that feature are on, and E2EE chat content only when the user invokes a cloud feature on it.
 /// Every call falls back to on-device when the server is out of daily quota (429) or not updated yet (404).
 @MainActor
@@ -31,22 +31,36 @@ enum CloudAI {
         }
     }
 
+    /// Master Cloud AI switch. Missing key defaults ON so signed-in users hit live Gemini `/v1/ai/chat`
+    /// without hunting Settings (they can still turn it off). Explicit false stays off.
     static var enabled: Bool {
-        get { UserDefaults.standard.bool(forKey: "ai.cloud.enabled") }
+        get {
+            if UserDefaults.standard.object(forKey: "ai.cloud.enabled") == nil { return true }
+            return UserDefaults.standard.bool(forKey: "ai.cloud.enabled")
+        }
         set { UserDefaults.standard.set(newValue, forKey: "ai.cloud.enabled") }
+    }
+    /// AI Preferences "Allow Cloud AI fallback" — when false, auto-escalate stays off even if Cloud AI is on.
+    static var fallbackAllowed: Bool {
+        get { UserDefaults.standard.object(forKey: SettingsKey.aiCloudFallback) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: SettingsKey.aiCloudFallback) }
     }
     static func isOn(_ f: Feature) -> Bool { enabled && (UserDefaults.standard.object(forKey: "ai.cloud." + f.rawValue) as? Bool ?? true) }
     static func set(_ f: Feature, _ on: Bool) { UserDefaults.standard.set(on, forKey: "ai.cloud." + f.rawValue) }
 
     enum Outcome<T> { case ok(T), outOfQuota, needsUpdate, failed(String) }
 
-    private static func call(_ f: Feature, _ path: String, _ body: [String: Any]?, method: String = "POST") async -> Outcome<[String: Any]> {
+    private static func call(_ f: Feature, _ path: String, _ body: [String: Any]?, method: String = "POST", timeout: TimeInterval = 12) async -> Outcome<[String: Any]> {
         do {
-            let d = try await SecurityAPI.gated(f.serverFeature) { try await BlindbanditAPI.request(path, method: method, body: body) }
+            let d = try await SecurityAPI.gated(f.serverFeature) {
+                try await BlindbanditAPI.request(path, method: method, body: body, timeout: timeout)
+            }
             return .ok(SecurityAPI.data(d))
         } catch is NeedsServerUpdate { return .needsUpdate }
         catch let CommunicationsError.server(msg) where msg.contains("429") || msg.lowercased().contains("quota") || msg.lowercased().contains("limit") {
             return .outOfQuota
+        } catch let error as URLError where error.code == .timedOut {
+            return .failed("Cloud AI timed out")
         } catch { return .failed(error.localizedDescription) }
     }
 
@@ -55,19 +69,36 @@ enum CloudAI {
         case .ok: return nil
         case .outOfQuota: return "Cloud AI is out for today, so I used the on-device AI."
         case .needsUpdate: return "Cloud AI: \(ServerFeatures.needsUpdateText). Used the on-device AI."
+        case .failed(let e) where e.lowercased().contains("timed out"):
+            return "Cloud AI took too long, so I used the on-device AI."
         case .failed: return "Cloud AI didn't answer, so I used the on-device AI."
         }
     }
 
-    // POST /v1/ai/chat  {messages:[{role,content}], persona, stream:false} -> {reply}
+    /// Shown when Cloud AI is off so the user knows why Gemini was not used.
+    static var disabledHint: String {
+        "Cloud AI is off. Turn on Cloud AI under Settings → AI (or Security → AI) to use the live Gemini-backed server."
+    }
+
+    // POST /v1/ai/chat  {messages:[{role,content}], persona?, stream:false}
+    // Server envelope is {success,data:{reply,provider,...}}; SecurityAPI.data unwraps `data`.
+    // Gemini can take >12s; use a longer timeout so the live provider is not dropped as a client timeout.
     static func chat(_ question: String, history: [String], persona: String) async -> Outcome<String> {
+        guard isOn(.chat) else { return .failed("cloud_off") }
         var msgs: [[String: String]] = [["role": "system", "content": persona]]
         msgs += history.suffix(10).map { $0.hasPrefix("AI: ") ? ["role": "assistant", "content": String($0.dropFirst(4))] : ["role": "user", "content": $0] }
         msgs.append(["role": "user", "content": question])
-        switch await call(.chat, "v1/ai/chat", ["messages": msgs, "stream": false]) {
+        var body: [String: Any] = ["messages": msgs, "stream": false]
+        // Server accepts optional persona: hood | professional (owner style).
+        body["persona"] = AIPersona.forPrivate.rawValue
+        switch await call(.chat, "v1/ai/chat", body, timeout: 45) {
         case .ok(let o):
+            // Prefer nested-unwrapped reply; also tolerate flat {reply} if the gateway ever changes.
             let r = (o["reply"] ?? o["response"] ?? o["text"]) as? String ?? ""
-            return r.isEmpty ? .failed("empty") : .ok(r)
+            if r.isEmpty { return .failed("empty") }
+            // Stash last provider for Settings / debug (gemini | workers-ai).
+            if let p = o["provider"] as? String { UserDefaults.standard.set(p, forKey: "ai.cloud.lastProvider") }
+            return .ok(r)
         case .outOfQuota: return .outOfQuota
         case .needsUpdate: return .needsUpdate
         case .failed(let e): return .failed(e)
@@ -128,21 +159,28 @@ enum CloudAI {
         }
     }
 
-    struct Quota { var replies: Int?; var images: Int?; var minutes: Int?; var translations: Int?; var resets: String? }
+    struct Quota {
+        var replies: Int?; var images: Int?; var minutes: Int?; var translations: Int?; var resets: String?
+        var configured: Bool?; var geminiConfigured: Bool?; var workersConfigured: Bool?
+    }
 
-    // GET /v1/ai/quota -> {replies_left, images_left, transcribe_minutes_left, translations_left, resets_at}
+    // GET /v1/ai/quota -> {replies_left,..., gemini_configured, configured}
     static func quota() async -> Quota? {
         guard case .ok(let o) = await call(.chat, "v1/ai/quota", nil, method: "GET") else { return nil }
         func n(_ k: String) -> Int? { (o[k] as? Int) ?? (o[k] as? Double).map { Int($0) } }
+        func b(_ k: String) -> Bool? { o[k] as? Bool }
         return Quota(replies: n("replies_left"), images: n("images_left"), minutes: n("transcribe_minutes_left"),
-                     translations: n("translations_left"), resets: o["resets_at"] as? String)
+                     translations: n("translations_left"), resets: o["resets_at"] as? String,
+                     configured: b("configured"), geminiConfigured: b("gemini_configured"),
+                     workersConfigured: b("workers_ai_configured"))
     }
 
     /// Hard questions get escalated automatically when the on-device model declines or fails.
+    /// Requires Cloud AI + chat feature on, and AI Preferences fallback allowed.
     static func shouldEscalate(_ onDevice: String) -> Bool {
-        guard isOn(.chat) else { return false }
+        guard isOn(.chat), fallbackAllowed else { return false }
         let l = onDevice.lowercased()
-        return onDevice.isEmpty || ["couldn't finish", "i can't help", "i don't know", "not sure", "can't answer", "i couldn't"].contains { l.contains($0) }
+        return onDevice.isEmpty || ["couldn't finish", "i can't help", "i don't know", "not sure", "can't answer", "i couldn't", "try asking another way", "hmm,"].contains { l.contains($0) }
     }
 }
 
@@ -166,7 +204,11 @@ struct CloudAISection: View {
     var body: some View {
         Section {
             Toggle("Cloud AI (uses server)", isOn: $enabled)
-                .onChange(of: enabled) { _, v in CloudAI.enabled = v; Task { quota = await CloudAI.quota() } }
+                .onChange(of: enabled) { _, v in
+                    CloudAI.enabled = v
+                    if v { CloudAI.fallbackAllowed = true }
+                    Task { quota = await CloudAI.quota() }
+                }
             if enabled {
                 ForEach(CloudAI.Feature.allCases) { f in
                     Toggle(f.title, isOn: Binding(get: { _ = refresh; return CloudAI.isOn(f) }, set: { CloudAI.set(f, $0); refresh += 1 }))
@@ -176,14 +218,21 @@ struct CloudAISection: View {
                 } else {
                     Text("Checking what's left today…").foregroundStyle(.secondary)
                 }
+                if let last = UserDefaults.standard.string(forKey: "ai.cloud.lastProvider"), !last.isEmpty {
+                    Text("Last reply provider: \(last)").font(.caption).foregroundStyle(.secondary)
+                        .accessibilityLabel("Last Cloud AI reply used \(last)")
+                }
             }
         } header: { Text("Cloud AI").accessibilityAddTraits(.isHeader) } footer: {
-            Text("Off by default. When on, only what you ask a cloud feature to handle is sent to mrblindbandit.net (Cloudflare Workers AI). Encrypted chats are never sent unless you pick a cloud action on them. When the daily allowance runs out, the on-device AI takes over.")
+            Text("On by default for signed-in use. When on, only what you ask a cloud feature to handle is sent to api.mrblindbandit.net (Gemini when configured, Workers AI fallback). Encrypted chats are never sent unless you pick a cloud action on them. When the daily allowance runs out, the on-device AI takes over. Turn this off anytime.")
         }
         .task { if enabled { quota = await CloudAI.quota() } }
     }
     private func quotaText(_ q: CloudAI.Quota) -> String {
         var parts: [String] = []
+        if q.geminiConfigured == true { parts.append("Gemini ready") }
+        else if q.configured == true { parts.append("Cloud AI ready") }
+        else if q.configured == false { parts.append("Cloud AI not configured on server") }
         if let r = q.replies { parts.append("\(r) replies left today") }
         if let i = q.images { parts.append("\(i) images left today") }
         if let m = q.minutes { parts.append("\(m) transcription minutes") }

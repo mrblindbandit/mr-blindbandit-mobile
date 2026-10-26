@@ -776,11 +776,16 @@ struct AIPreferencesSettingsView: View {
                     .accessibilityHint("Uses Blindbandit Cloud AI search on the server")
                 Toggle("Prefer on-device Apple Foundation Models", isOn: $preferOnDevice)
                 Toggle("Allow Cloud AI fallback", isOn: $cloudFallback)
+                    .onChange(of: cloudFallback) { _, v in
+                        // Keep the real Cloud AI master switch in sync so this toggle actually routes to Gemini.
+                        if v { CloudAI.enabled = true }
+                        CloudAI.fallbackAllowed = v
+                    }
                 Toggle("Speak AI replies aloud", isOn: $speak)
                     .onChange(of: speak) { _, v in AIVoice.speakReplies = v }
                 Toggle("Caption helper for new Bites", isOn: $captionHelper)
             } header: { Text("Routing").accessibilityAddTraits(.isHeader) } footer: {
-                Text("Web search hits /v1/ai/search on mrblindbandit.net (Brave or equivalent). On-device Apple Foundation Models run first when available; Cloud AI covers harder questions.")
+                Text("Web search hits /v1/ai/search on api.mrblindbandit.net. On-device Apple Foundation Models run first when available; Cloud AI fallback uses the live Gemini-backed /v1/ai/chat (Settings → AI → Cloud AI must stay on).")
             }
             Section {
                 Picker("Persona mode", selection: $persona) {

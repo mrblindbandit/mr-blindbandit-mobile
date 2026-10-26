@@ -1,3 +1,10 @@
+## 2026-10-26 — Fix in-app Cloud AI → live Gemini `/v1/ai/chat`
+
+Root cause: Cloud AI master toggle defaulted OFF (`UserDefaults.bool` / Android prefs false), while AI Preferences "Allow Cloud AI fallback" defaulted ON but was never read by the escalate path — so the app stayed on-device only even though Sites v153 Gemini chat was live. Secondary: chat used the default 12s API timeout while Gemini can take longer.
+
+- iOS: default Cloud AI ON when unset; wire fallback toggle; 45s chat timeout; send `persona`; surface clear off/error notes; show Gemini ready + last provider; TF **2.2.0 (42)**.
+- Android: same default ON + 45s chat timeout + clearer copy; **2.0.15 (19)**.
+
 ## 2026-10-26 — Ship dual-RTC Agora build (iOS 2.2.0/40, Android 2.0.13/17)
 
 - Version bump only so TestFlight / Play can pick up merged PR #92 dual-RTC clients.

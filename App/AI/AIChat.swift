@@ -184,11 +184,17 @@ final class AIChatStore: ObservableObject {
             }
         }
         #endif
-        if CloudAI.shouldEscalate(final) || forceCloud {
+        if forceCloud && !CloudAI.isOn(.chat) {
+            // User explicitly asked for bigger AI but the master toggle / chat feature is off.
+            final = CloudAI.disabledHint + (final.isEmpty ? "" : " " + final)
+        } else if CloudAI.shouldEscalate(final) || forceCloud {
             let history = lines.dropLast(2).suffix(10).map { ($0.fromAI ? "AI: " : "") + $0.text }
             let r = await CloudAI.chat(question, history: history, persona: AIPersona.forPrivate.prompt())
             if case .ok(let text) = r { final = text; lastSpoken = 0 }
-            else if forceCloud, let n = CloudAI.note(r) { final = n + (final.isEmpty ? "" : " " + final) }
+            else if let n = CloudAI.note(r) {
+                // Always surface cloud failure when user forced cloud, or when auto-escalate failed with empty on-device.
+                if forceCloud || final.isEmpty { final = n + (final.isEmpty ? "" : " " + final) }
+            }
         }
         forceCloud = false
         if final.isEmpty {

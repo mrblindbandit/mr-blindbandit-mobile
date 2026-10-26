@@ -35,7 +35,10 @@ fun AssistantScreen(c: ProductionCommunicationsService, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("bb_ai", android.content.Context.MODE_PRIVATE) }
-    var cloud by remember { mutableStateOf(prefs.getBoolean("cloud", false)) }
+    var cloud by remember {
+        // Default ON (parity with iOS): missing key means Cloud AI chat uses live Gemini /v1/ai/chat.
+        mutableStateOf(if (prefs.contains("cloud")) prefs.getBoolean("cloud", true) else true)
+    }
     var webSearch by remember { mutableStateOf(prefs.getBoolean("web_search", true)) }
     var prompt by remember { mutableStateOf("") }
     var target by remember { mutableStateOf("ceb") }
@@ -72,8 +75,13 @@ fun AssistantScreen(c: ProductionCommunicationsService, onBack: () -> Unit) {
             .put("messages", msgs)
             .put("stream", false)
             .put("persona", AIPersona.forPrivate(context).id)
-        val response = c.request("/v1/ai/chat", "POST", body)
-        return response.lString("reply", "response", "text").ifBlank { response.toString() }
+        // Gemini can exceed the default 12s read timeout; use 45s for chat.
+        val response = c.request("/v1/ai/chat", "POST", body, connectMs = 8_000, readMs = 45_000)
+        val reply = response.lString("reply", "response", "text")
+        response.optString("provider").takeIf { it.isNotBlank() }?.let {
+            prefs.edit().putString("last_provider", it).apply()
+        }
+        return reply.ifBlank { response.toString() }
     }
 
     fun ask(userText: String) {
@@ -171,7 +179,7 @@ fun AssistantScreen(c: ProductionCommunicationsService, onBack: () -> Unit) {
         TextButton(onClick = onBack) { Text("Back") }
         Text("AI assistant", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
         SettingSwitch("Cloud AI (uses server)", cloud) { cloud = it; prefs.edit().putBoolean("cloud", it).apply() }
-        Text("Off by default. Cloud actions send only what you type here (or a file you pick) to BlindBandit's server and Cloudflare Workers AI. Chat messages are never included automatically.")
+        Text("On by default. Cloud chat uses api.mrblindbandit.net /v1/ai/chat (Gemini when configured). Only what you type here (or a file you pick) is sent. Chat messages are never included automatically. Turn Cloud AI off anytime.")
         SettingSwitch("Web search via server", webSearch) { webSearch = it; prefs.edit().putBoolean("web_search", it).apply() }
         if (owner) {
             Text("Owner style (server handle @kheck only)", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
@@ -189,7 +197,11 @@ fun AssistantScreen(c: ProductionCommunicationsService, onBack: () -> Unit) {
         }
         Text("I can play YouTube Music (say play, pause, skip), change volume and flashlight, open settings, and search the web. ${DeviceActions.capabilitiesSummary}")
         OutlinedTextField(prompt, { prompt = it.take(12000) }, label = { Text("Ask, play music, or control the device") }, modifier = Modifier.fillMaxWidth(), maxLines = 8)
-        Button(enabled = cloud && !busy && prompt.isNotBlank(), modifier = Modifier.fillMaxWidth(), onClick = { ask(prompt) }) { Text("Ask") }
+        Button(enabled = !busy && prompt.isNotBlank(), modifier = Modifier.fillMaxWidth(), onClick = {
+            if (!cloud) {
+                speak("Cloud AI is off. Turn on Cloud AI (uses server) above to use live Gemini chat.")
+            } else ask(prompt)
+        }) { Text("Ask") }
         OutlinedTextField(target, { target = it.take(20) }, label = { Text("Translation language code (ceb, fil, en)") }, modifier = Modifier.fillMaxWidth())
         Button(enabled = cloud && !busy && prompt.isNotBlank() && target.isNotBlank(), modifier = Modifier.fillMaxWidth(), onClick = {
             run("/v1/ai/translate", JSONObject().put("text", prompt).put("target", target))
@@ -216,6 +228,10 @@ fun AssistantScreen(c: ProductionCommunicationsService, onBack: () -> Unit) {
             TextButton(onClick = { history = emptyList(); result = "" }) { Text("Clear conversation") }
         }
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        val lastProvider = prefs.getString("last_provider", "").orEmpty()
+        if (lastProvider.isNotBlank()) {
+            Text("Last reply provider: $lastProvider", style = MaterialTheme.typography.bodySmall)
+        }
         Text(result, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
         image?.let { Image(it.asImageBitmap(), contentDescription = "AI-generated image: $prompt", modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp)) }
         Text("On-device speech", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })

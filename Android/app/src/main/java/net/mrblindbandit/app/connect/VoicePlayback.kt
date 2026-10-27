@@ -289,4 +289,12 @@ object VoicePlayback {
         val name = media.optString("filename").lowercase()
         return name.endsWith(".m4a") || name.endsWith(".aac") || name.endsWith(".mp3") || name == "voice.m4a"
     }
+
+    /** kind=voice, audio mime, or transcript fallback body — always treat as a voice row. */
+    fun isVoiceMessage(kind: String?, media: JSONObject?, body: String?): Boolean {
+        if (kind == "voice") return true
+        if (isVoiceMedia(media)) return true
+        val t = body?.trim().orEmpty()
+        return t.startsWith("🎤 Voice message") || t.startsWith("Voice message (")
+    }
 }

@@ -113,14 +113,18 @@ fun MessageMediaComposer(c: ProductionCommunicationsService, chatId: String, han
 /** Separate controls remain exposed to TalkBack even when the message bubble merges its semantics. */
 @Composable
 fun MessageMediaActions(message: ServerMessage, c: ProductionCommunicationsService) {
-    val media = message.media ?: return
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val voiceRow = VoicePlayback.isVoiceMessage(null, message.media, message.body)
+    val media = message.media ?: if (voiceRow) {
+        JSONObject().put("mime", "audio/mp4").put("filename", "voice.m4a")
+            .put("transcript", message.body).put("alt", "transcript-only")
+    } else return
     var bytes by remember(message.id) { mutableStateOf<ByteArray?>(null) }
     var status by remember(message.id) { mutableStateOf("") }
     var busy by remember(message.id) { mutableStateOf(false) }
     var tick by remember { mutableIntStateOf(0) }
-    val audio = VoicePlayback.isVoiceMedia(media)
+    val audio = VoicePlayback.isVoiceMedia(media) || voiceRow
     val listenOnce = media.optBoolean("listen_once") || media.optBoolean("view_once")
     val mine = message.senderId.isNotBlank() && message.senderId == c.myProfileId
     val item = remember(message.id, mine) {

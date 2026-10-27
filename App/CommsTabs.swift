@@ -1037,8 +1037,7 @@ struct ConversationThreadView: View {
         VStack(alignment: mine ? .trailing : .leading, spacing: 3) {
             HStack {
                 if mine { Spacer(minLength: 48) }
-                if let media = message.decrypted?.media,
-                   VoiceRowPlayAction.hasPlayableVoiceMedia(media, decryptedType: message.decrypted?.t) {
+                if let media = VoiceRowPlayAction.resolveVoiceMedia(messageID: message.id, clientMsgID: message.client_msg_id, decrypted: message.decrypted, kind: message.kind, body: message.body) {
                     VoiceBubble(media: media, from: mine ? "You" : "@\(handle)", msgID: message.id)
                 } else if let poll = message.decrypted?.poll {
                     PollCard(poll: poll, msgID: message.client_msg_id ?? message.id, chat: chatRef, handle: handle, me: e2ee.myHandle)
@@ -1058,9 +1057,9 @@ struct ConversationThreadView: View {
             // Voice bubbles are their own VoiceOver button (double tap = play/pause). When voice,
             // expose children and skip the row label so VO focuses the bubble (label on a .contain
             // parent was swallowing activation). Play stays first in Actions as a fallback.
-            .accessibilityElement(children: MessageRowAccessibility.children(isVoice: VoiceRowPlayAction.hasPlayableVoiceMedia(message.decrypted?.media, decryptedType: message.decrypted?.t)))
+            .accessibilityElement(children: MessageRowAccessibility.children(isVoice: VoiceRowPlayAction.isVoice(mime: message.decrypted?.media?.mime, kind: message.kind, decryptedType: message.decrypted?.t, body: message.body)))
             .modifier(MessageRowLabelModifier(
-                isVoice: VoiceRowPlayAction.hasPlayableVoiceMedia(message.decrypted?.media, decryptedType: message.decrypted?.t),
+                isVoice: VoiceRowPlayAction.isVoice(mime: message.decrypted?.media?.mime, kind: message.kind, decryptedType: message.decrypted?.t, body: message.body),
                 label: bubbleLabel(message, shown: shown, mine: mine, translatedFrom: translatedFrom, starred: starred, encrypted: encrypted)))
             .accessibilityActions { messageActions(message, shown: shown, mine: mine) }
             .contextMenu { messageActions(message, shown: shown, mine: mine) }
@@ -1099,7 +1098,7 @@ struct ConversationThreadView: View {
 
     @ViewBuilder
     private func messageActions(_ message: BlindbanditServerMessage, shown: String, mine: Bool) -> some View {
-        if let media = message.decrypted?.media, VoiceRowPlayAction.hasPlayableVoiceMedia(media, decryptedType: message.decrypted?.t) {
+        if let media = VoiceRowPlayAction.resolveVoiceMedia(messageID: message.id, clientMsgID: message.client_msg_id, decrypted: message.decrypted, kind: message.kind, body: message.body) {
             VoiceRowPlayAction(item: .init(id: message.id, media: media, from: mine ? "You" : "@\(handle)", mine: mine))
         }
         Button { quoting = message; composerFocused = true } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }

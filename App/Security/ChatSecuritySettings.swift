@@ -171,6 +171,15 @@ final class ServerFeatures: @unchecked Sendable {
         self.ttl = ttl
         let stored = defaults.dictionary(forKey: "bb.serverFeatures.missing") as? [String: Double] ?? [:]
         missing = stored.mapValues { Date(timeIntervalSince1970: $0) }
+        // Build 43+: clear stale missing flags so clear-server / attachments / Cloud AI re-probe live routes.
+        let clearedKey = "bb.serverFeatures.clearedBuild43"
+        if defaults.object(forKey: clearedKey) == nil {
+            for f in [Feature.clearServer, .attachments, .cloudChat, .historyBackup, .aiBackup] {
+                missing[f.rawValue] = nil
+            }
+            defaults.set(true, forKey: clearedKey)
+            defaults.set(missing.mapValues { $0.timeIntervalSince1970 }, forKey: "bb.serverFeatures.missing")
+        }
     }
 
     func isAvailable(_ f: Feature, now: Date = Date()) -> Bool {

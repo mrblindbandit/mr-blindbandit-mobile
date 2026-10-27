@@ -109,16 +109,29 @@ enum VoiceSender {
                 UIAccessibility.post(notification: .announcement, argument: "Sent")
                 return true
             }
+            // Keep sealed media locally so this iPhone can still play even if the envelope send failed.
+            if let id = media.attachment_id {
+                let local = VoiceSender.cacheDir.appendingPathComponent(id + ".m4a")
+                try? data.write(to: local)
+                LocalMessageStore.shared.store(payload, msgID: id, sender: "You", expiresIn: nil)
+            }
             UIAccessibility.post(notification: .announcement, argument: "Couldn't send encrypted voice. Trying transcript fallback.")
         } else {
             UIAccessibility.post(notification: .announcement, argument: "Voice upload failed. Trying transcript fallback.")
         }
-        // Fallback: the server can't store voice yet, or the chat isn't end-to-end encrypted. Send the transcript.
+        // Fallback: keep audio on this device + send transcript so the row still has a play control locally.
+        let localID = "local-voice-" + UUID().uuidString
+        let local = VoiceSender.cacheDir.appendingPathComponent(localID + ".m4a")
+        try? data.write(to: local)
+        let stub = E2EEPayload.Media(url: local.absoluteString, attachment_id: localID, key: "", nonce: nil, sha256: "",
+            mime: "audio/mp4", size: data.count, filename: "voice.m4a", caption: nil, view_once: listenOnce ? true : nil,
+            duration: duration, transcript: transcript, alt: "local-cache")
+        LocalMessageStore.shared.store(E2EEPayload(t: "voice", media: stub), msgID: localID, sender: "You", expiresIn: nil)
         let text = "🎤 Voice message (\(Int(duration.rounded())) s, transcribed on my iPhone): " + (transcript ?? "[couldn't transcribe]")
         var ok = false
         if case .group(let gid) = chat { ok = (try? await BlindbanditAPI.sendGroupMessage(id: gid, body: text)) != nil }
         else { ok = await comms.sendMessage(recipient: handle, body: text) != nil }
-        UIAccessibility.post(notification: .announcement, argument: ok ? "Sent as a transcript. Voice audio needs a server update." : "Voice message not sent")
+        UIAccessibility.post(notification: .announcement, argument: ok ? "Sent as a transcript. Play still works on this iPhone from the local recording." : "Voice message not sent")
         return ok
     }
 }
@@ -422,6 +435,14 @@ enum VoicePlayerModel {
         if let s = m.url, let u = BlindbanditAPI.resolveURL(s), u.isFileURL {
             return try Data(contentsOf: u)
         }
+
+        // Local plaintext cache (file URL or empty key after transcript fallback).
+        if m.key.isEmpty, let id = m.attachment_id {
+            let local = VoiceSender.cacheDir.appendingPathComponent(id + ".m4a")
+            if let d = try? Data(contentsOf: local), !d.isEmpty { return d }
+        }
+        if let s = m.url, let u = BlindbanditAPI.resolveURL(s), u.isFileURL,
+           let d = try? Data(contentsOf: u), !d.isEmpty { return d }
 
         let key = decodeKeyMaterial(m.key) ?? decodeKeyMaterial(m.wrapped_key)
         let nonce = decodeKeyMaterial(m.nonce)
@@ -735,18 +756,58 @@ struct VoiceRowPlayAction: View {
         .init(id: id, media: media, from: from, mine: mine)
     }
 
-    /// True when this row is a voice note (DM or group).
-    static func isVoice(mime: String?, kind: String? = nil, decryptedType: String? = nil) -> Bool {
-        if let mime, mime.hasPrefix("audio") { return true }
-        return kind == "voice" || decryptedType == "voice"
+    /// Transcript fallback body from VoiceSender when upload/E2EE fails.
+    static func looksLikeVoiceTranscript(_ body: String?) -> Bool {
+        guard let body, !body.isEmpty else { return false }
+        let t = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.hasPrefix("🎤 Voice message") || t.hasPrefix("Voice message (")
     }
 
-    /// Show a VoiceBubble when media is audio, or typed as voice with an attachment/url (even if mime is blank).
-    static func hasPlayableVoiceMedia(_ media: E2EEPayload.Media?, kind: String? = nil, decryptedType: String? = nil) -> Bool {
+    /// True when this row is a voice note (DM or group) — mime, kind, decrypt type, or transcript body.
+    static func isVoice(mime: String?, kind: String? = nil, decryptedType: String? = nil, body: String? = nil) -> Bool {
+        if let mime, mime.hasPrefix("audio") { return true }
+        if kind == "voice" || decryptedType == "voice" { return true }
+        return looksLikeVoiceTranscript(body)
+    }
+
+    /// Show a VoiceBubble whenever the row is voice — even if media is missing (soft decrypt / transcript fallback).
+    static func hasPlayableVoiceMedia(_ media: E2EEPayload.Media?, kind: String? = nil, decryptedType: String? = nil, body: String? = nil) -> Bool {
+        if isVoice(mime: media?.mime, kind: kind, decryptedType: decryptedType, body: body) { return true }
         guard let media else { return false }
-        if isVoice(mime: media.mime, kind: kind, decryptedType: decryptedType) { return true }
         let hasBlob = media.attachment_id != nil || (media.url?.isEmpty == false)
-        return hasBlob && (decryptedType == "voice" || kind == "voice" || media.mime.isEmpty)
+        return hasBlob && (media.mime.isEmpty || media.mime.hasPrefix("audio") || (media.filename?.hasPrefix("voice") == true))
+    }
+
+    /// Pull duration from "🎤 Voice message (12 s, …)" when present.
+    static func transcriptDuration(_ body: String?) -> Double? {
+        guard let body, let open = body.range(of: "("), let sMark = body.range(of: " s", range: open.upperBound..<body.endIndex) else { return nil }
+        let num = body[open.upperBound..<sMark.lowerBound].trimmingCharacters(in: .whitespaces)
+        return Double(num)
+    }
+
+    /// Best-effort media for the bubble: decrypted → LocalMessageStore → local cache → transcript stub.
+    static func resolveVoiceMedia(messageID: String, clientMsgID: String? = nil, decrypted: E2EEPayload?, kind: String?, body: String?) -> E2EEPayload.Media? {
+        if let m = decrypted?.media, isVoice(mime: m.mime, kind: kind, decryptedType: decrypted?.t, body: body) || hasPlayableVoiceMedia(m, kind: kind, decryptedType: decrypted?.t, body: body) {
+            return m
+        }
+        let store = LocalMessageStore.shared
+        for key in [messageID, clientMsgID].compactMap({ $0 }).filter({ !$0.isEmpty }) {
+            if let m = store.payload(key)?.media { return m }
+        }
+        // Own-device cache keyed by message id (kept when send fell back to transcript).
+        for key in [messageID, clientMsgID].compactMap({ $0 }).filter({ !$0.isEmpty }) {
+            let local = VoiceSender.cacheDir.appendingPathComponent(key + ".m4a")
+            if FileManager.default.fileExists(atPath: local.path) {
+                return E2EEPayload.Media(url: local.absoluteString, attachment_id: key, key: "", nonce: nil, sha256: "",
+                    mime: "audio/mp4", size: nil, filename: "voice.m4a", caption: nil, view_once: nil,
+                    duration: transcriptDuration(body), transcript: body, alt: nil)
+            }
+        }
+        guard isVoice(mime: decrypted?.media?.mime, kind: kind, decryptedType: decrypted?.t, body: body) else { return nil }
+        // Stub so the play control still renders; load will announce when audio was never stored.
+        return E2EEPayload.Media(url: nil, attachment_id: nil, key: "", nonce: nil, sha256: "",
+            mime: "audio/mp4", size: nil, filename: "voice.m4a", caption: nil, view_once: nil,
+            duration: transcriptDuration(body), transcript: body, alt: "transcript-only")
     }
 
     /// Documented action name for tests / callers that need the label without a live player.

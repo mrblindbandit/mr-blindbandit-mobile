@@ -83,8 +83,10 @@ final class AIChatStore: ObservableObject {
     func instructions() -> String {
         var s = AIPersona.forPrivate.prompt() + " " + AIPersonaMode.current.promptAddon
         s += " Today is \(Date().formatted(date: .complete, time: .shortened))."
-        if UserDefaults.standard.object(forKey: SettingsKey.aiPreferOnDevice) as? Bool ?? true {
+        if UserDefaults.standard.object(forKey: SettingsKey.aiPreferOnDevice) as? Bool ?? false {
             s += " Prefer on-device tools; escalate to cloud only when asked or when on-device fails."
+        } else {
+            s += " Prefer Cloud AI (Gemini) when available; use on-device tools offline or when the user asks."
         }
         if !memory.facts.isEmpty { s += " Things you remember about the user: " + memory.facts.joined(separator: "; ") + "." }
         if !memory.summary.isEmpty { s += " Summary of your earlier conversations: " + memory.summary }
@@ -151,15 +153,31 @@ final class AIChatStore: ObservableObject {
         lines.append(reply)
         var final = ""
         var lastSpoken = 0
+        let preferOnDevice = UserDefaults.standard.object(forKey: SettingsKey.aiPreferOnDevice) as? Bool ?? false
+        let useCloudPrimary = CloudAI.isOn(.chat) && (!preferOnDevice || forceCloud)
+
+        if useCloudPrimary {
+            let history = lines.dropLast(2).suffix(10).map { ($0.fromAI ? "AI: " : "") + $0.text }
+            let r = await CloudAI.chat(question, history: history, persona: AIPersona.forPrivate.prompt())
+            if case .ok(let text) = r { final = text; lastSpoken = 0; update(reply.id, text: final) }
+            else if forceCloud, !CloudAI.isOn(.chat) {
+                final = CloudAI.disabledHint
+            } else if let n = CloudAI.note(r), forceCloud || preferOnDevice == false {
+                // Cloud was primary; keep the note if nothing else lands from on-device fallback.
+                final = n
+            }
+        } else if forceCloud && !CloudAI.isOn(.chat) {
+            final = CloudAI.disabledHint
+        }
+
         #if canImport(FoundationModels)
-        if #available(iOS 26, *), OnDeviceAI.isAvailable {
+        if #available(iOS 26, *), OnDeviceAI.isAvailable, final.isEmpty || (preferOnDevice && !forceCloud) {
             for attempt in 0..<2 {
                 guard let session = session() as? LanguageModelSession else { break }
                 do {
                     for try await snap in session.streamResponse(to: promptForModel) {
                         final = snap.content
                         update(reply.id, text: final)
-                        // Read finished sentences as they stream in.
                         if let end = final.lastIndex(where: { ".!?".contains($0) }) {
                             let upto = final.distance(from: final.startIndex, to: end) + 1
                             if upto - lastSpoken > 60 {
@@ -171,7 +189,6 @@ final class AIChatStore: ObservableObject {
                     }
                     break
                 } catch LanguageModelSession.GenerationError.exceededContextWindowSize {
-                    // Context window full: fold old turns into long-term memory and retry once with a fresh session.
                     await summarizeOldTurns(force: true)
                     resetSession()
                     if attempt == 1 { final = "My memory got full there. I saved a summary, so ask me again?" }
@@ -184,16 +201,14 @@ final class AIChatStore: ObservableObject {
             }
         }
         #endif
-        if forceCloud && !CloudAI.isOn(.chat) {
-            // User explicitly asked for bigger AI but the master toggle / chat feature is off.
-            final = CloudAI.disabledHint + (final.isEmpty ? "" : " " + final)
-        } else if CloudAI.shouldEscalate(final) || forceCloud {
+
+        // Escalate to Cloud when on-device was preferred but failed / looks thin, unless Cloud is off.
+        if !useCloudPrimary, CloudAI.isOn(.chat), (CloudAI.shouldEscalate(final) || forceCloud || final.isEmpty) {
             let history = lines.dropLast(2).suffix(10).map { ($0.fromAI ? "AI: " : "") + $0.text }
             let r = await CloudAI.chat(question, history: history, persona: AIPersona.forPrivate.prompt())
             if case .ok(let text) = r { final = text; lastSpoken = 0 }
-            else if let n = CloudAI.note(r) {
-                // Always surface cloud failure when user forced cloud, or when auto-escalate failed with empty on-device.
-                if forceCloud || final.isEmpty { final = n + (final.isEmpty ? "" : " " + final) }
+            else if let n = CloudAI.note(r), forceCloud || final.isEmpty {
+                final = n + (final.isEmpty ? "" : " " + final)
             }
         }
         forceCloud = false

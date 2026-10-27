@@ -763,7 +763,7 @@ struct BanditFeedSettingsView: View {
 
 struct AIPreferencesSettingsView: View {
     @AppStorage(SettingsKey.aiWebSearch) private var webSearch = true
-    @AppStorage(SettingsKey.aiPreferOnDevice) private var preferOnDevice = true
+    @AppStorage(SettingsKey.aiPreferOnDevice) private var preferOnDevice = false
     @AppStorage(SettingsKey.aiCloudFallback) private var cloudFallback = true
     @AppStorage(SettingsKey.aiSpeakReplies) private var speak = false
     @AppStorage(SettingsKey.aiPersonaMode) private var persona = AIPersonaMode.friend.rawValue
@@ -785,7 +785,7 @@ struct AIPreferencesSettingsView: View {
                     .onChange(of: speak) { _, v in AIVoice.speakReplies = v }
                 Toggle("Caption helper for new Bites", isOn: $captionHelper)
             } header: { Text("Routing").accessibilityAddTraits(.isHeader) } footer: {
-                Text("Web search hits /v1/ai/search on api.mrblindbandit.net. On-device Apple Foundation Models run first when available; Cloud AI fallback uses the live Gemini-backed /v1/ai/chat (Settings → AI → Cloud AI must stay on).")
+                Text("Web search hits /v1/ai/search on api.mrblindbandit.net. Cloud AI (Gemini) is primary when Cloud AI is on. Turn on Prefer on-device Apple Foundation Models only if you want Apple Intelligence first; otherwise Cloud handles chat.")
             }
             Section {
                 Picker("Persona mode", selection: $persona) {

@@ -4,8 +4,13 @@ name: Release AAB (Google Play) — Mr. Blindbandit
 #   ANDROID_UPLOAD_KEY_ALIAS, ANDROID_UPLOAD_KEY_PASSWORD.
 # Runs on demand only. The job fails if the bundle is not signed by the expected upload key.
 # Optional auto-upload to Play when PLAY_SERVICE_ACCOUNT_JSON is set (default track: production).
+# One-shot: this push commits 2.0.17 to the internal track only. Remove after the run is queued.
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/ship-android-internal-2.0.17"
 permissions:
   contents: read
 concurrency:
@@ -116,8 +121,9 @@ jobs:
       - name: Upload to Play Console (production by default)
         env:
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
-          PLAY_TRACK: ${{ vars.PLAY_TRACK }}
-          PLAY_RELEASE_STATUS: ${{ vars.PLAY_RELEASE_STATUS }}
+          # This commit only: internal testing, committed. Do not roll out production.
+          PLAY_TRACK: internal
+          PLAY_RELEASE_STATUS: completed
         run: |
           set -euo pipefail
           AAB=$(ls dist/*.aab | head -1)

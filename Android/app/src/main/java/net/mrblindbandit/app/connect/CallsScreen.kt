@@ -39,6 +39,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -109,6 +110,12 @@ fun CallsTab(
         else { pendingCall = target to video; permissionLauncher.launch(needed.toTypedArray()) }
     }
 
+    LaunchedEffect(communications.autoAnswerCallId) {
+        val id = communications.autoAnswerCallId ?: return@LaunchedEffect
+        communications.autoAnswerCallId = null
+        if (hasPermission(context, Manifest.permission.RECORD_AUDIO)) scope.launch { communications.joinCall(id) }
+        else { pendingAnswer = id; permissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO)) }
+    }
     LaunchedEffect(dialRequest) { dialRequest?.let { dial(it.first, it.second); onDialHandled() } }
     LaunchedEffect(signedIn) { if (signedIn) communications.loadCallHistory() }
     LaunchedEffect(communications.isInCall) {
@@ -150,16 +157,20 @@ fun CallsTab(
                                 haptics.success()
                                 if (hasPermission(context, Manifest.permission.RECORD_AUDIO)) scope.launch { communications.joinCall(callId) }
                                 else { pendingAnswer = callId; permissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO)) }
-                            }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Answer") }
+                            }, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Answer incoming call" }) { Text("Answer") }
                             Button(onClick = { haptics.tap(); scope.launch { communications.declineCall(callId) } },
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error), modifier = Modifier.heightIn(min = 48.dp)) { Text("Decline") }
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Decline incoming call" }) { Text("Decline") }
                         }
                     }
                 }
             }
         }
         if (communications.isRinging || communications.isInCall) {
-            item { ActiveCallPanel(communications, haptics) }
+            item {
+                if (communications.callUiMinimized) MiniCallBar(communications) { communications.callUiMinimized = false }
+                else ActiveCallPanel(communications, haptics, onChat = { if (communications.callPeerHandle.isNotBlank()) onMessage(communications.callPeerHandle) })
+            }
         } else {
             item {
                 Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -251,42 +262,144 @@ private fun CallRow(call: CallRecord, communications: ProductionCommunicationsSe
 }
 
 @Composable
-private fun ActiveCallPanel(communications: ProductionCommunicationsService, haptics: Haptics) {
-    val context = LocalContext.current
-    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) communications.toggleCamera() else Announcer.announce(context, "Camera permission is off.")
-    }
-    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth().padding(16.dp, 8.dp)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            val status = if (communications.isRinging) "Ringing ${communications.callPeerName}…" else "In call with ${communications.callPeerName}, ${communications.callTimeLabel}"
-            Text(status, style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.semantics { if (communications.isRinging) liveRegion = LiveRegionMode.Polite })
-            Text(communications.callEncryptionLabel, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-            if (communications.isVideoCall) communications.room?.let { CallVideoGrid(it) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(onClick = { haptics.tap(); communications.toggleMic() },
-                    modifier = Modifier.heightIn(min = 48.dp).semantics { stateDescription = if (communications.micEnabled) "Microphone on" else "Muted" }) {
-                    Text(if (communications.micEnabled) "Mute" else "Unmute")
-                }
-                FilledTonalButton(onClick = { haptics.tap(); communications.toggleSpeaker() },
-                    modifier = Modifier.heightIn(min = 48.dp).semantics { stateDescription = if (communications.speakerOn) "Speaker on" else "Speaker off" }) {
-                    Text("Speaker")
-                }
-                FilledTonalButton(enabled = communications.isVideoCall, onClick = {
-                    haptics.tap()
-                    if (!communications.cameraEnabled && !hasPermission(context, Manifest.permission.CAMERA)) cameraPermission.launch(Manifest.permission.CAMERA)
-                    else communications.toggleCamera()
-                },
-                    modifier = Modifier.heightIn(min = 48.dp).semantics { stateDescription = if (communications.cameraEnabled) "Camera on" else "Camera off" }) {
-                    Text("Camera")
-                }
-            }
-            Button(onClick = { haptics.tap(); communications.endCall() }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                Icon(Icons.Default.CallEnd, null); Text("End call", Modifier.padding(start = 8.dp))
+internal fun MiniCallBar(communications: ProductionCommunicationsService, onOpen: () -> Unit) {
+    val status = if (communications.isOnHold) "On hold" else if (communications.isRinging) "Ringing" else communications.callTimeLabel
+    val who = communications.callPeerName.ifBlank { "Blindbandit" }
+    Surface(color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                "$who · $status",
+                modifier = Modifier.weight(1f).clickable(onClick = onOpen).semantics { contentDescription = "Return to call with $who, $status" },
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            FilledTonalButton(onClick = { communications.endCall() }, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "End call" }) {
+                Text("End")
             }
         }
     }
+}
+
+@Composable
+private fun ActiveCallPanel(communications: ProductionCommunicationsService, haptics: Haptics, onChat: () -> Unit) {
+    val context = LocalContext.current
+    var keypad by remember { mutableStateOf(false) }
+    var addPerson by remember { mutableStateOf(false) }
+    var addHandle by remember { mutableStateOf("") }
+    var digits by remember { mutableStateOf("") }
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            if (communications.isVideoCall) communications.toggleCamera() else communications.upgradeToVideo()
+        } else Announcer.announce(context, "Camera permission is off.")
+    }
+    val bluetoothPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) communications.cycleAudioRoute() else Announcer.announce(context, "Bluetooth permission is needed to switch headsets.")
+    }
+    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth().padding(16.dp, 8.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            val status = when {
+                communications.isOnHold -> "On hold with ${communications.callPeerName}"
+                communications.isRinging -> "Ringing ${communications.callPeerName}"
+                else -> "In call with ${communications.callPeerName}, ${communications.callTimeLabel}"
+            }
+            Text(status, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics {
+                contentDescription = status
+                if (communications.isRinging || communications.isOnHold) liveRegion = LiveRegionMode.Polite
+            })
+            Text(communications.callEncryptionLabel, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite; contentDescription = communications.callEncryptionLabel })
+            if (communications.isVideoCall && communications.activeRtcProvider != "agora") communications.room?.let { CallVideoGrid(it) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CallControl(if (communications.micEnabled) "Mute" else "Unmute", communications.micEnabled) { haptics.tap(); communications.toggleMic() }
+                CallControl(if (communications.speakerOn) "Speaker on" else "Speaker", communications.speakerOn) { haptics.tap(); communications.toggleSpeaker() }
+                CallControl("Audio route", false) {
+                    haptics.tap()
+                    if (android.os.Build.VERSION.SDK_INT >= 31 && !hasPermission(context, Manifest.permission.BLUETOOTH_CONNECT)) {
+                        bluetoothPermission.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                    } else communications.cycleAudioRoute()
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (communications.isVideoCall) {
+                    CallControl(if (communications.cameraEnabled) "Camera on" else "Camera", communications.cameraEnabled) {
+                        haptics.tap()
+                        if (!communications.cameraEnabled && !hasPermission(context, Manifest.permission.CAMERA)) cameraPermission.launch(Manifest.permission.CAMERA)
+                        else communications.toggleCamera()
+                    }
+                    CallControl(if (communications.usingFrontCamera) "Front camera" else "Back camera", false) { haptics.tap(); communications.switchCamera() }
+                } else {
+                    CallControl("Switch to video", false) {
+                        haptics.tap()
+                        if (!hasPermission(context, Manifest.permission.CAMERA)) cameraPermission.launch(Manifest.permission.CAMERA)
+                        else communications.upgradeToVideo()
+                    }
+                }
+                CallControl("Keypad", keypad) { haptics.tap(); keypad = true }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CallControl("Add person", false) { haptics.tap(); addPerson = true }
+                CallControl("Chat", false) { haptics.tap(); onChat() }
+                CallControl(if (communications.isOnHold) "Resume" else "Hold", communications.isOnHold) { haptics.tap(); communications.toggleHold() }
+                CallControl("Minimize", false) { haptics.tap(); communications.callUiMinimized = true; Announcer.announce(context, "Call minimized") }
+            }
+            Button(onClick = { haptics.tap(); communications.endCall() }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics { contentDescription = if (communications.isRinging) "Cancel call" else "End call" }) {
+                Icon(Icons.Default.CallEnd, contentDescription = null); Text(if (communications.isRinging) "Cancel" else "End call", Modifier.padding(start = 8.dp))
+            }
+        }
+    }
+    if (keypad) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { keypad = false },
+            title = { Text("Keypad") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(digits.ifBlank { "No digits" }, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics {
+                        contentDescription = if (digits.isEmpty()) "No digits entered" else "Digits ${digits.toList().joinToString(" ")}"
+                    })
+                    listOf(listOf("1", "2", "3"), listOf("4", "5", "6"), listOf("7", "8", "9"), listOf("*", "0", "#")).forEach { row ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            row.forEach { key ->
+                                val label = when (key) { "*" -> "Star"; "#" -> "Pound"; else -> key }
+                                FilledTonalButton(onClick = {
+                                    digits += key
+                                    communications.callSoundsPublic.dialerKeyPress(key)
+                                    Announcer.announce(context, label)
+                                }, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = label }) { Text(key) }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { keypad = false }) { Text("Done") } },
+        )
+    }
+    if (addPerson) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { addPerson = false },
+            title = { Text("Add person") },
+            text = {
+                OutlinedTextField(addHandle, { addHandle = it }, label = { Text("Username") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            },
+            confirmButton = {
+                TextButton(onClick = { communications.inviteToCall(addHandle); addPerson = false; addHandle = "" }) { Text("Add") }
+            },
+            dismissButton = { TextButton(onClick = { addPerson = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+@Composable
+private fun CallControl(label: String, selected: Boolean, onClick: () -> Unit) {
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = Modifier.heightIn(min = 48.dp).semantics {
+            contentDescription = label
+            stateDescription = if (selected) "On" else "Off"
+        },
+    ) { Text(label) }
 }
 
 private fun hasPermission(context: android.content.Context, permission: String) =

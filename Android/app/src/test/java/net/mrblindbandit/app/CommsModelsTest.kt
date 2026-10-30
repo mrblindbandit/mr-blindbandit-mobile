@@ -72,6 +72,54 @@ class CommsModelsTest {
         assertNull(g.livekitToken)
     }
 
+    @Test fun callRtcGrantParsesProductionAgoraUserAccount() {
+        val json = JSONObject(
+            """{"id":"c9","call_id":"c9","room":"call_abc","kind":"voice","status":"ringing",
+            "rtc_provider":"agora","livekit":null,"livekit_url":null,"token":"agora-user-account-token-value",
+            "rtc":{"provider":"agora","app_id":"0123456789abcdef0123456789abcdef","channel":"call_abc",
+            "user_account":"profile_123","token":"agora-user-account-token-value","url":null}}"""
+        )
+        val g = CallRtcGrant.parse(json)
+        assertEquals("agora", g.provider)
+        assertTrue(g.usesAgora)
+        assertEquals("profile_123", g.agoraUserAccount)
+        assertEquals("call_abc", g.agoraChannel)
+        assertNull(g.agoraUid)
+        assertNull(g.livekitToken)
+        assertFalse(g.hasLiveKit)
+    }
+
+    @Test fun incompleteAgoraGrantDoesNotPoisonLiveKit() {
+        val json = JSONObject("""{"rtc_provider":"agora","token":"agora-token-without-app","room":"call_x"}""")
+        val g = CallRtcGrant.parse(json)
+        assertEquals("agora", g.provider)
+        assertFalse(g.usesAgora)
+        assertNull(g.livekitToken)
+        assertFalse(g.hasLiveKit)
+    }
+
+    @Test fun callRtcGrantKeepsProductionLiveKit() {
+        val json = JSONObject(
+            """{"id":"c8","room":"call_x","rtc_provider":"livekit","token":"lkTok","livekit_url":"wss://lk.example",
+            "livekit":{"token":"lkTok","url":"wss://lk.example","provider":"livekit"},
+            "rtc":{"token":"lkTok","url":"wss://lk.example","provider":"livekit"}}"""
+        )
+        val g = CallRtcGrant.parse(json)
+        assertEquals("livekit", g.provider)
+        assertFalse(g.usesAgora)
+        assertEquals("lkTok", g.livekitToken)
+        assertEquals("wss://lk.example", g.livekitUrl)
+        assertTrue(g.hasLiveKit)
+    }
+
+    @Test fun shouldRequestAgoraOnlyWhenPreferredAndConfigured() {
+        assertTrue(CallRtcGrant.shouldRequestAgora("agora", true))
+        assertTrue(CallRtcGrant.shouldRequestAgora("Agora", true))
+        assertFalse(CallRtcGrant.shouldRequestAgora("agora", false))
+        assertFalse(CallRtcGrant.shouldRequestAgora("livekit", true))
+        assertFalse(CallRtcGrant.shouldRequestAgora(null, true))
+    }
+
     @Test fun callRtcGrantParsesFlatAgoraAndLegacyLiveKit() {
         val agora = CallRtcGrant.parse(JSONObject("""{"call_id":"c3","room":"room1","provider":"agora","token":"flatTok","app_id":"flatApp","channel":"room1","uid":99}"""))
         assertTrue(agora.usesAgora)

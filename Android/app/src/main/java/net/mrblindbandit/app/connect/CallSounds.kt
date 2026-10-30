@@ -54,19 +54,24 @@ class CallSounds(private val context: Context) {
     }
 
     var playUISounds: Boolean = true
-    var selectedRingtone: Ringtone = Ringtone.DEFAULT
+    var ambientUi: Boolean = false
+    var selectedRingtone: Ringtone = Ringtone.MR_BLINDBANDIT
     var selectedNotificationTone: NotificationTone = NotificationTone.MESSAGE
 
-    private val prefs = context.getSharedPreferences("blindbandit_sounds", Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private var pool: SoundPool? = null
     private val ids = mutableMapOf<String, Int>()
     private var ringbackPlayer: MediaPlayer? = null
+    private var incomingPlayer: MediaPlayer? = null
     private var previewPlayer: MediaPlayer? = null
+    private var testPlayer: MediaPlayer? = null
 
     init {
+        migrateDefaultRingtone(prefs)
         playUISounds = prefs.getBoolean("playUISounds", true)
+        ambientUi = prefs.getBoolean("ambientUITheme", false)
         CallHaptics.enabled = prefs.getBoolean("hapticsEnabled", true)
-        selectedRingtone = Ringtone.values().find { it.resName == prefs.getString("selectedRingtone", null) } ?: Ringtone.DEFAULT
+        selectedRingtone = Ringtone.values().find { it.resName == prefs.getString("selectedRingtone", null) } ?: Ringtone.MR_BLINDBANDIT
         selectedNotificationTone = NotificationTone.values().find { it.resName == prefs.getString("selectedNotificationTone", null) }
             ?: NotificationTone.MESSAGE
         val attrs = AudioAttributes.Builder()
@@ -80,7 +85,10 @@ class CallSounds(private val context: Context) {
                 listOf(
                     "call_initiated", "call_connected", "hangup", "busy_tone",
                     "message_sent", "voicenote_sent", "attachment_sent",
-                    "typing_ping"
+                    "typing_ping",
+                    "ambient_call_initiated", "ambient_call_connected", "ambient_hangup", "ambient_busy_tone",
+                    "ambient_message_sent", "ambient_voicenote_sent", "ambient_attachment_sent",
+                    "ambient_typing_ping", "ambient_notif_delivered", "ambient_notif_read",
                 )
             )
         }.distinct()
@@ -93,15 +101,22 @@ class CallSounds(private val context: Context) {
     fun persist() {
         prefs.edit()
             .putBoolean("playUISounds", playUISounds)
+            .putBoolean("ambientUITheme", ambientUi)
             .putBoolean("hapticsEnabled", CallHaptics.enabled)
             .putString("selectedRingtone", selectedRingtone.resName)
             .putString("selectedNotificationTone", selectedNotificationTone.resName)
             .apply()
     }
 
+    private fun resolvedCue(name: String): String {
+        if (!ambientUi) return name
+        val alias = AMBIENT_CUES[name] ?: return name
+        return if (ids.containsKey(alias)) alias else name
+    }
+
     private fun play(name: String, volume: Float = 0.7f) {
         if (!playUISounds) return
-        val id = ids[name] ?: return
+        val id = ids[resolvedCue(name)] ?: ids[name] ?: return
         pool?.play(id, volume, volume, 1, 0, 1f)
     }
 
@@ -246,8 +261,71 @@ class CallSounds(private val context: Context) {
     }
     fun busyOrFailed() {
         stopRingback()
+        stopIncomingRing()
         play("busy_tone", 0.55f)
         CallHaptics.busyOrFailed(context)
+    }
+
+    /** Off-hook howler. Used after a failed call when the landline cue is bundled. */
+    fun startHowler() {
+        if (!playUISounds) return
+        stopRingback()
+        ringbackPlayer = playLoopRaw("ringback_us_howler", 0.32f)
+    }
+
+    /** Reorder / all-circuits-busy cue. */
+    fun startReorderTone() {
+        if (!playUISounds) return
+        stopRingback()
+        ringbackPlayer = playLoopRaw("ringback_us_reorder", 0.36f)
+    }
+
+    fun startIncomingRing() {
+        if (!playUISounds) return
+        if (incomingPlayer?.isPlaying == true) return
+        stopIncomingRing()
+        val resId = context.resources.getIdentifier(selectedRingtone.resName, "raw", context.packageName)
+        if (resId == 0) return
+        incomingPlayer = try {
+            MediaPlayer().apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                setDataSource(context, android.net.Uri.parse("android.resource://${context.packageName}/$resId"))
+                isLooping = true
+                setVolume(0.85f, 0.85f)
+                prepare()
+                start()
+            }
+        } catch (_: Exception) {
+            MediaPlayer.create(context, resId)?.apply {
+                isLooping = true
+                setVolume(0.85f, 0.85f)
+                start()
+            }
+        }
+    }
+
+    fun stopIncomingRing() {
+        try { incomingPlayer?.stop() } catch (_: Exception) {}
+        incomingPlayer?.release()
+        incomingPlayer = null
+    }
+
+    fun playTestTone() {
+        val resId = context.resources.getIdentifier("call_connected", "raw", context.packageName)
+        if (resId == 0) return
+        testPlayer?.release()
+        testPlayer = MediaPlayer.create(context, resId)?.apply {
+            setOnCompletionListener {
+                release()
+                if (testPlayer === this) testPlayer = null
+            }
+            start()
+        }
     }
     fun messageSent() { play("message_sent", 0.55f); CallHaptics.messageSent(context) }
     fun attachmentSent() { play("attachment_sent", 0.55f); CallHaptics.attachmentSent(context) }
@@ -260,7 +338,11 @@ class CallSounds(private val context: Context) {
     fun delivered() { play("notif_delivered", 0.4f); CallHaptics.delivered(context) }
     fun read() { play("notif_read", 0.35f); CallHaptics.read(context) }
     fun stopPreview() { previewPlayer?.release(); previewPlayer = null }
-    fun release() { stopPreview(); stopRingback(); pool?.release(); pool = null }
+    fun release() {
+        stopPreview(); stopRingback(); stopIncomingRing()
+        testPlayer?.release(); testPlayer = null
+        pool?.release(); pool = null
+    }
     fun previewRingtone(tone: Ringtone) {
         stopPreview()
         val id = context.resources.getIdentifier(tone.resName, "raw", context.packageName)
@@ -273,4 +355,36 @@ class CallSounds(private val context: Context) {
         }
     }
     fun previewNotification(tone: NotificationTone) = play(tone.resName, 0.6f)
+
+    companion object {
+        const val PREFS = "blindbandit_sounds"
+
+        private val AMBIENT_CUES = mapOf(
+            "call_initiated" to "ambient_call_initiated",
+            "call_connected" to "ambient_call_connected",
+            "hangup" to "ambient_hangup",
+            "busy_tone" to "ambient_busy_tone",
+            "message_sent" to "ambient_message_sent",
+            "voicenote_sent" to "ambient_voicenote_sent",
+            "attachment_sent" to "ambient_attachment_sent",
+            "typing_ping" to "ambient_typing_ping",
+            "notif_delivered" to "ambient_notif_delivered",
+            "notif_read" to "ambient_notif_read",
+        )
+
+        /** Anyone still on the old default ("ringtone", or never chosen) moves to Mr. BlindBandit. */
+        fun migrateDefaultRingtone(prefs: android.content.SharedPreferences) {
+            if (prefs.getBoolean("ringtone.migrated.206", false)) return
+            val cur = prefs.getString("selectedRingtone", null)
+            val edit = prefs.edit().putBoolean("ringtone.migrated.206", true)
+            if (cur == null || cur == "ringtone") edit.putString("selectedRingtone", Ringtone.MR_BLINDBANDIT.resName)
+            edit.apply()
+        }
+
+        fun selectedRingtoneName(context: Context): String {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            migrateDefaultRingtone(prefs)
+            return prefs.getString("selectedRingtone", null) ?: Ringtone.MR_BLINDBANDIT.resName
+        }
+    }
 }

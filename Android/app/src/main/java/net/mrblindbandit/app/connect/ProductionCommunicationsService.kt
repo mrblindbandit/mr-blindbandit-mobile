@@ -115,6 +115,15 @@ class ProductionCommunicationsService(
     var startWithCameraOff: Boolean = false
     var speakerByDefault: Boolean = false
     var preferBluetoothHeadset: Boolean = true
+    var echoCancellation: Boolean = true
+    var noiseSuppression: Boolean = true
+    var announceCaller: Boolean = true
+    var isOnHold by mutableStateOf(false); private set
+    var callUiMinimized by mutableStateOf(false)
+    var usingFrontCamera by mutableStateOf(true); private set
+    var autoAnswerCallId by mutableStateOf<String?>(null)
+    @Volatile private var requestAgora: Boolean = false
+    private var micBeforeHold: Boolean = true
 
     val callTimeLabel: String get() = "%02d:%02d".format(callSeconds / 60, callSeconds % 60)
 
@@ -605,6 +614,7 @@ class ProductionCommunicationsService(
                 }
                 try { c.responseCode } finally { c.disconnect() }
             }
+            refreshRtcPreference()
             for (path in listOf("/v1/health", "/v1/social/me/call-number", "/v1/social/inbox?limit=1", "/v1/social/calls/incoming")) {
                 runCatching {
                     // Best-effort warm — ignore auth failures; still primes TLS.
@@ -622,6 +632,7 @@ class ProductionCommunicationsService(
         }
         if (isInCall || isRinging) return
         warmCallPath()
+        refreshRtcPreference()
         // Phase 1: US dial tone while dialing / connecting (before remote ring).
         callPeerName = "@$target"
         callPeerHandle = target
@@ -631,7 +642,7 @@ class ProductionCommunicationsService(
         callSounds.callInitiated()
         var callId: String? = null
         try {
-            val response = request("/v1/social/calls", method = "POST", body = JSONObject().put("handle", target).put("kind", if (video) "video" else "voice"), connectMs = 6_000, readMs = 8_000)
+            val response = postCall(JSONObject().put("handle", target).put("kind", if (video) "video" else "voice"))
             callId = response.lString("id", "call_id").ifBlank { null }
             callPeerName = response.optJSONObject("recipient")?.lString("display_name").orEmpty().ifBlank { "@$target" }
             callPeerHandle = target
@@ -670,7 +681,13 @@ class ProductionCommunicationsService(
                 val created = row.lTime("created_at") ?: 0L
                 created > 0 && System.currentTimeMillis() - created in 0..RING_TIMEOUT_MS
             }
-            incomingCallId = incoming?.lString("id", "call_id")?.takeIf { it.isNotBlank() }
+            val row = incoming
+            val next = row?.lString("id", "call_id")?.takeIf { it.isNotBlank() }
+            if (row != null && next != null && next != incomingCallId) {
+                presentIncoming(next, row.lString("from_name", "from_handle"), playRing = true)
+            }
+            incomingCallId = next
+            if (next == null) callSounds.stopIncomingRing()
         } catch (_: Exception) { /* FCM still works if the optional polling route is unavailable. */ }
     }
 
@@ -678,7 +695,8 @@ class ProductionCommunicationsService(
         if (isInCall || isRinging) return
         var id: String? = null
         try {
-            val response = request("/v1/social/calls", "POST", JSONObject().put("group_id", groupId).put("kind", if (video) "video" else "voice"))
+            refreshRtcPreference()
+            val response = postCall(JSONObject().put("group_id", groupId).put("kind", if (video) "video" else "voice"))
             id = response.lString("id", "call_id").ifBlank { null }
             callPeerName = response.lString("group_name").ifBlank { "Group" }
             callPeerHandle = ""
@@ -706,6 +724,9 @@ class ProductionCommunicationsService(
             return
         }
         incomingCallId = null
+        autoAnswerCallId = null
+        callSounds.stopIncomingRing()
+        CallTelecom.reportEnded(callId)
         joiningCallId = callId
         joinedAt[callId] = System.currentTimeMillis()
         statusMessage = "Joining…"
@@ -806,12 +827,30 @@ class ProductionCommunicationsService(
     fun remoteEnded(callId: String) {
         if (callId.isBlank()) return
         if (shouldIgnoreAnswerEcho(callId)) return
-        if (incomingCallId == callId) incomingCallId = null
+        if (incomingCallId == callId) {
+            incomingCallId = null
+            callSounds.stopIncomingRing()
+            CallTelecom.reportEnded(callId)
+        }
         if (activeCallId == callId) endCall("Call ended.")
+    }
+
+    fun presentIncoming(callId: String, callerName: String, playRing: Boolean) {
+        if (callId.isBlank() || activeCallId == callId || isInCall) return
+        incomingCallId = callId
+        if (callerName.isNotBlank()) callPeerName = callerName
+        if (playRing) callSounds.startIncomingRing()
+        val who = callerName.ifBlank { callPeerName }.ifBlank { "someone" }
+        val spoken = if (announceCaller) "Incoming call from $who" else "Incoming call"
+        Announcer.announce(appContext, spoken)
+        CallLog.i("incoming presented playRing=$playRing")
     }
 
     suspend fun declineCall(callId: String) {
         incomingCallId = null
+        autoAnswerCallId = null
+        callSounds.stopIncomingRing()
+        CallTelecom.reportEnded(callId)
         try {
             request("/v1/social/calls/${enc(callId)}/decline", "POST", JSONObject())
         } catch (e: BlindbanditApiException) {
@@ -820,13 +859,66 @@ class ProductionCommunicationsService(
         statusMessage = "Call declined."
     }
 
+    private suspend fun postCall(body: JSONObject): JSONObject {
+        val opted = requestAgora
+        if (opted) body.put("rtc_provider", "agora")
+        CallLog.i("create call requestAgora=$opted")
+        return try {
+            request("/v1/social/calls", method = "POST", body = body, connectMs = 6_000, readMs = 8_000)
+        } catch (e: BlindbanditApiException) {
+            if (opted && e.status == 409 && e.code in setOf("AGORA_NOT_ENABLED", "AGORA_NOT_CONFIGURED")) {
+                CallLog.w("agora opt-in rejected code=${e.code}; retrying on livekit")
+                requestAgora = false
+                body.remove("rtc_provider")
+                request("/v1/social/calls", method = "POST", body = body, connectMs = 6_000, readMs = 8_000)
+            } else throw e
+        }
+    }
+
+    private suspend fun refreshRtcPreference() {
+        try {
+            val cfg = request("/v1/social/rtc/config", connectMs = 4_000, readMs = 4_000)
+            val preferred = cfg.lString("preferred_provider")
+            val configured = cfg.optJSONObject("agora")?.lBool("configured") == true
+            requestAgora = CallRtcGrant.shouldRequestAgora(preferred, configured)
+            CallLog.i("rtc preference preferred=$preferred agoraConfigured=$configured requestAgora=$requestAgora")
+        } catch (e: Exception) {
+            CallLog.w("rtc preference unavailable ${e.javaClass.simpleName}")
+        }
+    }
+
     private suspend fun connectCall(response: JSONObject, video: Boolean, outgoing: Boolean, frameKey: CallFrameKeys.Key? = null) {
         val grant = CallRtcGrant.parse(response)
         activeCallId = response.lString("id", "call_id").ifBlank { null }
-        if (grant.usesAgora) {
-            connectAgora(grant, video, outgoing)
-        } else {
-            connectLiveKit(grant, video, outgoing, frameKey)
+        CallLog.i("connect ${grant.summary()} video=$video outgoing=$outgoing")
+        callUiMinimized = false
+        isOnHold = false
+        val cameraGranted = androidx.core.content.ContextCompat.checkSelfPermission(appContext, android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        CallSessionService.start(appContext, callPeerName.ifBlank { "Blindbandit" }, video && cameraGranted)
+        try {
+            when {
+                grant.usesAgora -> try {
+                    connectAgora(grant, video, outgoing)
+                } catch (e: Exception) {
+                    CallLog.e("agora connect failed ${e.javaClass.simpleName}", e)
+                    agoraSession?.leave()
+                    agoraSession = null
+                    if (grant.hasLiveKit) {
+                        CallLog.w("falling back to livekit after agora failure")
+                        activeRtcProvider = "livekit"
+                        connectLiveKit(grant, video, outgoing, frameKey)
+                    } else throw e
+                }
+                grant.provider == "agora" && grant.hasLiveKit -> {
+                    CallLog.w("agora grant incomplete; using livekit grant")
+                    connectLiveKit(grant, video, outgoing, frameKey)
+                }
+                grant.provider == "agora" -> error("The call server returned an Agora call this phone could not join.")
+                else -> connectLiveKit(grant, video, outgoing, frameKey)
+            }
+        } catch (e: Exception) {
+            CallSessionService.stop(appContext)
+            throw e
         }
     }
 
@@ -834,14 +926,17 @@ class ProductionCommunicationsService(
         activeRtcProvider = "agora"
         callKeyProvider = null
         callEncryptionLabel = "Media encrypted in transit (Agora); frame E2EE follow-up"
-        val appId = grant.agoraAppId!!
-        val token = grant.agoraToken!!
-        val channel = grant.agoraChannel!!
-        val uid = grant.agoraUid!!
+        val appId = grant.agoraAppId ?: error("Agora app id missing")
+        val token = grant.agoraToken ?: error("Agora token missing")
+        val channel = grant.agoraChannel ?: error("Agora channel missing")
+        val uid = grant.agoraUid ?: 0
+        val localJoin = kotlinx.coroutines.CompletableDeferred<Result<Unit>>()
         var remoteJoined = false
         val session = AgoraCallSession(
             appContext = appContext,
-            onJoined = { },
+            onJoined = {
+                if (!localJoin.isCompleted) localJoin.complete(Result.success(Unit))
+            },
             onUserJoined = {
                 remoteJoined = true
                 scope.launch(Dispatchers.Main.immediate) {
@@ -860,15 +955,34 @@ class ProductionCommunicationsService(
                     }
                 }
             },
-            onError = { msg ->
-                scope.launch(Dispatchers.Main.immediate) { statusMessage = msg }
+            onError = { code ->
+                if (code in AgoraCallSession.FATAL_ERRORS && !localJoin.isCompleted) {
+                    localJoin.complete(Result.failure(IllegalStateException("Agora error $code")))
+                } else if (code in AgoraCallSession.FATAL_ERRORS) {
+                    scope.launch(Dispatchers.Main.immediate) {
+                        statusMessage = "Call problem. Agora error $code."
+                        Announcer.announce(appContext, statusMessage)
+                    }
+                }
             },
         )
         withContext(Dispatchers.Main) {
-            session.join(appId = appId, channel = channel, token = token, uid = uid, video = video)
+            session.join(
+                appId = appId,
+                channel = channel,
+                token = token,
+                uid = uid,
+                userAccount = grant.agoraUserAccount,
+                video = video,
+                echoCancellation = echoCancellation,
+                noiseSuppression = noiseSuppression,
+            )
             agoraSession = session
             room = null
         }
+        val joined = withTimeoutOrNull(12_000) { localJoin.await() }
+        if (joined == null && !session.joined) error("Agora did not join the channel.")
+        joined?.getOrThrow()
         callSounds.resumeOutgoingProgressIfNeeded()
         val cameraOn = video && !startWithCameraOff && androidx.core.content.ContextCompat.checkSelfPermission(appContext, android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
         session.setMic(true)
@@ -1055,6 +1169,128 @@ class ProductionCommunicationsService(
 
     fun toggleSpeaker() = setSpeaker(!speakerOn, announce = true)
 
+    fun cycleAudioRoute() {
+        val audio = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        if (Build.VERSION.SDK_INT < 31) {
+            toggleSpeaker()
+            return
+        }
+        val devices = audio.availableCommunicationDevices
+        if (devices.isEmpty()) {
+            Announcer.announce(appContext, "No audio routes available")
+            return
+        }
+        val currentId = audio.communicationDevice?.id
+        val index = devices.indexOfFirst { it.id == currentId }
+        val next = devices[if (index < 0) 0 else (index + 1) % devices.size]
+        val ok = audio.setCommunicationDevice(next)
+        speakerOn = next.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+        val label = audioRouteLabel(next.type)
+        Announcer.announce(appContext, if (ok) "Audio route $label" else "Couldn't switch audio route")
+    }
+
+    fun toggleHold() {
+        if (!isInCall && !isRinging) return
+        if (!isOnHold) {
+            micBeforeHold = micEnabled
+            isOnHold = true
+            scope.launch {
+                try {
+                    agoraSession?.setMic(false) ?: room?.localParticipant?.setMicrophoneEnabled(false)
+                    micEnabled = false
+                    Announcer.announce(appContext, "Call on hold")
+                } catch (_: Exception) {
+                    isOnHold = false
+                    Announcer.announce(appContext, "Couldn't hold the call")
+                }
+            }
+        } else {
+            val restore = micBeforeHold
+            isOnHold = false
+            scope.launch {
+                try {
+                    agoraSession?.setMic(restore) ?: room?.localParticipant?.setMicrophoneEnabled(restore)
+                    micEnabled = restore
+                    Announcer.announce(appContext, "Call resumed")
+                } catch (_: Exception) {
+                    Announcer.announce(appContext, "Couldn't resume the call")
+                }
+            }
+        }
+    }
+
+    fun switchCamera() {
+        if (!cameraEnabled) {
+            Announcer.announce(appContext, "Turn the camera on first")
+            return
+        }
+        val agora = agoraSession
+        if (agora != null) {
+            agora.switchCamera()
+            usingFrontCamera = !usingFrontCamera
+            Announcer.announce(appContext, if (usingFrontCamera) "Front camera" else "Back camera")
+            return
+        }
+        scope.launch {
+            val track = room?.localParticipant?.videoTrackPublications
+                ?.firstNotNullOfOrNull { it.second as? io.livekit.android.room.track.LocalVideoTrack }
+            if (track != null) {
+                runCatching { track.switchCamera() }
+                usingFrontCamera = !usingFrontCamera
+                Announcer.announce(appContext, if (usingFrontCamera) "Front camera" else "Back camera")
+            } else Announcer.announce(appContext, "Couldn't switch camera")
+        }
+    }
+
+    fun upgradeToVideo() {
+        if (!isInCall) return
+        isVideoCall = true
+        if (!speakerOn) setSpeaker(true, announce = false)
+        scope.launch {
+            try {
+                val agora = agoraSession
+                if (agora != null) agora.setCamera(true) else room?.localParticipant?.setCameraEnabled(true)
+                cameraEnabled = true
+                usingFrontCamera = true
+                statusMessage = "Switched to video."
+                Announcer.announce(appContext, statusMessage)
+                val id = activeCallId
+                if (id != null) {
+                    runCatching { request("/v1/social/calls/${enc(id)}/upgrade", "POST", JSONObject().put("kind", "video")) }
+                }
+            } catch (e: Exception) {
+                cameraEnabled = false
+                Announcer.announce(appContext, "Couldn't turn on the camera.")
+            }
+        }
+    }
+
+    fun inviteToCall(handle: String) {
+        val id = activeCallId ?: return
+        val target = normalizeHandle(handle)
+        if (target.isBlank()) {
+            Announcer.announce(appContext, "Enter a username to add")
+            return
+        }
+        scope.launch {
+            try {
+                request("/v1/social/calls/${enc(id)}/invite", "POST", JSONObject().put("handles", org.json.JSONArray().put(target)))
+                statusMessage = "Invited @$target."
+                Announcer.announce(appContext, statusMessage)
+            } catch (e: Exception) {
+                Announcer.announce(appContext, "Couldn't add @$target.")
+            }
+        }
+    }
+
+    private fun audioRouteLabel(type: Int): String = when (type) {
+        AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "speaker"
+        AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> "earpiece"
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO, AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "Bluetooth"
+        AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> "wired headset"
+        else -> "audio device"
+    }
+
     private fun setSpeaker(on: Boolean, announce: Boolean) {
         val audio = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
         runCatching {
@@ -1089,6 +1325,9 @@ class ProductionCommunicationsService(
         isInCall = false
         isRinging = false
         if (wasConnected) callSounds.hangup() else callSounds.stopOutgoingProgress()
+        callSounds.stopIncomingRing()
+        CallSessionService.stop(appContext)
+        callId?.let { CallTelecom.reportEnded(it) }
         isVideoCall = false
         cameraEnabled = false
         callSeconds = 0
@@ -1099,6 +1338,8 @@ class ProductionCommunicationsService(
         room = null
         agoraSession = null
         activeRtcProvider = "livekit"
+        isOnHold = false
+        callUiMinimized = false
         scope.launch {
             try { activeAgora?.leave() } catch (_: Exception) {}
             try { activeRoom?.localParticipant?.setMicrophoneEnabled(false) } catch (_: Exception) {}
@@ -1112,6 +1353,8 @@ class ProductionCommunicationsService(
 
     private fun cleanupRoom() {
         callSounds.stopOutgoingProgress()
+        callSounds.stopIncomingRing()
+        CallSessionService.stop(appContext)
         activeCallId?.let { encryption?.callKeys?.clear(it) }
         callKeyProvider = null
         callEncryptionLabel = "Media encrypted in transit"

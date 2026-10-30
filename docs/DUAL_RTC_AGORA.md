@@ -6,14 +6,16 @@ Admin `CALL_RTC_PROVIDER` is `livekit` (default) or `agora`. Each call keeps its
 
 | Field | LiveKit | Agora |
 |-------|---------|-------|
-| `provider` | `"livekit"` | `"agora"` |
+| `rtc_provider` | `"livekit"` | `"agora"` |
 | `livekit` | `{ token, identity?, room, expires_at?, url? }` | `null` |
 | `livekit_url` | wss URL | `null` |
-| `agora` | `null` | `{ token, app_id, channel, uid, expires_at, … }` |
-| `token` | LiveKit JWT | Agora AccessToken2 |
-| `app_id` | `null` | Agora App ID |
-| `channel` | room name | Agora channel (= room) |
-| `uid` | profile id string | numeric uid (string or number) |
+| `rtc` | LiveKit grant object | `{ provider, app_id, channel, user_account, token, url: null }` |
+| `token` | LiveKit JWT | Agora AccessToken2 from `buildTokenWithUserAccount` |
+| `user_account` | absent | profile id string (the token subject) |
+
+Production Agora mint does **not** send a numeric `uid` or a nested `agora` object. The token is an Agora user-account token. Clients must `joinChannelWithUserAccount` (Android) / `joinChannelByUserAccount` (iOS) with `user_account`. A numeric `uid` grant is still accepted when present.
+
+`preferred_provider=agora` does not switch a call by itself. `client_opt_in_required` is true: the client sends `rtc_provider=agora` on create. The call row is then locked to that provider.
 
 Clients also accept flat `agora_app_id` / `agora_token` and legacy flat LiveKit `{ token, livekit_url }`.
 

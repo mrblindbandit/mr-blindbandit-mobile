@@ -39,6 +39,12 @@
 -dontwarn org.webrtc.**
 -dontwarn io.livekit.**
 
+# Agora RTC uses JNI. Release minify was stripping join callbacks on Play builds.
+-keep class io.agora.** { *; }
+-keep class net.mrblindbandit.app.connect.AgoraCallSession { *; }
+-keep class net.mrblindbandit.app.connect.AgoraCallSession$* { *; }
+-dontwarn io.agora.**
+
 # Firebase Messaging ships its own consumer rules; silence optional deps.
 -dontwarn com.google.firebase.**
 -dontwarn com.google.android.gms.**

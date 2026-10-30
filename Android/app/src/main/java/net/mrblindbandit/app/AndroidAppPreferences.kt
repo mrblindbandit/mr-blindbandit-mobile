@@ -51,6 +51,10 @@ class AndroidAppPreferences(context: Context) {
     // Sounds & calls
     private val uiSoundsState = bool("uiSounds", true)
     val uiSounds get() = uiSoundsState.value
+    private val ambientUiSoundsState = bool("ambientUITheme", false)
+    val ambientUiSounds get() = ambientUiSoundsState.value
+    private val announceCallerState = bool("announceCaller", true)
+    val announceCaller get() = announceCallerState.value
     private val startCallsWithCameraOffState = bool("startCallsWithCameraOff", false)
     val startCallsWithCameraOff get() = startCallsWithCameraOffState.value
     private val speakerphoneByDefaultState = bool("speakerphoneByDefault", false)
@@ -82,6 +86,8 @@ class AndroidAppPreferences(context: Context) {
     fun setAppearance(value: Appearance) { appearanceState.value = value; prefs.edit().putString("appearance", value.storageKey).apply() }
     fun setDynamicColor(value: Boolean) { dynamicColorState.value = value; putBool("dynamicColor", value) }
     fun setUiSounds(value: Boolean) { uiSoundsState.value = value; putBool("uiSounds", value) }
+    fun setAmbientUiSounds(value: Boolean) { ambientUiSoundsState.value = value; putBool("ambientUITheme", value) }
+    fun setAnnounceCaller(value: Boolean) { announceCallerState.value = value; putBool("announceCaller", value) }
     fun setStartCallsWithCameraOff(value: Boolean) { startCallsWithCameraOffState.value = value; putBool("startCallsWithCameraOff", value) }
     fun setSpeakerphoneByDefault(value: Boolean) { speakerphoneByDefaultState.value = value; putBool("speakerphoneByDefault", value) }
     fun setPreferBluetoothHeadset(value: Boolean) { preferBluetoothHeadsetState.value = value; putBool("preferBluetoothHeadset", value) }
@@ -114,6 +120,8 @@ class AndroidAppPreferences(context: Context) {
         appearanceState.value = Appearance.fromKey(prefs.getString("appearance", null))
         dynamicColorState.value = prefs.getBoolean("dynamicColor", true)
         uiSoundsState.value = prefs.getBoolean("uiSounds", true)
+        ambientUiSoundsState.value = prefs.getBoolean("ambientUITheme", false)
+        announceCallerState.value = prefs.getBoolean("announceCaller", true)
         startCallsWithCameraOffState.value = prefs.getBoolean("startCallsWithCameraOff", false)
         speakerphoneByDefaultState.value = prefs.getBoolean("speakerphoneByDefault", false)
         preferBluetoothHeadsetState.value = prefs.getBoolean("preferBluetoothHeadset", true)

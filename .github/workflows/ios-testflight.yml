@@ -20,7 +20,7 @@ jobs:
           missing=""
           for v in ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8 APPLE_TEAM_ID IOS_DIST_P12_BASE64 IOS_DIST_P12_PASSWORD; do [ -n "${!v}" ] || missing="$missing $v"; done
           if [ -n "$missing" ]; then echo "::error::Missing secrets:$missing"; exit 1; fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Generate project
         run: |
           brew install xcodegen

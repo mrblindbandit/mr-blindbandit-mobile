@@ -4,8 +4,14 @@ name: Release AAB (Google Play) — Mr. Blindbandit
 #   ANDROID_UPLOAD_KEY_ALIAS, ANDROID_UPLOAD_KEY_PASSWORD.
 # Runs on demand only. The job fails if the bundle is not signed by the expected upload key.
 # Optional auto-upload to Play when PLAY_SERVICE_ACCOUNT_JSON is set (default track: production).
+# One-shot push trigger so 2.0.17 can start while the agent token cannot call workflow_dispatch.
+# Remove this push trigger immediately after the run is queued.
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/ship-android-2.0.17"
 permissions:
   contents: read
 concurrency:

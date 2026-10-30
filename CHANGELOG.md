@@ -8,6 +8,10 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 
 
 
+## [2.0.17] - 2026-10-30 (Android, versionCode 21)
+
+Calls connect on the production Agora user-account grant (`rtc_provider` + `user_account`), with a LiveKit fallback only when the server still returns a LiveKit token. Incoming calls ring the chosen tone and can be answered from the notification. In-call controls and sound settings closer to iOS: audio route, keypad, hold, add person, ambient cues, test tone.
+
 ## [2.0.12] - 2026-10-26 (Android)
 
 Android phone-feel parity with iOS TestFlight 2.2.0 (39): optimistic message Sent, Dialer keypad, US dial/ringback that survives LiveKit connect, slim inbox + send-ack + call-number APIs, CallWarmup, Clerk 3.5s token timeout. versionCode 16.

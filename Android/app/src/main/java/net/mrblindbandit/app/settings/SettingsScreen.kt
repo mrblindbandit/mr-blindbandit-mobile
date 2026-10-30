@@ -55,6 +55,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -203,8 +204,18 @@ private fun SettingsRoot(
 
         item {
             Section("Sounds & calls") {
-                ToggleRow("App sounds", prefs.uiSounds, "Ringback, connect, and message sounds", prefs::setUiSounds)
+                val toneContext = LocalContext.current
+                val testSounds = androidx.compose.runtime.remember { net.mrblindbandit.app.connect.CallSounds(toneContext) }
+                androidx.compose.runtime.DisposableEffect(testSounds) { onDispose { testSounds.release() } }
+                ToggleRow("App sounds", prefs.uiSounds, "Ringback, connect, message, and ringtone sounds", prefs::setUiSounds)
+                ToggleRow("Ambient UI sounds", prefs.ambientUiSounds, "Softer connect, hangup, and message tones", prefs::setAmbientUiSounds)
                 TonePickers()
+                Button(onClick = {
+                    testSounds.playUISounds = true
+                    testSounds.playTestTone()
+                    net.mrblindbandit.app.connect.Announcer.announce(toneContext, "Playing test tone")
+                }, modifier = Modifier.fillMaxWidth().heightIn(min = Spacing.minTouch).semantics { contentDescription = "Play test tone" }) { Text("Play test tone") }
+                ToggleRow("Announce caller", prefs.announceCaller, "Say who is calling when a call comes in", prefs::setAnnounceCaller)
                 ToggleRow("Start video calls with camera off", prefs.startCallsWithCameraOff, "Turn your camera on when you are ready", prefs::setStartCallsWithCameraOff)
                 ToggleRow("Use speakerphone by default", prefs.speakerphoneByDefault, "Route call audio to the loudspeaker", prefs::setSpeakerphoneByDefault)
                 ToggleRow("Prefer Bluetooth headset", prefs.preferBluetoothHeadset, "Use a connected Bluetooth headset instead of the earpiece when speaker is off", prefs::setPreferBluetoothHeadset)
@@ -481,9 +492,10 @@ private fun TonePickers() {
 
 @Composable
 private fun ToneRow(title: String, selected: Boolean, onSelect: () -> Unit) {
-    Row(
+        Row(
         Modifier.fillMaxWidth().heightIn(min = Spacing.minTouch)
-            .selectable(selected = selected, onClick = onSelect, role = androidx.compose.ui.semantics.Role.RadioButton),
+            .selectable(selected = selected, onClick = onSelect, role = androidx.compose.ui.semantics.Role.RadioButton)
+            .semantics { contentDescription = if (selected) "$title, selected. Plays a preview." else "$title. Plays a preview." },
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
     ) {
         RadioButton(selected = selected, onClick = null)

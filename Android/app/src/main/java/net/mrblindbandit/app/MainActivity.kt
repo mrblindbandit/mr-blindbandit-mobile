@@ -104,6 +104,7 @@ import net.mrblindbandit.app.config.AppConfig
 import net.mrblindbandit.app.connect.AppLock
 import net.mrblindbandit.app.connect.AppLockScreen
 import net.mrblindbandit.app.connect.CallsTab
+import net.mrblindbandit.app.connect.MiniCallBar
 import net.mrblindbandit.app.connect.CommsDestination
 import net.mrblindbandit.app.connect.MessagesTab
 import net.mrblindbandit.app.connect.UnreadBadge
@@ -128,6 +129,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     private var pendingMediaResources: Array<String> = emptyArray()
     private val deepLinkState = mutableStateOf<String?>(null)
     val commsDestinationState = mutableStateOf<CommsDestination?>(null)
+    val pendingCallAction = mutableStateOf<Pair<String, String>?>(null)
 
     private val fileChooserLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val callback = filePathCallback ?: return@registerForActivityResult
@@ -157,9 +159,12 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     private fun resolveDeepLink(intent: Intent?): String? {
         if (intent == null) return null
         val link = intent.dataString ?: intent.getStringExtra("url") ?: intent.getStringExtra("deep_link") ?: intent.getStringExtra("link")
+        val callAction = intent.getStringExtra("call_action")
+        val callIdExtra = intent.getStringExtra("call_id")
+        if (!callAction.isNullOrBlank() && !callIdExtra.isNullOrBlank()) pendingCallAction.value = callIdExtra to callAction
         CommsDestination.parse(link,
             conversationId = intent.getStringExtra("conversation_id"),
-            callId = intent.getStringExtra("call_id"),
+            callId = callIdExtra,
             groupId = intent.getStringExtra("group_id"),
         )?.let { commsDestinationState.value = it; return null }
         val raw = intent.dataString
@@ -329,6 +334,11 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
             communications.startWithCameraOff = prefs.startCallsWithCameraOff
             communications.speakerByDefault = prefs.speakerphoneByDefault
             communications.preferBluetoothHeadset = prefs.preferBluetoothHeadset
+            communications.echoCancellation = prefs.echoCancellation
+            communications.noiseSuppression = prefs.noiseSuppression
+            communications.announceCaller = prefs.announceCaller
+            communications.callSoundsPublic.playUISounds = prefs.uiSounds
+            communications.callSoundsPublic.ambientUi = prefs.ambientUiSounds
             val haptics = rememberHaptics { prefs.hapticsEnabled }
             var locked by remember { mutableStateOf(screenshot == null && communications.local.appLockEnabled && !AppLock.unlockedThisProcess) }
             var pendingThread by remember { mutableStateOf<String?>(null) }
@@ -337,11 +347,19 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
             DisposableEffect(communications) {
                 val receiver = object : android.content.BroadcastReceiver() {
                     override fun onReceive(ctx: android.content.Context?, event: Intent?) {
-                        val ended = event?.getStringExtra("call_id") ?: return
-                        communications.remoteEnded(ended)
+                        val callId = event?.getStringExtra("call_id") ?: return
+                        when (event.action) {
+                            BlindbanditFirebaseMessagingService.ACTION_INCOMING_CALL ->
+                                communications.presentIncoming(callId, event.getStringExtra("caller_name").orEmpty(), event.getBooleanExtra("play_ring", false))
+                            else -> communications.remoteEnded(callId)
+                        }
                     }
                 }
-                ContextCompat.registerReceiver(context, receiver, android.content.IntentFilter(BlindbanditFirebaseMessagingService.ACTION_CALL_ENDED), ContextCompat.RECEIVER_NOT_EXPORTED)
+                val filter = android.content.IntentFilter().apply {
+                    addAction(BlindbanditFirebaseMessagingService.ACTION_CALL_ENDED)
+                    addAction(BlindbanditFirebaseMessagingService.ACTION_INCOMING_CALL)
+                }
+                ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
                 onDispose { context.unregisterReceiver(receiver); communications.endCall() }
             }
 
@@ -353,6 +371,25 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
             }
             LaunchedEffect(communications.incomingCallId) {
                 if (communications.incomingCallId != null) { tab = AppTab.CALLS; showAssistant = false; showWeb = false; showSettings = false; showProfileHandle = null; showAdmin = false }
+            }
+            val pendingAction = activity.pendingCallAction.value
+            LaunchedEffect(pendingAction) {
+                val action = pendingAction ?: return@LaunchedEffect
+                activity.pendingCallAction.value = null
+                val (callId, kind) = action
+                when (kind) {
+                    "answer" -> {
+                        communications.presentIncoming(callId, "", playRing = false)
+                        communications.autoAnswerCallId = callId
+                        tab = AppTab.CALLS
+                    }
+                    "decline" -> communications.declineCall(callId)
+                    "end" -> communications.remoteEnded(callId)
+                    "return" -> { communications.callUiMinimized = false; tab = AppTab.CALLS }
+                }
+                showAssistant = false
+                showSettings = false
+                showWeb = false
             }
             val destination = activity.commsDestinationState.value
             LaunchedEffect(destination) {
@@ -404,6 +441,13 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
                 else -> {
                     BackHandler(enabled = tab != AppTab.HOME) { tab = AppTab.HOME }
                     Scaffold(bottomBar = {
+                        Column {
+                            if ((communications.isInCall || communications.isRinging) && (communications.callUiMinimized || tab != AppTab.CALLS)) {
+                                MiniCallBar(communications) {
+                                    communications.callUiMinimized = false
+                                    tab = AppTab.CALLS
+                                }
+                            }
                         NavigationBar {
                             AppTab.entries.forEach { item ->
                                 NavigationBarItem(
@@ -420,6 +464,7 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
                                     label = { Text(item.label) },
                                 )
                             }
+                        }
                         }
                     }) { inner ->
                         Box(Modifier.fillMaxSize().padding(inner)) {

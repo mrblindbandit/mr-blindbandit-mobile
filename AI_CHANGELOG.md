@@ -1,3 +1,14 @@
+## 2026-10-30 — Android 2.0.17 (21): Agora user-account join + call sounds parity
+
+Root cause (verified against production `GET /v1/social/rtc/config` and `worker/platform/rtc-provider.ts`): preferred provider is Agora, tokens are `buildTokenWithUserAccount`, and `rtcFields` returns `rtc_provider` plus nested `rtc` (`app_id`, `channel`, `user_account`, `token`) with `livekit: null`. Android 2.0.16 required a numeric `uid` under `agora`, never sent `rtc_provider=agora`, and on an Agora payload fed the Agora token to LiveKit. Release R8 also did not keep `io.agora.**`, and the manifest removed `FOREGROUND_SERVICE`, so Agora's microphone service cannot start on Android 14+ (targetSdk 36).
+
+- Opt into Agora when the server preference is Agora and credentials are configured; retry on LiveKit if the server rejects the opt-in. Fall back to a LiveKit grant only when one is actually present.
+- Join with `joinChannelWithUserAccount`. Log provider choice and Agora error codes without tokens.
+- Microphone/camera/mediaPlayback foreground service for the active call. Screen-capture permission stays stripped. Self-managed ConnectionService plus full-screen incoming notification (answer/decline) and the selected ringtone.
+- Sounds: Mr. BlindBandit default ringtone, ambient UI cues, howler/reorder from the iOS CAF pack, test tone, announce caller. In-call: audio route, flip camera, keypad, add person, chat, hold, minimize. App-sounds toggle now reaches the player.
+
+Deferred: screen share (media projection stays off), live captions of the remote track, SharePlay, hand raise, iOS Magic Tap.
+
 ## 2026-10-26 — Fix in-app Cloud AI → live Gemini `/v1/ai/chat`
 
 Root cause: Cloud AI master toggle defaulted OFF (`UserDefaults.bool` / Android prefs false), while AI Preferences "Allow Cloud AI fallback" defaulted ON but was never read by the escalate path — so the app stayed on-device only even though Sites v153 Gemini chat was live. Secondary: chat used the default 12s API timeout while Gemini can take longer.

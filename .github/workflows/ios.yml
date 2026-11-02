@@ -76,7 +76,7 @@ jobs:
         run: |
           mkdir -p build/screenshots
           xcrun xcresulttool export attachments --path build/TestResults.xcresult --output-path build/screenshots 2>/dev/null || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: Mr-Blindbandit-iOS-UI-test-screenshots
@@ -85,13 +85,13 @@ jobs:
           retention-days: 14
       - name: Build unsigned device app (IPA)
         run: bash build-unsigned.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Mr-Blindbandit-iOS-unsigned-IPA
           path: dist/*.ipa
           if-no-files-found: error
           retention-days: 14
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: Mr-Blindbandit-iOS-logs
@@ -163,7 +163,7 @@ jobs:
           </dict></plist>
           PLIST
           xcodebuild -exportArchive -archivePath build/Blindbandit.xcarchive -exportOptionsPlist build/ExportOptions.plist -exportPath build/export
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: env.HAS_SIGNING == 'true'
         with:
           name: Mr-Blindbandit-iOS-AppStore-IPA

@@ -212,17 +212,19 @@ struct BlindbanditAgoraGrant: Decodable, Equatable {
     let token: String
     let channel: String
     let uid: UInt
+    let userAccount: String?
     let expiresAt: Double?
 
     private enum CodingKeys: String, CodingKey {
-        case app_id, appId, token, channel, uid, expires_at, expiresAt
+        case app_id, appId, token, channel, uid, user_account, userAccount, expires_at, expiresAt
     }
 
-    init(appId: String, token: String, channel: String, uid: UInt, expiresAt: Double? = nil) {
+    init(appId: String, token: String, channel: String, uid: UInt, expiresAt: Double? = nil, userAccount: String? = nil) {
         self.appId = appId
         self.token = token
         self.channel = channel
         self.uid = uid
+        self.userAccount = userAccount
         self.expiresAt = expiresAt
     }
 
@@ -232,7 +234,11 @@ struct BlindbanditAgoraGrant: Decodable, Equatable {
             ?? c.decode(String.self, forKey: .appId)
         token = try c.decode(String.self, forKey: .token)
         channel = try c.decode(String.self, forKey: .channel)
-        if let n = try? c.decode(UInt.self, forKey: .uid) {
+        userAccount = (try? c.decode(String.self, forKey: .user_account))
+            ?? (try? c.decode(String.self, forKey: .userAccount))
+        if let account = userAccount, !account.isEmpty {
+            uid = 0 // account tokens must join with the same account, never numeric UID 0
+        } else if let n = try? c.decode(UInt.self, forKey: .uid) {
             uid = n
         } else if let i = try? c.decode(Int.self, forKey: .uid), i >= 0 {
             uid = UInt(i)
@@ -289,7 +295,8 @@ struct BlindbanditCallResponse: Decodable {
         provider = providerValue
 
         let nestedLivekit = try? c.decodeIfPresent(BlindbanditLiveKitGrant.self, forKey: .livekit)
-        let nestedAgora = try? c.decodeIfPresent(BlindbanditAgoraGrant.self, forKey: .agora)
+        let nestedAgora = (try? c.decodeIfPresent(BlindbanditAgoraGrant.self, forKey: .agora))
+            ?? (try? c.decodeIfPresent(BlindbanditAgoraGrant.self, forKey: .rtc))
 
         let flatAppId = (try? c.decodeIfPresent(String.self, forKey: .agora_app_id))
             ?? (try? c.decodeIfPresent(String.self, forKey: .app_id))
@@ -316,7 +323,7 @@ struct BlindbanditCallResponse: Decodable {
 
         var flatLivekit: BlindbanditLiveKitGrant? = nil
         // Only when no agora app_id — LiveKit mint sets app_id=null and still may send channel/uid.
-        if flatAppId == nil || flatAppId?.isEmpty == true {
+        if providerValue?.lowercased() != "agora", flatAppId == nil || flatAppId?.isEmpty == true {
             if let tok = try? c.decodeIfPresent(String.self, forKey: .token), !tok.isEmpty {
                 flatLivekit = BlindbanditLiveKitGrant(
                     token: tok,
@@ -355,7 +362,7 @@ struct BlindbanditCallResponse: Decodable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, call_id, room, kind, status, provider, rtc_provider, livekit, agora
+        case id, call_id, room, kind, status, provider, rtc_provider, livekit, agora, rtc
         case token, livekit_url, app_id, agora_app_id, agora_token, channel, uid
     }
 }
@@ -710,11 +717,11 @@ enum BlindbanditAPI {
     }
 
     static func sendMessage(handle: String, body: String, silent: Bool = false, clientMsgID: String? = nil) async throws -> BlindbanditMessageResponse {
-        // Race E2EE (includes key fetch) ≤350ms; soft-missing bundles/me must not feel like multi-second lag.
-        let e2ee: BlindbanditMessageResponse? = await withHardTimeout(seconds: 0.35) {
-            try await E2EEService.shared.sendDM(handle: handle, payload: E2EEPayload(t: "text", body: body, silent: silent ? true : nil))
-        } ?? nil
-        if let sent = e2ee { return sent }
+        // Only key discovery may time out. Never race a message POST against a
+        // plaintext fallback: the timed-out POST can still commit, duplicating the send.
+        if let sent = try await E2EEService.shared.sendDM(
+            handle: handle, payload: E2EEPayload(t: "text", body: body, silent: silent ? true : nil)
+        ) { return sent }
         var fields: [String: Any] = ["handle": handle, "body": body]
         if silent { fields["silent"] = true }
         if let clientMsgID, !clientMsgID.isEmpty { fields["client_msg_id"] = clientMsgID }
@@ -1025,6 +1032,7 @@ final class ProductionCommunicationsService: ObservableObject {
     /// `livekit` or `agora` for the active call.
     private(set) var activeRtcProvider = "livekit"
     private var pollTimer: Timer?
+    private var pollInFlight = false
     private var ringTimeout: Task<Void, Never>?
     /// The outgoing call is marked missed by the server after a short wait; we stop ringing at 45 seconds
     /// and always send end so the call never stays stuck as ringing.
@@ -1228,6 +1236,7 @@ final class ProductionCommunicationsService: ObservableObject {
     func openConversation(_ conversation: BlindbanditConversation) async {
         openConversationID = conversation.id
         let handle = conversation.other?.handle ?? ""
+        if !handle.isEmpty { Task { try? await E2EEService.shared.devices(for: handle) } }
         let title: String = {
             guard let other = conversation.other else { return "Chat" }
             if !other.display_name.isEmpty { return other.display_name }
@@ -1340,9 +1349,11 @@ final class ProductionCommunicationsService: ObservableObject {
 
     func startPolling() {
         pollTimer?.invalidate()
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self, UIApplication.shared.applicationState == .active else { return }
+                guard let self, UIApplication.shared.applicationState == .active, !self.pollInFlight else { return }
+                self.pollInFlight = true
+                defer { self.pollInFlight = false }
                 // Parallel: relay/E2EE must not serialize behind conversation refresh (PR #84 claimed this; ship it).
                 async let conversations: Void = self.refreshConversations()
                 async let relay: Void = E2EEService.shared.pollRelay()
@@ -1463,10 +1474,11 @@ final class ProductionCommunicationsService: ObservableObject {
             }
             let convID = response.conversation_id
             let ackID = localID ?? lid
+            // Ack is bookkeeping. It must not delay showing the server echo by up to 6s.
+            Task { _ = try? await BlindbanditAPI.sendAck(conversationID: convID, clientMsgID: ackID) }
             Task { [weak self] in
-                _ = try? await BlindbanditAPI.sendAck(conversationID: convID, clientMsgID: ackID)
-                await self?.refreshConversations()
                 if self?.openConversationID == convID { await self?.reloadThread(convID) }
+                await self?.refreshConversations()
             }
             return response.conversation_id
         } catch let error as URLError where [URLError.Code.notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotConnectToHost].contains(error.code) {
@@ -1558,6 +1570,7 @@ final class ProductionCommunicationsService: ObservableObject {
         CallWarmup.preconnect()
         CallTiming.start("outgoing call to \(label)")
         let localID = "local-" + UUID().uuidString
+        activeCallID = localID // reserve before the first suspension; reject double taps
         CallKitManager.shared.startOutgoing(callID: localID, handle: handle ?? "", displayName: displayName ?? label, video: video, groupID: groupID, memberCount: memberCount)
         CallTiming.step("CallKit start requested")
         // Phase 1: US dial tone while dialing / connecting (before remote ring).
@@ -1584,6 +1597,7 @@ final class ProductionCommunicationsService: ObservableObject {
                 CallSounds.stopOutgoingProgress()
                 await BlindbanditAPI.endCall(id: response.id)
                 CallKitManager.shared.reportEnded(callID: response.id, reason: nil)
+                if activeCallID == localID { activeCallID = nil }
                 return
             }
             callKeyPeerHandle = handle
@@ -1786,6 +1800,7 @@ final class ProductionCommunicationsService: ObservableObject {
     func performJoin(id: String) async -> Bool {
         guard !id.isEmpty else { return false }
         if activeCallID == id && isInCall { return true }
+        guard joiningCallID == nil, activeCallID == nil || activeCallID == id else { return false }
         let invite = incomingCall?.id == id ? incomingCall : nil
         CallSounds.stopLoop()
         statusMessage = "Joining call…"
@@ -1810,8 +1825,8 @@ final class ProductionCommunicationsService: ObservableObject {
             callKeyIsMine = false
             callKeyPeerHandle = peer
             // Prefer a quick key wait so CallKit audio isn't stalled for ~8 s; announce clearly if missing.
-            let callKey = await awaitCallKey(callID: id, handle: peer, groupID: callGroupID, attempts: 3)
-            if callKey == nil {
+            let callKey = response.usesAgora ? nil : await awaitCallKey(callID: id, handle: peer, groupID: callGroupID, attempts: 1)
+            if callKey == nil && !response.usesAgora {
                 statusMessage = "Connecting without call encryption. Waiting for the other person's keys…"
                 UIAccessibility.post(notification: .announcement, argument: statusMessage)
             }
@@ -1819,12 +1834,12 @@ final class ProductionCommunicationsService: ObservableObject {
             joinedAt[id] = Date()
             if callKey != nil, callGroupID != nil { startCallKeyPolling(callID: id) }
             // Keep polling briefly for a late key so we can surface encryption status.
-            if callKey == nil {
+            if callKey == nil && !response.usesAgora {
                 Task { [weak self] in
                     guard let self else { return }
                     if let late = await self.awaitCallKey(callID: id, handle: peer, groupID: self.callGroupID, attempts: 5) {
                         guard self.activeCallID == id else { return }
-                        self.callEncryptionLabel = "End-to-end encrypted (key arrived late — reconnect for full protection)"
+                        self.callEncryptionLabel = "Call key received. Reconnect to enable end-to-end encryption."
                         UIAccessibility.post(notification: .announcement, argument: self.callEncryptionLabel)
                         _ = late
                     } else if self.activeCallID == id {
@@ -1881,6 +1896,7 @@ final class ProductionCommunicationsService: ObservableObject {
             channel: grant.channel,
             token: grant.token,
             uid: grant.uid,
+            userAccount: grant.userAccount,
             video: video
         )
         agoraSession = session
@@ -2506,6 +2522,7 @@ final class ProductionCommunicationsService: ObservableObject {
     private func awaitCallKey(callID: String, handle: String?, groupID: String?, attempts: Int = 3) async -> CallKeyMessage? {
         let n = max(1, attempts)
         for attempt in 0..<n {
+            guard !Task.isCancelled else { return nil }
             if let k = CallKeyStore.shared.keys[callID] { return k }
             await fetchCallKeyMessages(handle: handle, groupID: groupID)
             if let k = CallKeyStore.shared.keys[callID] { return k }
@@ -2521,8 +2538,12 @@ final class ProductionCommunicationsService: ObservableObject {
             }
         } else if let handle {
             let h = handle.lowercased()
-            let convs = (try? await BlindbanditAPI.conversations()) ?? conversations
-            guard let c = convs.first(where: { $0.other?.handle.lowercased() == h }),
+            let cached = conversations.first(where: { $0.other?.handle.lowercased() == h })
+            let c: BlindbanditConversation?
+            if let cached { c = cached } else {
+                c = (try? await BlindbanditAPI.conversations())?.first(where: { $0.other?.handle.lowercased() == h })
+            }
+            guard let c,
                   let items = try? await BlindbanditAPI.messages(conversationID: c.id) else { return }
             _ = await E2EEService.shared.resolve(items, conversationID: c.id)
         }
@@ -2568,6 +2589,9 @@ final class ProductionCommunicationsService: ObservableObject {
         }
         callKeyProvider = nil; callKeyIndex = 0; callKeyIsMine = false
         callEncrypted = false; callEncryptionLabel = ""
+        agoraSession?.leave()
+        agoraSession = nil
+        activeRtcProvider = "livekit"
         let closingRoom = room
         Task { await closingRoom?.disconnect() }
         room = nil

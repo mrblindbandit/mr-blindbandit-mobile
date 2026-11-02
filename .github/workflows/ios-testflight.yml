@@ -1,5 +1,7 @@
 name: iOS TestFlight upload
 on:
+  push:
+    branches: [fix/ios-latency-44]
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,5 +28,13 @@ jobs:
           brew install xcodegen
           swift scripts/GenerateAppIcon.swift
           xcodegen generate
+      - name: Build and test before uploading
+        run: |
+          set -euo pipefail
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; ids=[x["udid"] for k,v in sorted(d.items(), reverse=True) if "iOS" in k for x in v if x.get("isAvailable") and x.get("name", "").startswith("iPhone")]; print(ids[0] if ids else "")')
+          test -n "$DEVICE_ID"
+          xcodebuild test -project Blindbandit.xcodeproj -scheme Blindbandit \
+            -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+            -only-testing:BlindbanditTests CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
       - name: Archive and upload with fastlane (API key JWT, no Xcode account)
         run: fastlane beta

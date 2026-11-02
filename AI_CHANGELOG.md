@@ -1,3 +1,15 @@
+## 2026-11-02 — iOS 2.2.0 (44): call and message latency fixes
+
+- Decode production Agora `rtc` / `user_account` grants and join using the account bound to the token. Ignore stale engine callbacks.
+- Remove the 350ms timeout around the encrypted message POST: it could send a plaintext duplicate while the encrypted request still committed. Keep the existing bounded key discovery.
+- Skip LiveKit key discovery for Agora; remove repeated key retries before LiveKit connect and reuse known conversations for key retrieval.
+- Reserve outgoing calls before suspension and reject overlapping answer attempts.
+- Correct late-key status: receiving a key alone does not enable encryption on existing media tracks.
+- Keep encryption on slow key lookups; prefetch peer keys on chat open.
+- Run send acknowledgements independently of thread refresh (previously up to 6s); reduce foreground poll interval to 2s and prevent overlapping polls.
+- Destroy Agora sessions during teardown so the mic and engine do not survive hangup.
+- Validation: regression tests for production Agora payloads, old numeric grants and LiveKit decoding; simulator build/tests required before TestFlight upload.
+
 ## 2026-10-30 — Android 2.0.17 (21): Agora user-account join + call sounds parity
 
 Root cause (verified against production `GET /v1/social/rtc/config` and `worker/platform/rtc-provider.ts`): preferred provider is Agora, tokens are `buildTokenWithUserAccount`, and `rtcFields` returns `rtc_provider` plus nested `rtc` (`app_id`, `channel`, `user_account`, `token`) with `livekit: null`. Android 2.0.16 required a numeric `uid` under `agora`, never sent `rtc_provider=agora`, and on an Agora payload fed the Agora token to LiveKit. Release R8 also did not keep `io.agora.**`, and the manifest removed `FOREGROUND_SERVICE`, so Agora's microphone service cannot start on Android 14+ (targetSdk 36).

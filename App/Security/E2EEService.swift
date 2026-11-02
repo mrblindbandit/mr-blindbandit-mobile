@@ -139,7 +139,7 @@ final class E2EEService: ObservableObject {
     func devices(for handle: String, force: Bool = false) async throws -> [E2EEDeviceBundle] {
         let h = handle.lowercased()
         if !force, let c = bundleCache[h], Date().timeIntervalSince(c.at) < 600 { return c.devices }
-        let d = try await SecurityAPI.gated(.keys) { try await BlindbanditAPI.request("v1/social/keys/bundles/\(ChatRef.escape(h))") }
+        let d = try await SecurityAPI.gated(.keys) { try await BlindbanditAPI.request("v1/social/keys/bundles/\(ChatRef.escape(h))", timeout: 4) }
         let list = (SecurityAPI.data(d)["devices"] as? [[String: Any]] ?? []).compactMap { obj -> E2EEDeviceBundle? in
             guard var b = KeyWire.bundle(obj) else { return nil }
             b.handle = h
@@ -246,13 +246,11 @@ final class E2EEService: ObservableObject {
         guard ready, let id = identity, ServerFeatures.shared.isAvailable(.keys) else { return nil }
         let key = chatKey ?? "dmh:\(handle.lowercased())"
         if isE2EEDisabled(key) { return nil }
-        // Cap key fetch at 500ms — soft-missing bundles/me (~0.7s 404) must not burn a multi-second budget.
+        // Fetch only on a cold cache; chat-open prefetch normally makes this local.
+        // A slow key lookup is an error, never permission to silently downgrade encryption.
         let devs: [E2EEDeviceBundle]
-        do {
-            let fetched = await withHardTimeout(seconds: 0.5) { try await self.recipients(handles: [handle]) }
-            guard let got = fetched else { return nil }
-            devs = got
-        } catch is NeedsServerUpdate { return nil }
+        do { devs = try await recipients(handles: [handle]) }
+        catch is NeedsServerUpdate { return nil }
         guard !devs.isEmpty else { return nil }
         let p = stamp(payload, chatKey: key)
         let env = try MessageCrypto.encrypt(p, local: id, recipients: devs, storage: storage)

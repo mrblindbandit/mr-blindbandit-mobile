@@ -14,7 +14,7 @@ final class AgoraCallSession: NSObject {
     var onUserOffline: ((UInt) -> Void)?
     var onError: ((String) -> Void)?
 
-    func join(appId: String, channel: String, token: String, uid: UInt, video: Bool) throws {
+    func join(appId: String, channel: String, token: String, uid: UInt, userAccount: String? = nil, video: Bool) throws {
         leave()
         let config = AgoraRtcEngineConfig()
         config.appId = appId
@@ -36,12 +36,14 @@ final class AgoraCallSession: NSObject {
         options.publishCameraTrack = video
         options.autoSubscribeAudio = true
         options.autoSubscribeVideo = true
-        let code = eng.joinChannel(
-            byToken: token.isEmpty ? nil : token,
-            channelId: channel,
-            uid: uid,
-            mediaOptions: options
-        )
+        let code: Int32
+        if let userAccount, !userAccount.isEmpty {
+            code = eng.joinChannel(byToken: token.isEmpty ? nil : token,
+                channelId: channel, userAccount: userAccount, mediaOptions: options)
+        } else {
+            code = eng.joinChannel(byToken: token.isEmpty ? nil : token,
+                channelId: channel, uid: uid, mediaOptions: options)
+        }
         guard code == 0 else {
             AgoraRtcEngineKit.destroy()
             throw CommunicationsError.server("Agora join failed (code \(code)).")
@@ -84,6 +86,7 @@ final class AgoraCallSession: NSObject {
 extension AgoraCallSession: AgoraRtcEngineDelegate {
     nonisolated func rtcEngine(_ engine: AgoraRtcEngineKit, didJoinChannel channel: String, withUid uid: UInt, elapsed: Int) {
         Task { @MainActor in
+            guard self.engine === engine else { return }
             self.joined = true
             self.onJoined?()
         }
@@ -91,6 +94,7 @@ extension AgoraCallSession: AgoraRtcEngineDelegate {
 
     nonisolated func rtcEngine(_ engine: AgoraRtcEngineKit, didJoinedOfUid uid: UInt, elapsed: Int) {
         Task { @MainActor in
+            guard self.engine === engine else { return }
             self.remoteUids.insert(uid)
             self.onUserJoined?(uid)
         }
@@ -98,6 +102,7 @@ extension AgoraCallSession: AgoraRtcEngineDelegate {
 
     nonisolated func rtcEngine(_ engine: AgoraRtcEngineKit, didOfflineOfUid uid: UInt, reason: AgoraUserOfflineReason) {
         Task { @MainActor in
+            guard self.engine === engine else { return }
             self.remoteUids.remove(uid)
             self.onUserOffline?(uid)
         }
@@ -105,6 +110,7 @@ extension AgoraCallSession: AgoraRtcEngineDelegate {
 
     nonisolated func rtcEngine(_ engine: AgoraRtcEngineKit, didOccurError errorCode: AgoraErrorCode) {
         Task { @MainActor in
+            guard self.engine === engine else { return }
             self.onError?("Agora error \(errorCode.rawValue)")
         }
     }

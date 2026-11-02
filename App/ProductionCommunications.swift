@@ -718,12 +718,15 @@ enum BlindbanditAPI {
         _ = try? await request("v1/social/messages/\(escape(conversationID))/typing", method: "POST", body: ["typing": true])
     }
 
-    static func sendMessage(handle: String, body: String, silent: Bool = false, clientMsgID: String? = nil) async throws -> BlindbanditMessageResponse {
+    static func sendMessage(handle: String, body: String, silent: Bool = false, clientMsgID: String? = nil, requireEncryption: Bool = false) async throws -> BlindbanditMessageResponse {
         // Only key discovery may time out. Never race a message POST against a
         // plaintext fallback: the timed-out POST can still commit, duplicating the send.
         if let sent = try await E2EEService.shared.sendDM(
             handle: handle, payload: E2EEPayload(t: "text", body: body, silent: silent ? true : nil)
         ) { return sent }
+        if requireEncryption {
+            throw CommunicationsError.server("Secure messaging is not ready. Check the chat before retrying.")
+        }
         var fields: [String: Any] = ["handle": handle, "body": body]
         if silent { fields["silent"] = true }
         if let clientMsgID, !clientMsgID.isEmpty { fields["client_msg_id"] = clientMsgID }
@@ -1442,6 +1445,7 @@ final class ProductionCommunicationsService: ObservableObject {
 
     func flushPendingMessages(automaticOnly: Bool = false) async {
         guard !pendingFlushInFlight, !pendingMessages.isEmpty else { return }
+        guard !automaticOnly || E2EEService.shared.ready else { return }
         pendingFlushInFlight = true
         defer { pendingFlushInFlight = false }
         let items = pendingMessages.filter { !automaticOnly || $0.autoRetry == true }
@@ -1449,7 +1453,8 @@ final class ProductionCommunicationsService: ObservableObject {
         for item in items {
             do {
                 _ = try await BlindbanditAPI.sendMessage(handle: item.handle, body: item.body,
-                                                           clientMsgID: item.id.uuidString)
+                                                           clientMsgID: item.id.uuidString,
+                                                           requireEncryption: automaticOnly)
                 pendingMessages.removeAll { $0.id == item.id }
                 LocalComms.pending = pendingMessages
                 sentAny = true

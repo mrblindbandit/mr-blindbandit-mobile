@@ -1,3 +1,11 @@
+## 2026-11-02 — iOS 2.2.0 (45): connection recovery and polling isolation
+
+- Keep inbox, thread, incoming calls and auxiliary work in separate guarded polling lanes, so a stalled relay or push check cannot freeze messages.
+- Identify transient encryption-key discovery failures separately; retry safely after a successful inbox refresh without silently downgrading encryption.
+- Never automatically retry an ambiguous message POST; its response may be lost after the server accepted it. Existing queued messages remain available for explicit retry.
+- Recover profile bootstrap independently when the inbox succeeds but profile loading fails.
+- Increase the key lookup timeout for slow connections. Live user experience needs verification on real devices.
+
 ## 2026-11-02 — iOS 2.2.0 (44): call and message latency fixes
 
 - Decode production Agora `rtc` / `user_account` grants and join using the account bound to the token. Ignore stale engine callbacks.

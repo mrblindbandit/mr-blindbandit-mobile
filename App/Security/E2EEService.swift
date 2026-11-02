@@ -4,6 +4,12 @@ import UIKit
 import CryptoKit
 #endif
 
+/// A key lookup failed before any message was submitted; it is safe to retry.
+struct MessageKeyLookupError: LocalizedError {
+    let underlying: Error
+    var errorDescription: String? { "Waiting for secure connection. Please try again." }
+}
+
 /// Coordinates keys, encryption and the plaintext cache. Every server call is gated: when the key routes are
 /// missing, messages keep going out the old plaintext way and old plaintext chats keep working.
 @MainActor
@@ -139,7 +145,7 @@ final class E2EEService: ObservableObject {
     func devices(for handle: String, force: Bool = false) async throws -> [E2EEDeviceBundle] {
         let h = handle.lowercased()
         if !force, let c = bundleCache[h], Date().timeIntervalSince(c.at) < 600 { return c.devices }
-        let d = try await SecurityAPI.gated(.keys) { try await BlindbanditAPI.request("v1/social/keys/bundles/\(ChatRef.escape(h))", timeout: 4) }
+        let d = try await SecurityAPI.gated(.keys) { try await BlindbanditAPI.request("v1/social/keys/bundles/\(ChatRef.escape(h))", timeout: 8) }
         let list = (SecurityAPI.data(d)["devices"] as? [[String: Any]] ?? []).compactMap { obj -> E2EEDeviceBundle? in
             guard var b = KeyWire.bundle(obj) else { return nil }
             b.handle = h
@@ -251,6 +257,7 @@ final class E2EEService: ObservableObject {
         let devs: [E2EEDeviceBundle]
         do { devs = try await recipients(handles: [handle]) }
         catch is NeedsServerUpdate { return nil }
+        catch { throw MessageKeyLookupError(underlying: error) }
         guard !devs.isEmpty else { return nil }
         let p = stamp(payload, chatKey: key)
         let env = try MessageCrypto.encrypt(p, local: id, recipients: devs, storage: storage)

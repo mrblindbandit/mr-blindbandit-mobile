@@ -146,7 +146,7 @@ struct MessagesTabView: View {
                                 Image(systemName: "clock").accessibilityHidden(true)
                             }
                             .accessibilityElement(children: .combine)
-                            .accessibilityHint("Sends automatically when you're back online")
+                            .accessibilityHint(item.autoRetry == true ? "Retries automatically when the connection recovers" : "Check the chat before using Send now")
                             .swipeActions {
                                 Button("Discard", role: .destructive) { communications.discardPending(item) }
                             }
@@ -1013,7 +1013,7 @@ struct ConversationThreadView: View {
         LocalComms.setDraft("", for: conversationID)
         Task {
             let ok = await communications.sendMessage(recipient: handle, body: body, silent: silent) != nil
-            if silent {
+            if silent && ok {
                 UIAccessibility.post(notification: .announcement, argument: "Sent silently")
             } else if ok, UserDefaults.standard.object(forKey: SettingsKey.announceOutgoingSend) as? Bool ?? true {
                 UIAccessibility.post(notification: .announcement, argument: "Sent")
@@ -1557,7 +1557,7 @@ struct MessageStatusCaption: View {
 enum MessageStatus {
     /// "Sent", "Delivered", "Read 5:08 AM", "Read Yesterday 9:14 PM", "Read Mon 9:14 PM" or "Read Oct 3, 9:14 PM".
     static func caption(for message: BlindbanditServerMessage, showRead: Bool, now: Date = Date()) -> String {
-        if message.id.hasPrefix("local-") { return "Sent" }
+        if message.id.hasPrefix("local-") { return "Sending…" }
         return caption(sent: message.created_at, delivered: message.delivered_at, read: message.read_at, showRead: showRead, now: now)
     }
 

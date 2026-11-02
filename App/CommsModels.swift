@@ -85,6 +85,8 @@ struct PendingMessage: Identifiable, Codable, Equatable {
     let handle: String
     let body: String
     var created = Date()
+    /// Only key-discovery failures are safe to retry automatically: no message POST was started.
+    var autoRetry: Bool? = nil
 }
 
 /// Small preferences kept only on this iPhone (no server copy exists for these).

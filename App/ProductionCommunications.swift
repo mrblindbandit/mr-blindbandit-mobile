@@ -496,6 +496,15 @@ enum CommsNetwork {
         return "Still connecting…"
     }
 
+    /// Clear only connection banners on recovery; preserve unrelated action/error messages.
+    static func statusAfterRecovery(_ current: String, hasPending: Bool) -> String {
+        let value = current.lowercased()
+        guard value.hasPrefix("you're offline.") || value == "still connecting…" ||
+              value == "can't reach blindbandit. retrying…" ||
+              (value.hasPrefix("waiting for a secure connection.") && !hasPending) else { return current }
+        return hasPending ? "Connection restored. Check waiting messages." : ""
+    }
+
     static func isTransient(_ error: Error) -> Bool {
         if let url = error as? URLError {
             return [
@@ -1195,6 +1204,7 @@ final class ProductionCommunicationsService: ObservableObject {
             conversations = fresh
             prefetchThreads()
             loadError = ""
+            statusMessage = CommsNetwork.statusAfterRecovery(statusMessage, hasPending: !pendingMessages.isEmpty)
             softBanner = ""
             softRetryAttempt = 0
             if !myProfileID.isEmpty {
@@ -1471,6 +1481,8 @@ final class ProductionCommunicationsService: ObservableObject {
             }
         }
         if sentAny {
+            statusMessage = pendingMessages.isEmpty ? "Waiting messages sent." : "Some messages are still waiting."
+            UIAccessibility.post(notification: .announcement, argument: statusMessage)
             await refreshConversations()
             if let id = openConversationID { await reloadThread(id) }
         }

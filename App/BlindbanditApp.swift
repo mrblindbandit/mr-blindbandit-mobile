@@ -386,7 +386,7 @@ struct MainTabs: View {
             guard !StoreScreenshotMode.isActive else { return }
             Task {
                 await communications.refreshConversations()
-                await communications.flushPendingMessages()
+                await communications.flushPendingMessages(automaticOnly: true)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .chronicleArticleDeepLink)) { note in

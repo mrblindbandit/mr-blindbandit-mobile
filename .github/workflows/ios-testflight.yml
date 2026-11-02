@@ -1,7 +1,7 @@
 name: iOS TestFlight upload
 on:
   push:
-    branches: [fix/ios-latency-44]
+    branches: [fix/ios-connection-45]
   workflow_dispatch:
 permissions:
   contents: read

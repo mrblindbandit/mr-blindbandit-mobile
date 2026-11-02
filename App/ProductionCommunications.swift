@@ -490,9 +490,19 @@ enum CommsNetwork {
                 break
             }
         }
+        if error is MessageKeyLookupError { return "Waiting for secure connection…" }
         if error is DecodingError { return "Updating chats…" }
         if let auth = error as? AuthServiceError { return auth.errorDescription ?? "Signing in…" }
         return "Still connecting…"
+    }
+
+    /// Clear only connection banners on recovery; preserve unrelated action/error messages.
+    static func statusAfterRecovery(_ current: String, hasPending: Bool) -> String {
+        let value = current.lowercased()
+        guard value.hasPrefix("you're offline.") || value == "still connecting…" ||
+              value == "can't reach blindbandit. retrying…" ||
+              (value.hasPrefix("waiting for a secure connection.") && !hasPending) else { return current }
+        return hasPending ? "Connection restored. Check waiting messages." : ""
     }
 
     static func isTransient(_ error: Error) -> Bool {
@@ -502,6 +512,7 @@ enum CommsNetwork {
                 .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed
             ].contains(url.code)
         }
+        if let keyError = error as? MessageKeyLookupError { return isTransient(keyError.underlying) }
         if error is DecodingError { return true }
         if case AuthServiceError.noActiveSession = error { return true }
         if case AuthServiceError.sdkNotReady = error { return true }
@@ -716,12 +727,15 @@ enum BlindbanditAPI {
         _ = try? await request("v1/social/messages/\(escape(conversationID))/typing", method: "POST", body: ["typing": true])
     }
 
-    static func sendMessage(handle: String, body: String, silent: Bool = false, clientMsgID: String? = nil) async throws -> BlindbanditMessageResponse {
+    static func sendMessage(handle: String, body: String, silent: Bool = false, clientMsgID: String? = nil, requireEncryption: Bool = false) async throws -> BlindbanditMessageResponse {
         // Only key discovery may time out. Never race a message POST against a
         // plaintext fallback: the timed-out POST can still commit, duplicating the send.
         if let sent = try await E2EEService.shared.sendDM(
             handle: handle, payload: E2EEPayload(t: "text", body: body, silent: silent ? true : nil)
         ) { return sent }
+        if requireEncryption {
+            throw CommunicationsError.server("Secure messaging is not ready. Check the chat before retrying.")
+        }
         var fields: [String: Any] = ["handle": handle, "body": body]
         if silent { fields["silent"] = true }
         if let clientMsgID, !clientMsgID.isEmpty { fields["client_msg_id"] = clientMsgID }
@@ -1032,7 +1046,13 @@ final class ProductionCommunicationsService: ObservableObject {
     /// `livekit` or `agora` for the active call.
     private(set) var activeRtcProvider = "livekit"
     private var pollTimer: Timer?
-    private var pollInFlight = false
+    private var inboxPollInFlight = false
+    private var threadPollInFlight = false
+    private var incomingPollInFlight = false
+    private var auxiliaryPollInFlight = false
+    private var lastAuxiliaryPoll = Date.distantPast
+    private var pendingFlushInFlight = false
+    private var bootstrapInFlight = false
     private var ringTimeout: Task<Void, Never>?
     /// The outgoing call is marked missed by the server after a short wait; we stop ringing at 45 seconds
     /// and always send end so the call never stays stuck as ringing.
@@ -1057,7 +1077,9 @@ final class ProductionCommunicationsService: ObservableObject {
     }
 
     func bootstrap(force: Bool = false) async {
-        guard force || !bootstrapped else { return }
+        guard (force || !bootstrapped), !bootstrapInFlight else { return }
+        bootstrapInFlight = true
+        defer { bootstrapInFlight = false }
         isLoading = true
         defer { isLoading = false }
         // Instant inbox: render on-device cache before any network so a slow/transient failure never shows "Couldn't load".
@@ -1115,7 +1137,8 @@ final class ProductionCommunicationsService: ObservableObject {
             softRetryTask = nil
             statusMessage = ""
             prefetchThreads()
-            await flushPendingMessages()
+            if case .failure = profile { scheduleSoftRetry() }
+            await flushPendingMessages(automaticOnly: true)
         case .failure(let error):
             // Never leave the owner on full-screen "The request timed out." Keep cache; soft-retry.
             loadError = ""
@@ -1138,8 +1161,9 @@ final class ProductionCommunicationsService: ObservableObject {
         let delay = min(30.0, pow(2.0, Double(exp))) // 2,4,8,16,32 → cap 30
         softRetryTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            guard !Task.isCancelled else { return }
-            await self?.bootstrap(force: true)
+            guard !Task.isCancelled, let self else { return }
+            self.softRetryTask = nil
+            await self.bootstrap(force: true)
         }
     }
 
@@ -1180,10 +1204,18 @@ final class ProductionCommunicationsService: ObservableObject {
             conversations = fresh
             prefetchThreads()
             loadError = ""
+            statusMessage = CommsNetwork.statusAfterRecovery(statusMessage, hasPending: !pendingMessages.isEmpty)
             softBanner = ""
             softRetryAttempt = 0
-            softRetryTask?.cancel()
-            softRetryTask = nil
+            if !myProfileID.isEmpty {
+                softRetryTask?.cancel()
+                softRetryTask = nil
+            } else if softRetryTask == nil {
+                scheduleSoftRetry()
+            }
+            if pendingMessages.contains(where: { $0.autoRetry == true }) {
+                Task { await self.flushPendingMessages(automaticOnly: true) }
+            }
         } catch {
             loadError = ""
             if conversations.isEmpty {
@@ -1351,19 +1383,30 @@ final class ProductionCommunicationsService: ObservableObject {
         pollTimer?.invalidate()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self, UIApplication.shared.applicationState == .active, !self.pollInFlight else { return }
-                self.pollInFlight = true
-                defer { self.pollInFlight = false }
-                // Parallel: relay/E2EE must not serialize behind conversation refresh (PR #84 claimed this; ship it).
-                async let conversations: Void = self.refreshConversations()
-                async let relay: Void = E2EEService.shared.pollRelay()
-                async let scheduled: Void = ScheduledSender.flushDue(self)
-                async let incoming: Void = self.checkIncomingCalls()
-                if let id = self.openConversationID {
-                    async let thread: Void = self.reloadThread(id)
-                    _ = await (conversations, relay, scheduled, thread, incoming)
-                } else {
-                    _ = await (conversations, relay, scheduled, incoming)
+                guard let self, UIApplication.shared.applicationState == .active else { return }
+                // Each lane has its own guard: a stalled relay or call request must never
+                // block inbox or thread updates. Overlapping requests in one lane are rejected.
+                if !self.inboxPollInFlight {
+                    self.inboxPollInFlight = true
+                    Task { defer { self.inboxPollInFlight = false }; await self.refreshConversations() }
+                }
+                if let id = self.openConversationID, !self.threadPollInFlight {
+                    self.threadPollInFlight = true
+                    Task { defer { self.threadPollInFlight = false }; await self.reloadThread(id) }
+                }
+                if !self.incomingPollInFlight {
+                    self.incomingPollInFlight = true
+                    Task { defer { self.incomingPollInFlight = false }; await self.checkIncomingCalls() }
+                }
+                if !self.auxiliaryPollInFlight, Date().timeIntervalSince(self.lastAuxiliaryPoll) >= 10 {
+                    self.auxiliaryPollInFlight = true
+                    self.lastAuxiliaryPoll = Date()
+                    Task {
+                        defer { self.auxiliaryPollInFlight = false }
+                        async let relay: Void = E2EEService.shared.pollRelay()
+                        async let scheduled: Void = ScheduledSender.flushDue(self)
+                        _ = await (relay, scheduled)
+                    }
                 }
             }
         }
@@ -1410,19 +1453,39 @@ final class ProductionCommunicationsService: ObservableObject {
 
     // MARK: Offline queue (messages typed with no connection are sent when the network returns)
 
-    func flushPendingMessages() async {
-        guard !pendingMessages.isEmpty else { return }
-        for item in pendingMessages {
+    func flushPendingMessages(automaticOnly: Bool = false) async {
+        guard !pendingFlushInFlight, !pendingMessages.isEmpty else { return }
+        guard !automaticOnly || E2EEService.shared.ready else { return }
+        pendingFlushInFlight = true
+        defer { pendingFlushInFlight = false }
+        let items = pendingMessages.filter { !automaticOnly || $0.autoRetry == true }
+        var sentAny = false
+        for item in items {
             do {
-                _ = try await BlindbanditAPI.sendMessage(handle: item.handle, body: item.body)
+                _ = try await BlindbanditAPI.sendMessage(handle: item.handle, body: item.body,
+                                                           clientMsgID: item.id.uuidString,
+                                                           requireEncryption: automaticOnly)
                 pendingMessages.removeAll { $0.id == item.id }
+                LocalComms.pending = pendingMessages
+                sentAny = true
+            } catch let error as MessageKeyLookupError where CommsNetwork.isTransient(error) {
+                break // no POST was started, so a later automatic retry is safe
             } catch {
+                // A POST might have reached the server even if its response was lost.
+                // Stop automatic retries to avoid sending duplicates.
+                if let index = pendingMessages.firstIndex(where: { $0.id == item.id }) {
+                    pendingMessages[index].autoRetry = false
+                    LocalComms.pending = pendingMessages
+                }
                 break
             }
         }
-        LocalComms.pending = pendingMessages
-        await refreshConversations()
-        if let id = openConversationID { await reloadThread(id) }
+        if sentAny {
+            statusMessage = pendingMessages.isEmpty ? "Waiting messages sent." : "Some messages are still waiting."
+            UIAccessibility.post(notification: .announcement, argument: statusMessage)
+            await refreshConversations()
+            if let id = openConversationID { await reloadThread(id) }
+        }
     }
 
     func discardPending(_ item: PendingMessage) {
@@ -1441,7 +1504,7 @@ final class ProductionCommunicationsService: ObservableObject {
             statusMessage = "Enter a Blindbandit username and a message."
             return nil
         }
-        // Optimistic: bubble + "Sent" caption immediately; network runs after VO/haptics.
+        // Show a pending bubble immediately; mark it sent only when the server confirms.
         let lid = "local-" + UUID().uuidString
         var localID: String?
         if let open = openConversationID, conversation(id: open)?.other?.handle.lowercased() == handle.lowercased() {
@@ -1453,9 +1516,7 @@ final class ProductionCommunicationsService: ObservableObject {
         }
         AppHaptics.light()
         UIAccessibility.post(notification: .announcement, argument: "Sending")
-        CallSounds.messageSent()
-        UIAccessibility.post(notification: .announcement, argument: "Sent")
-        statusMessage = "Message sent to @\(handle)."
+        statusMessage = "Sending to @\(handle)…"
         do {
             let response = try await BlindbanditAPI.sendMessage(
                 handle: handle, body: String(text.prefix(4000)), silent: silent, clientMsgID: localID ?? lid
@@ -1472,6 +1533,8 @@ final class ProductionCommunicationsService: ObservableObject {
                     messages[i] = real
                 }
             }
+            CallSounds.messageSent()
+            statusMessage = "Message sent to @\(handle)."
             let convID = response.conversation_id
             let ackID = localID ?? lid
             // Ack is bookkeeping. It must not delay showing the server echo by up to 6s.
@@ -1481,11 +1544,21 @@ final class ProductionCommunicationsService: ObservableObject {
                 await self?.refreshConversations()
             }
             return response.conversation_id
-        } catch let error as URLError where [URLError.Code.notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotConnectToHost].contains(error.code) {
+        } catch let error as MessageKeyLookupError where CommsNetwork.isTransient(error) {
+            if let localID { messages.removeAll { $0.id == localID } }
+            var pending = PendingMessage(handle: handle, body: String(text.prefix(4000)))
+            pending.autoRetry = true // key discovery failed before submission
+            pendingMessages.append(pending)
+            LocalComms.pending = pendingMessages
+            statusMessage = "Waiting for a secure connection. Your message will retry automatically."
+            UIAccessibility.post(notification: .announcement, argument: statusMessage)
+            AppHaptics.warning()
+            return nil
+        } catch let error as URLError where CommsNetwork.isTransient(error) {
             if let localID { messages.removeAll { $0.id == localID } }
             pendingMessages.append(PendingMessage(handle: handle, body: String(text.prefix(4000))))
             LocalComms.pending = pendingMessages
-            statusMessage = "You're offline. The message to @\(handle) will send when you're back online."
+            statusMessage = "Couldn't confirm whether your message was sent. Check the chat before retrying."
             UIAccessibility.post(notification: .announcement, argument: statusMessage)
             AppHaptics.warning()
             return nil

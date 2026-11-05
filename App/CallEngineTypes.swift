@@ -15,7 +15,37 @@ struct CallParticipantInfo: Identifiable {
     let videoTrack: VideoTrack?
     let screenTrack: VideoTrack?
     /// Spoken spatial seat, such as "on your left". Empty when this call is not seated.
-    let seat: String = ""
+    let seat: String
+
+    /// Swift 5.0's memberwise initializer omits properties that have a default value,
+    /// so `seat:` has to be a real parameter. Call sites that are not spatially seated omit it.
+    init(
+        id: String,
+        name: String,
+        isLocal: Bool,
+        isSpeaking: Bool,
+        micOn: Bool,
+        cameraOn: Bool,
+        sharingScreen: Bool,
+        quality: ConnectionQuality,
+        handRaised: Bool,
+        videoTrack: VideoTrack?,
+        screenTrack: VideoTrack?,
+        seat: String = ""
+    ) {
+        self.id = id
+        self.name = name
+        self.isLocal = isLocal
+        self.isSpeaking = isSpeaking
+        self.micOn = micOn
+        self.cameraOn = cameraOn
+        self.sharingScreen = sharingScreen
+        self.quality = quality
+        self.handRaised = handRaised
+        self.videoTrack = videoTrack
+        self.screenTrack = screenTrack
+        self.seat = seat
+    }
 
     var qualityLabel: String { CallParticipantInfo.label(for: quality) }
 

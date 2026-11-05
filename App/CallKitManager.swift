@@ -444,8 +444,14 @@ extension CallKitManager: CXProviderDelegate {
     }
 
     nonisolated func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
-        try? audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth, .allowBluetoothA2DP, .mixWithOthers])
-        try? AudioManager.shared.setEngineAvailability(.default)
+        let agora = MainActor.assumeIsolated { self.service?.activeRtcProvider == "agora" }
+        if agora {
+            // Media volume. Voice-chat mode would turn Apple's noise suppression back on.
+            CallMediaSession.activateAgoraMediaVolume(audioSession)
+        } else {
+            try? audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth, .allowBluetoothA2DP, .mixWithOthers])
+            try? AudioManager.shared.setEngineAvailability(.default)
+        }
         // Keep US dial/ringback looping after CallKit seizes the session — do NOT stop progress tones here.
         Task { @MainActor in CallSounds.resumeOutgoingProgressIfNeeded() }
     }

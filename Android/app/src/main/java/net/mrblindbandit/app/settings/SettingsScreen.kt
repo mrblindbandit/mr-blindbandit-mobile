@@ -219,8 +219,14 @@ private fun SettingsRoot(
                 ToggleRow("Start video calls with camera off", prefs.startCallsWithCameraOff, "Turn your camera on when you are ready", prefs::setStartCallsWithCameraOff)
                 ToggleRow("Use speakerphone by default", prefs.speakerphoneByDefault, "Route call audio to the loudspeaker", prefs::setSpeakerphoneByDefault)
                 ToggleRow("Prefer Bluetooth headset", prefs.preferBluetoothHeadset, "Use a connected Bluetooth headset instead of the earpiece when speaker is off", prefs::setPreferBluetoothHeadset)
-                ToggleRow("Echo cancellation", prefs.echoCancellation, "Reduce echo during calls", prefs::setEchoCancellation)
-                ToggleRow("Noise suppression", prefs.noiseSuppression, "Reduce background noise during calls", prefs::setNoiseSuppression)
+                Text(
+                    "Echo cancellation stays on so speakerphone does not echo.",
+                    modifier = Modifier.semantics { contentDescription = "Echo cancellation stays on so speakerphone does not echo." },
+                )
+                Text(
+                    "Background sound is kept. Noise suppression, including AI noise suppression, is off.",
+                    modifier = Modifier.semantics { contentDescription = "Background sound is kept. Noise suppression, including AI noise suppression, is off." },
+                )
             }
         }
 

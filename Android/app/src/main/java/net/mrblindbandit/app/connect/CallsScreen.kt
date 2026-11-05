@@ -310,6 +310,15 @@ private fun ActiveCallPanel(communications: ProductionCommunicationsService, hap
                 if (communications.isRinging || communications.isOnHold) liveRegion = LiveRegionMode.Polite
             })
             Text(communications.callEncryptionLabel, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite; contentDescription = communications.callEncryptionLabel })
+            if (communications.spatialSeatSummary.isNotBlank()) {
+                Text(
+                    communications.spatialSeatSummary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.semantics {
+                        contentDescription = "Where people are. ${communications.spatialSeatSummary}"
+                    },
+                )
+            }
             if (communications.isVideoCall && communications.activeRtcProvider != "agora") communications.room?.let { CallVideoGrid(it) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 CallControl(if (communications.micEnabled) "Mute" else "Unmute", communications.micEnabled) { haptics.tap(); communications.toggleMic() }

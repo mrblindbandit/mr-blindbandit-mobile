@@ -1039,6 +1039,12 @@ final class ProductionCommunicationsService: ObservableObject {
     @Published private(set) var incomingCall: BlindbanditIncomingCall?
     @Published private(set) var missedGroupCalls: [BlindbanditIncomingCall] = []
     @Published private(set) var localQuality: ConnectionQuality = .unknown
+    /// Spoken seats, for example "Emma, in front of you". Empty off an Agora call.
+    @Published private(set) var spatialSeatSummary = ""
+    private var spatialDirections: [UInt: String] = [:]
+    private var spatialNames: [UInt: String] = [:]
+    private var lastSpatialSpeaker: UInt?
+    private var lastExternalRoute: String?
 
     private var room: Room?
     /// Active when server returned provider=agora for this call.
@@ -1751,6 +1757,12 @@ final class ProductionCommunicationsService: ObservableObject {
     }
 
     private func applySpeaker() {
+        if let agoraSession {
+            // Agora keeps a connected headset ahead of this. Forcing the port would
+            // steal wired and Bluetooth routes and fight the media-volume scenario.
+            agoraSession.setSpeakerphone(speakerOn)
+            return
+        }
         try? AVAudioSession.sharedInstance().overrideOutputAudioPort(speakerOn ? .speaker : .none)
     }
 
@@ -1953,11 +1965,17 @@ final class ProductionCommunicationsService: ObservableObject {
         callEncrypted = false
         callEncryptionLabel = "Media encrypted in transit (Agora); frame E2EE follow-up"
         let session = AgoraCallSession()
-        session.onUserJoined = { [weak self] _ in
-            Task { @MainActor in self?.agoraRemoteChanged() }
+        session.onUserJoined = { [weak self] uid in
+            Task { @MainActor in self?.agoraRemoteChanged(joined: uid) }
         }
-        session.onUserOffline = { [weak self] _ in
-            Task { @MainActor in self?.agoraRemoteChanged() }
+        session.onUserOffline = { [weak self] uid in
+            Task { @MainActor in self?.agoraRemoteChanged(left: uid) }
+        }
+        session.onActiveSpeaker = { [weak self] uid in
+            Task { @MainActor in self?.announceSpatialSpeaker(uid) }
+        }
+        session.onAudioRoute = { [weak self] route in
+            Task { @MainActor in self?.noteAgoraRoute(route) }
         }
         session.onError = { [weak self] message in
             Task { @MainActor in
@@ -1970,7 +1988,8 @@ final class ProductionCommunicationsService: ObservableObject {
             token: grant.token,
             uid: grant.uid,
             userAccount: grant.userAccount,
-            video: video
+            video: video,
+            defaultToSpeaker: video
         )
         agoraSession = session
         room = nil
@@ -2009,6 +2028,10 @@ final class ProductionCommunicationsService: ObservableObject {
             if !callEncryptionLabel.isEmpty { connected += " " + callEncryptionLabel + "." }
             statusMessage = connected
             UIAccessibility.post(notification: .announcement, argument: statusMessage)
+        }
+        if let route = session.currentRoute, route.isExternal, lastExternalRoute != route.label {
+            lastExternalRoute = route.label
+            UIAccessibility.post(notification: .announcement, argument: "Audio route \(route.label)")
         }
     }
 
@@ -2086,7 +2109,7 @@ final class ProductionCommunicationsService: ObservableObject {
     }
 
     /// Agora remote peer join/leave — keep ringback / CallKit parity with LiveKit path.
-    private func agoraRemoteChanged() {
+    private func agoraRemoteChanged(joined joinedUID: UInt? = nil, left leftUID: UInt? = nil) {
         guard agoraSession != nil, isInCall || isRinging else { return }
         let remotes = agoraSession?.remoteUids ?? []
         let ids = Set(remotes.map { String($0) })
@@ -2095,13 +2118,90 @@ final class ProductionCommunicationsService: ObservableObject {
             statusMessage = "Connected with \(callPeerName)."
             UIAccessibility.post(notification: .announcement, argument: statusMessage)
         }
-        if hadRemote, ids.isEmpty {
-            finishCall(notifyServer: true, announcement: "\(callPeerName.isEmpty ? "The other person" : callPeerName) left the call.")
+        let isGroup = callGroupID != nil
+        if CallSpatialLayout.shouldEndImmediately(isGroup: isGroup, remotesRemaining: ids.count, hadRemote: hadRemote) {
+            let name = leftUID.flatMap { spatialNames[$0] } ?? (callPeerName.isEmpty ? "The other person" : callPeerName)
+            finishCall(notifyServer: true, announcement: "\(name) left the call.")
             return
         }
+        if hadRemote, ids.isEmpty, isGroup {
+            if aloneSince == nil {
+                aloneSince = Date()
+                let name = leftUID.flatMap { spatialNames[$0] } ?? "The last person"
+                UIAccessibility.post(notification: .announcement, argument: "\(name) left. You are alone in the call. It stays open for two minutes.")
+            }
+            spatialDirections = [:]
+            spatialNames = [:]
+            spatialSeatSummary = ""
+            hadRemote = true
+            knownParticipantIDs = ids
+            refreshParticipants()
+            return
+        }
+        if !ids.isEmpty { aloneSince = nil }
         hadRemote = hadRemote || !ids.isEmpty
         knownParticipantIDs = ids
+        syncSpatialSeats(joined: joinedUID, left: leftUID)
         refreshParticipants()
+    }
+
+    private func syncSpatialSeats(joined joinedUID: UInt?, left leftUID: UInt?) {
+        let uids = (agoraSession?.remoteUids ?? []).sorted()
+        let seats = CallSpatialLayout.seats(count: uids.count)
+        var assignments: [(uid: UInt, seat: CallSpatialSeat)] = []
+        var lines: [String] = []
+        var nextDirections: [UInt: String] = [:]
+        var nextNames: [UInt: String] = [:]
+        for (index, uid) in uids.enumerated() {
+            let seat = seats[index]
+            let name = spatialDisplayName(index: index, count: uids.count)
+            nextDirections[uid] = seat.spokenDirection
+            nextNames[uid] = name
+            lines.append("\(name), \(seat.spokenDirection)")
+            assignments.append((uid, seat))
+            if uid == joinedUID {
+                UIAccessibility.post(notification: .announcement, argument: CallSpatialLayout.joinedAnnouncement(name: name, direction: seat.spokenDirection))
+            } else if let previous = spatialDirections[uid], previous != seat.spokenDirection {
+                UIAccessibility.post(notification: .announcement, argument: CallSpatialLayout.movedAnnouncement(name: name, direction: seat.spokenDirection))
+            }
+        }
+        if let leftUID, !uids.isEmpty {
+            let name = spatialNames[leftUID] ?? "Someone"
+            UIAccessibility.post(notification: .announcement, argument: "\(name) left the call.")
+        }
+        spatialDirections = nextDirections
+        spatialNames = nextNames
+        spatialSeatSummary = lines.joined(separator: ". ")
+        agoraSession?.applySpatialSeats(assignments)
+    }
+
+    private func spatialDisplayName(index: Int, count: Int) -> String {
+        if callGroupID == nil && count == 1 {
+            let name = callPeerName.trimmingCharacters(in: .whitespacesAndNewlines)
+            return name.isEmpty ? "The other person" : name
+        }
+        if count == 1 { return "Someone" }
+        return "Person \(index + 1)"
+    }
+
+    private func announceSpatialSpeaker(_ uid: UInt) {
+        guard isInCall, !isRinging, lastSpatialSpeaker != uid else { return }
+        lastSpatialSpeaker = uid
+        let name = spatialNames[uid] ?? spatialDisplayName(index: 0, count: max(spatialNames.count, 1))
+        UIAccessibility.post(notification: .announcement, argument: CallSpatialLayout.speakingAnnouncement(name: name, direction: spatialDirections[uid]))
+    }
+
+    private func noteAgoraRoute(_ route: CallAudioRoute) {
+        speakerOn = route.isSpeaker
+        guard isInCall, !isRinging else { return }
+        if route.isExternal {
+            guard route.label != lastExternalRoute else { return }
+            lastExternalRoute = route.label
+            UIAccessibility.post(notification: .announcement, argument: "Audio route \(route.label)")
+        } else if lastExternalRoute != nil {
+            lastExternalRoute = nil
+            UIAccessibility.post(notification: .announcement, argument: "Audio route \(route.label)")
+        }
     }
 
     // MARK: Room state
@@ -2127,11 +2227,12 @@ final class ProductionCommunicationsService: ObservableObject {
         for uid in (agoraSession?.remoteUids ?? []).sorted() {
             list.append(CallParticipantInfo(
                 id: String(uid),
-                name: callPeerName.isEmpty ? "Caller \(uid)" : callPeerName,
+                name: spatialNames[uid] ?? (callPeerName.isEmpty ? "Caller \(uid)" : callPeerName),
                 isLocal: false,
-                isSpeaking: false, micOn: true, cameraOn: isVideoCall,
+                isSpeaking: lastSpatialSpeaker == uid, micOn: !locallyMuted.contains(String(uid)), cameraOn: isVideoCall,
                 sharingScreen: false, quality: .unknown, handRaised: raisedHands.contains(String(uid)),
-                videoTrack: nil, screenTrack: nil
+                videoTrack: nil, screenTrack: nil,
+                seat: spatialDirections[uid] ?? ""
             ))
         }
         participants = list
@@ -2526,6 +2627,11 @@ final class ProductionCommunicationsService: ObservableObject {
         callSeconds = 0
         participants = []
         activeSpeakerID = nil
+        spatialSeatSummary = ""
+        spatialDirections = [:]
+        spatialNames = [:]
+        lastSpatialSpeaker = nil
+        lastExternalRoute = nil
         callGroupID = nil
         callGroupName = nil
         screenSharing = false
@@ -2708,6 +2814,11 @@ final class ProductionCommunicationsService: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 if !self.isRinging { self.callSeconds += 1 }
+                if self.agoraSession != nil, let since = self.aloneSince, self.callGroupID != nil,
+                   Date().timeIntervalSince(since) > CallSpatialLayout.groupAloneSeconds {
+                    self.finishCall(notifyServer: true, announcement: "Everyone left. Call ended.")
+                    return
+                }
                 self.refreshParticipants()
             }
         }
@@ -2732,12 +2843,18 @@ final class ProductionCommunicationsService: ObservableObject {
 
     /// Mutes one person's audio on this phone only (they aren't told).
     func toggleLocalMute(participantID: String) {
-        guard let p = room?.remoteParticipants.values.first(where: { $0.identity?.stringValue == participantID }) else { return }
         let mute = !locallyMuted.contains(participantID)
-        for pub in p.audioTracks { (pub.track as? RemoteAudioTrack)?.volume = mute ? 0 : 1 }
+        if let agoraSession, let uid = UInt(participantID) {
+            agoraSession.muteRemote(uid: uid, muted: mute)
+        } else if let p = room?.remoteParticipants.values.first(where: { $0.identity?.stringValue == participantID }) {
+            for pub in p.audioTracks { (pub.track as? RemoteAudioTrack)?.volume = mute ? 0 : 1 }
+        } else {
+            return
+        }
         if mute { locallyMuted.insert(participantID) } else { locallyMuted.remove(participantID) }
         let name = participants.first(where: { $0.id == participantID })?.name ?? "them"
         UIAccessibility.post(notification: .announcement, argument: mute ? "\(name) muted for you" : "\(name) unmuted for you")
+        refreshParticipants()
     }
 
     /// Admin only. Needs POST /v1/social/calls/{id}/remove (see addendum).

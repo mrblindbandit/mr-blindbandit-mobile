@@ -28,6 +28,28 @@ Clients also accept flat `agora_app_id` / `agora_token` and legacy flat LiveKit 
 - CallKit / dial / ringback still run; remote join stops ringback for both providers.
 - Agora frame E2EE via `call_key` and Agora video canvas / screen share are **follow-ups** (documented in call encryption label).
 
+## Agora call audio (2.3.0)
+
+Both clients apply this before join. The profile only produces stereo when the SDK is on media volume, which is the game-streaming scenario.
+
+| Setting | Value |
+| --- | --- |
+| Profile | `AUDIO_PROFILE_MUSIC_HIGH_QUALITY_STEREO` (48 kHz, stereo, up to 128 kbps) |
+| Scenario | `AUDIO_SCENARIO_GAME_STREAMING` (media volume, not the telephony volume) |
+| Capture | `setAdvancedAudioOptions` with `audioProcessingChannels = 2` |
+| AI noise suppression | `setAINSMode(false)` |
+| Traditional ANS | `che.audio.ans.enable = false` |
+| Echo cancellation | stays on (`che.audio.aec.enable = true`) |
+| AGC | on, at unity playback/recording gain (100), so quiet speech is lifted without a boost |
+| Spatial | `ILocalSpatialAudioEngine` / `AgoraLocalSpatialAudioKit`: self at the origin, remotes on a circle, `removeRemotePosition` when someone leaves |
+| Doppler | off |
+| Air absorption | on, attenuation 0.08, about 1.6 m away so speech stays clear |
+| Headphone EQ | over-ear for wired, in-ear for Bluetooth, off for speaker and earpiece |
+
+Speaker, earpiece, wired headphones, and Bluetooth still route through Agora (`setEnableSpeakerphone` / `onAudioRouteChanged`). The Android path does not force `MODE_IN_COMMUNICATION` during an Agora call, and iOS does not force `AVAudioSession.Mode.voiceChat` for Agora, because both of those turn the call back onto telephony processing and Apple or Android noise suppression. LiveKit calls keep the previous voice-chat session.
+
+VoiceOver / TalkBack hears the seat ("Emma joined, on your left.") and a route change onto headphones. A 1:1 seat is in front. A group stays up for two minutes after the last remote leaves, matching the LiveKit rule. A 1:1 still ends when the other person leaves.
+
 ## Dependencies
 
 - iOS SPM: `AgoraRtcEngine_iOS` → product `RtcBasic` (≥4.5)

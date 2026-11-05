@@ -7,8 +7,8 @@ options:
 settings:
   base:
     # Single source of truth for every target (app + all extensions + watch). Bump here only.
-    MARKETING_VERSION: '2.2.0'
-    CURRENT_PROJECT_VERSION: '47'
+    MARKETING_VERSION: '2.3.0'
+    CURRENT_PROJECT_VERSION: '48'
     SWIFT_VERSION: '5.0'
     CODE_SIGNING_ALLOWED: NO
     TARGETED_DEVICE_FAMILY: '1'
@@ -88,6 +88,10 @@ targets:
         product: LiveKit
       - package: AgoraRtcEngine_iOS
         product: RtcBasic
+      # Native spatial renderer. The kit API lives in RtcBasic; without this extension
+      # updateRemotePosition is a no-op and seats never become audible positions.
+      - package: AgoraRtcEngine_iOS
+        product: SpatialAudio
       - package: Clerk
         product: ClerkKit
       - target: ScreenShare

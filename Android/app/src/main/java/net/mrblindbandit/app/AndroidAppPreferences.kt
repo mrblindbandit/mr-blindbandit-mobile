@@ -61,6 +61,7 @@ class AndroidAppPreferences(context: Context) {
     val speakerphoneByDefault get() = speakerphoneByDefaultState.value
     private val preferBluetoothHeadsetState = bool("preferBluetoothHeadset", true)
     val preferBluetoothHeadset get() = preferBluetoothHeadsetState.value
+    // Kept so older installs do not lose the key. Agora calls ignore it: echo cancellation stays on.
     private val echoCancellationState = bool("echoCancellation", true)
     val echoCancellation get() = echoCancellationState.value
     private val noiseSuppressionState = bool("noiseSuppression", true)

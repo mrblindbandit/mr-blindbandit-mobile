@@ -14,6 +14,8 @@ struct CallParticipantInfo: Identifiable {
     let handRaised: Bool
     let videoTrack: VideoTrack?
     let screenTrack: VideoTrack?
+    /// Spoken spatial seat, such as "on your left". Empty when this call is not seated.
+    let seat: String = ""
 
     var qualityLabel: String { CallParticipantInfo.label(for: quality) }
 
@@ -35,6 +37,7 @@ struct CallParticipantInfo: Identifiable {
         if sharingScreen { parts.append("sharing screen") }
         if handRaised { parts.append("hand raised") }
         if quality == .poor || quality == .lost { parts.append(qualityLabel.lowercased()) }
+        if !seat.isEmpty { parts.append(seat) }
         return parts.joined(separator: ", ")
     }
 }

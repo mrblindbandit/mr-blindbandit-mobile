@@ -115,9 +115,17 @@ class ProductionCommunicationsService(
     var startWithCameraOff: Boolean = false
     var speakerByDefault: Boolean = false
     var preferBluetoothHeadset: Boolean = true
-    var echoCancellation: Boolean = true
-    var noiseSuppression: Boolean = true
     var announceCaller: Boolean = true
+    /** Set for group calls. A 1:1 ends when the other person leaves; a group waits. */
+    var callGroupId: String? = null
+    var spatialSeatSummary by mutableStateOf("")
+        private set
+    private val spatialDirections = mutableMapOf<Int, String>()
+    private val spatialNames = mutableMapOf<Int, String>()
+    private var lastSpatialSpeaker: Int? = null
+    private var hadAgoraRemote = false
+    private var groupAloneJob: kotlinx.coroutines.Job? = null
+    private var lastExternalRoute: String? = null
     var isOnHold by mutableStateOf(false); private set
     var callUiMinimized by mutableStateOf(false)
     var usingFrontCamera by mutableStateOf(true); private set
@@ -700,6 +708,7 @@ class ProductionCommunicationsService(
             id = response.lString("id", "call_id").ifBlank { null }
             callPeerName = response.lString("group_name").ifBlank { "Group" }
             callPeerHandle = ""
+            callGroupId = groupId
             // Fan out the same frame key to every member who has device keys (group frame E2EE).
             val key = id?.let { callId -> sendGroupCallFrameKey(callId, groupId) }
             connectCall(response, video, outgoing = true, frameKey = key)
@@ -756,7 +765,9 @@ class ProductionCommunicationsService(
                 frameKey = null,
             )
             val handle = callPeerHandle
-            val groupBlank = response.lString("group_id").isBlank() && invite?.lString("group_id").isNullOrBlank()
+            val groupId = response.lString("group_id").ifBlank { invite?.lString("group_id").orEmpty() }
+            callGroupId = groupId.ifBlank { null }
+            val groupBlank = callGroupId == null
             if (groupBlank && handle.isNotBlank()) {
                 scope.launch {
                     val callerId = caller?.lString("id")?.takeIf { it.isNotBlank() }
@@ -937,9 +948,10 @@ class ProductionCommunicationsService(
             onJoined = {
                 if (!localJoin.isCompleted) localJoin.complete(Result.success(Unit))
             },
-            onUserJoined = {
+            onUserJoined = { uid ->
                 remoteJoined = true
                 scope.launch(Dispatchers.Main.immediate) {
+                    noteAgoraRoster(joined = uid)
                     if (isRinging) {
                         isRinging = false
                         callSounds.callConnected()
@@ -948,12 +960,14 @@ class ProductionCommunicationsService(
                     }
                 }
             },
-            onUserOffline = {
-                scope.launch(Dispatchers.Main.immediate) {
-                    if (isInCall && (agoraSession?.remoteUids?.isEmpty() != false)) {
-                        endCall(reason = "${callPeerName.ifBlank { "The other person" }} left the call.")
-                    }
-                }
+            onUserOffline = { uid ->
+                scope.launch(Dispatchers.Main.immediate) { noteAgoraRoster(left = uid) }
+            },
+            onActiveSpeaker = { uid ->
+                scope.launch(Dispatchers.Main.immediate) { noteAgoraSpeaker(uid) }
+            },
+            onAudioRoute = { route ->
+                scope.launch(Dispatchers.Main.immediate) { noteAgoraRoute(route) }
             },
             onError = { code ->
                 if (code in AgoraCallSession.FATAL_ERRORS && !localJoin.isCompleted) {
@@ -974,8 +988,7 @@ class ProductionCommunicationsService(
                 uid = uid,
                 userAccount = grant.agoraUserAccount,
                 video = video,
-                echoCancellation = echoCancellation,
-                noiseSuppression = noiseSuppression,
+                defaultToSpeaker = speakerByDefault || video,
             )
             agoraSession = session
             room = null
@@ -1013,6 +1026,10 @@ class ProductionCommunicationsService(
         isInCall = true
         statusMessage = "Connected with ${callPeerName.ifBlank { "Blindbandit user" }}."
         Announcer.announce(appContext, statusMessage)
+        session.currentRoute?.takeIf { it.isExternal }?.let { route ->
+            lastExternalRoute = route.label
+            Announcer.announce(appContext, "Audio route ${route.label}")
+        }
         scope.launch { while (agoraSession === session && isInCall) { delay(1000); if (agoraSession === session && isInCall) callSeconds += 1 } }
     }
 
@@ -1131,12 +1148,28 @@ class ProductionCommunicationsService(
         return null
     }
 
-    /** Ends our side when the other person leaves the room. */
+    /** Ends our side when the other person leaves. A group stays open for two minutes. */
     private suspend fun watchForHangup(watched: Room) {
         var hadPeer = watched.remoteParticipants.isNotEmpty()
+        var aloneSince: Long? = null
         while (room === watched && isInCall) {
             val now = watched.remoteParticipants.isNotEmpty()
-            if (hadPeer && !now) { endCall(reason = "${callPeerName.ifBlank { "The other person" }} left the call."); return }
+            if (hadPeer && !now) {
+                if (callGroupId == null) {
+                    endCall(reason = "${callPeerName.ifBlank { "The other person" }} left the call.")
+                    return
+                }
+                if (aloneSince == null) {
+                    aloneSince = System.currentTimeMillis()
+                    Announcer.announce(appContext, "You are alone in the call. It stays open for two minutes.")
+                }
+                if (System.currentTimeMillis() - aloneSince > CallSpatialLayout.GROUP_ALONE_MS) {
+                    endCall(reason = "Everyone left. Call ended.")
+                    return
+                }
+            } else {
+                aloneSince = null
+            }
             hadPeer = hadPeer || now
             delay(1000)
         }
@@ -1170,6 +1203,12 @@ class ProductionCommunicationsService(
     fun toggleSpeaker() = setSpeaker(!speakerOn, announce = true)
 
     fun cycleAudioRoute() {
+        val agora = agoraSession
+        if (agora != null) {
+            val requested = agora.cycleOutputRoute()
+            Announcer.announce(appContext, "Audio route $requested")
+            return
+        }
         val audio = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
         if (Build.VERSION.SDK_INT < 31) {
             toggleSpeaker()
@@ -1283,6 +1322,96 @@ class ProductionCommunicationsService(
         }
     }
 
+    private fun noteAgoraRoster(joined: Int? = null, left: Int? = null) {
+        val session = agoraSession ?: return
+        val remotes = session.remoteUids
+        val isGroup = callGroupId != null
+        if (CallSpatialLayout.shouldEndImmediately(isGroup, remotes.size, hadAgoraRemote)) {
+            val name = left?.let { spatialNames[it] } ?: callPeerName.ifBlank { "The other person" }
+            endCall(reason = "$name left the call.")
+            return
+        }
+        if (hadAgoraRemote && remotes.isEmpty() && isGroup) {
+            if (groupAloneJob == null) {
+                val name = left?.let { spatialNames[it] } ?: "The last person"
+                Announcer.announce(appContext, "$name left. You are alone in the call. It stays open for two minutes.")
+                groupAloneJob = scope.launch {
+                    delay(CallSpatialLayout.GROUP_ALONE_MS)
+                    if (isInCall && callGroupId != null && agoraSession?.remoteUids?.isEmpty() != false) {
+                        endCall(reason = "Everyone left. Call ended.")
+                    }
+                }
+            }
+            spatialDirections.clear()
+            spatialNames.clear()
+            spatialSeatSummary = ""
+            return
+        }
+        if (remotes.isNotEmpty()) {
+            groupAloneJob?.cancel()
+            groupAloneJob = null
+        }
+        hadAgoraRemote = hadAgoraRemote || remotes.isNotEmpty()
+        val ordered = remotes.sorted()
+        val seats = CallSpatialLayout.seats(ordered.size)
+        val nextDirections = mutableMapOf<Int, String>()
+        val nextNames = mutableMapOf<Int, String>()
+        val assignments = mutableListOf<Pair<Int, CallSpatialSeat>>()
+        val lines = mutableListOf<String>()
+        ordered.forEachIndexed { index, uid ->
+            val seat = seats[index]
+            val name = spatialDisplayName(index, ordered.size)
+            nextDirections[uid] = seat.spokenDirection
+            nextNames[uid] = name
+            lines += "$name, ${seat.spokenDirection}"
+            assignments += uid to seat
+            if (uid == joined) {
+                Announcer.announce(appContext, CallSpatialLayout.joinedAnnouncement(name, seat.spokenDirection))
+            } else {
+                val previous = spatialDirections[uid]
+                if (previous != null && previous != seat.spokenDirection) {
+                    Announcer.announce(appContext, CallSpatialLayout.movedAnnouncement(name, seat.spokenDirection))
+                }
+            }
+        }
+        if (left != null && remotes.isNotEmpty()) {
+            Announcer.announce(appContext, "${spatialNames[left] ?: "Someone"} left the call.")
+        }
+        spatialDirections.clear()
+        spatialDirections.putAll(nextDirections)
+        spatialNames.clear()
+        spatialNames.putAll(nextNames)
+        spatialSeatSummary = lines.joinToString(". ")
+        session.applySpatialSeats(assignments)
+    }
+
+    private fun spatialDisplayName(index: Int, count: Int): String {
+        if (callGroupId == null && count == 1) return callPeerName.ifBlank { "The other person" }
+        if (count == 1) return "Someone"
+        return "Person ${index + 1}"
+    }
+
+    private fun noteAgoraSpeaker(uid: Int) {
+        if (!isInCall || isRinging || lastSpatialSpeaker == uid) return
+        lastSpatialSpeaker = uid
+        val name = spatialNames[uid] ?: "Someone"
+        Announcer.announce(appContext, CallSpatialLayout.speakingAnnouncement(name, spatialDirections[uid]))
+    }
+
+    private fun noteAgoraRoute(route: CallAudioRoute) {
+        speakerOn = route.isSpeaker
+        if (!route.isExternal) {
+            if (lastExternalRoute != null && isInCall) {
+                lastExternalRoute = null
+                Announcer.announce(appContext, "Audio route ${route.label}")
+            }
+            return
+        }
+        if (route.label == lastExternalRoute) return
+        lastExternalRoute = route.label
+        if (isInCall && !isRinging) Announcer.announce(appContext, "Audio route ${route.label}")
+    }
+
     private fun audioRouteLabel(type: Int): String = when (type) {
         AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "speaker"
         AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> "earpiece"
@@ -1292,6 +1421,15 @@ class ProductionCommunicationsService(
     }
 
     private fun setSpeaker(on: Boolean, announce: Boolean) {
+        val agora = agoraSession
+        if (agora != null) {
+            // Do not force MODE_IN_COMMUNICATION. That stream is the telephony volume
+            // and undoes Agora's game-streaming media volume.
+            agora.setSpeakerphone(on)
+            speakerOn = on
+            if (announce) Announcer.announce(appContext, if (on) "Speaker on" else "Speaker off")
+            return
+        }
         val audio = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
         runCatching {
             audio.mode = AudioManager.MODE_IN_COMMUNICATION
@@ -1338,6 +1476,15 @@ class ProductionCommunicationsService(
         room = null
         agoraSession = null
         activeRtcProvider = "livekit"
+        callGroupId = null
+        hadAgoraRemote = false
+        groupAloneJob?.cancel()
+        groupAloneJob = null
+        spatialDirections.clear()
+        spatialNames.clear()
+        spatialSeatSummary = ""
+        lastSpatialSpeaker = null
+        lastExternalRoute = null
         isOnHold = false
         callUiMinimized = false
         scope.launch {
@@ -1363,6 +1510,15 @@ class ProductionCommunicationsService(
         room = null
         agoraSession = null
         activeRtcProvider = "livekit"
+        callGroupId = null
+        hadAgoraRemote = false
+        groupAloneJob?.cancel()
+        groupAloneJob = null
+        spatialDirections.clear()
+        spatialNames.clear()
+        spatialSeatSummary = ""
+        lastSpatialSpeaker = null
+        lastExternalRoute = null
         activeCallId = null
         isRinging = false
         isInCall = false

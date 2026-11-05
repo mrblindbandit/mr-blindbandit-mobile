@@ -49,7 +49,7 @@ final class Release220Build37Tests: XCTestCase {
         // Info.plist CFBundleVersion comes from CURRENT_PROJECT_VERSION via xcodegen.
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
         // When running unit tests the host may inject its own; prefer AppConfig marketing + file check via source of truth in WhatToTest.
-        XCTAssertEqual(AppConfig.marketingVersion, "2.2.0")
+        XCTAssertEqual(AppConfig.marketingVersion, "2.3.0")
         if let build, !build.isEmpty {
             // Accept 37 when the generated Info.plist is wired; otherwise skip soft.
             if build == "37" { XCTAssertEqual(build, "37") }

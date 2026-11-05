@@ -1,10 +1,14 @@
-2.2.0 (38) — Landline Dialer + dial→ringback + DTMF + Messages soft timeout
+2.3.0 (48) — Agora call audio: stereo, media volume, spatial seats
 
-• More → Dialer (native landline keypad): opens with continuous US dial tone (350+440). First digit kills dial tone; every key plays classic ITU DTMF. Call resolves an assigned BlindBandit call number → places a native call (connecting dial tone, then US ringback while ringing). Unknown number → clear not-found + busy tone. End/leave stops all tones; reopen → dial tone again.
-• Outgoing call progress (any Call button): (1) dial/connecting = US dial tone; (2) remote ringing = US ringback (440+480, 2s on / 4s off). No legacy ringback_outgoing / call_initiated oneshot during outbound wait.
-• In-call keypad: DTMF beeps on 0–9 * #.
-• In-call Minimize: collapses full-screen call to a top mini pill (peer + timer). Mute/End on the pill; tap pill or Expand to return. Call audio/LiveKit/CallKit keep running — you can use Messages/Bites while on the call.
-• Messages: soft reconnect banner on timeout (“Still connecting…”) instead of full-screen “The request timed out.” Cache-first inbox/thread kept.
-• Settings → Messages & calls → BlindBandit call numbers: assign your number and map people ↔ dialable numbers (local + iCloud KVS; server sync next).
+• Agora calls use the highest music stereo profile (48 kHz, stereo) and the media volume, not the phone-call volume.
+• Noise suppression is off, including AI noise suppression, so the room stays audible. Echo cancellation stays on.
+• People are seated around you. A one-to-one call places the other person in front. VoiceOver says where they are, for example "Emma joined, on your left."
+• Wired headphones and Bluetooth turn on a headphone equalizer. Speaker and earpiece do not.
+• A group call stays open for two minutes after the last other person leaves.
 
-Please try (VoiceOver): More → Dialer — hear dial tone on open; dial digits (DTMF); Call to an assigned number; hang up mid-dial and mid-ring. Place a normal voice call from a profile — dial then ringback. Open Messages offline/slow network — soft banner, not full-screen timeout.
+Please try with VoiceOver, on a real Agora call:
+1. Speaker, then earpiece.
+2. Wired headphones. Hear the route announcement and confirm the other person is still audible.
+3. Bluetooth headphones. Same check. Switch back to the speaker.
+4. One-to-one: the other person is announced in front of you. Background sound in their room should still be audible, without a strong echo on speakerphone.
+5. If a third person joins, each person gets a spoken seat. When someone leaves, the others are still audible.

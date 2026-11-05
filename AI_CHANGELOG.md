@@ -1,3 +1,13 @@
+## 2026-11-05 — iOS 2.3.0 (48) and Android 2.3.0 (22): Agora call audio
+
+- Agora calls use music high-quality stereo (48 kHz, up to 128 kbps) and stereo capture (`audioProcessingChannels = 2`).
+- Scenario is game streaming so playback uses media volume. Speaker, earpiece, wired headphones, and Bluetooth still route through Agora. iOS no longer forces voice-chat mode on an Agora call, and Android no longer forces in-communication mode, because both put the call back on telephony processing.
+- 3D spatial audio seats people on a circle around the listener. One person sits in front. Leaving calls `removeRemotePosition`. Doppler is off. Light air absorption stays on.
+- AI noise suppression and traditional noise reduction are off. Echo cancellation stays on. Gain stays at unity so the voice is not boosted into clipping.
+- Headphone EQ follows the route (in-ear for Bluetooth, over-ear for wired). VoiceOver and TalkBack announce the seat ("Emma joined, on your left.").
+- A group Agora call stays open for two minutes after the last person leaves, same as LiveKit. A failed Agora join destroys the engine instead of leaking it. Per-person mute works on Agora.
+- Device check still required: headphones, Bluetooth, speaker, and earpiece on a real call.
+
 ## 2026-11-02 — iOS 2.2.0 (47): connection recovery and polling isolation
 
 - Keep inbox, thread, incoming calls and auxiliary work in separate guarded polling lanes, so a stalled relay or push check cannot freeze messages.

@@ -265,6 +265,12 @@ struct ActiveCallScreen: View {
                 }
             }
             .font(.subheadline).foregroundStyle(.secondary)
+            if !communications.spatialSeatSummary.isEmpty {
+                Text(communications.spatialSeatSummary)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Where people are. \(communications.spatialSeatSummary)")
+            }
         }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)

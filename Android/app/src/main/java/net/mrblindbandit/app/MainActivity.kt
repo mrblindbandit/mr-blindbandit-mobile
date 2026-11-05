@@ -334,8 +334,6 @@ private fun AppRoot(activity: MainActivity, deepLinkState: MutableState<String?>
             communications.startWithCameraOff = prefs.startCallsWithCameraOff
             communications.speakerByDefault = prefs.speakerphoneByDefault
             communications.preferBluetoothHeadset = prefs.preferBluetoothHeadset
-            communications.echoCancellation = prefs.echoCancellation
-            communications.noiseSuppression = prefs.noiseSuppression
             communications.announceCaller = prefs.announceCaller
             communications.callSoundsPublic.playUISounds = prefs.uiSounds
             communications.callSoundsPublic.ambientUi = prefs.ambientUiSounds

@@ -140,7 +140,10 @@ data class PublicProfile(
 /** Shared feed keeps public and unspecified posts. Private, draft, deleted, blocked, hidden, and reported rows stay out. */
 fun isSharedFeedVisible(visibility: String, status: String): Boolean {
     val blocked = setOf("private", "draft", "deleted", "blocked", "hidden", "reported")
-    return visibility.trim().lowercase() !in blocked && status.trim().lowercase() !in blocked
+    val vis = visibility.trim().lowercase()
+    val state = status.trim().lowercase()
+    if (vis in blocked || state in blocked) return false
+    return vis == "public" || vis == "everyone"
 }
 
 /** Resolve relative CDN paths from the API to absolute https URLs. */

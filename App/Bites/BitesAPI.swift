@@ -33,12 +33,10 @@ enum BitesCache {
 @MainActor
 enum BitesAPI {
 
-    /// Prefer `/api/v1/feed` (username/like_count shape). Fall back to `/v1/social/newsfeed` on 404.
+    /// Live public feed is `/v1/social/feed`. The server query already requires visibility=public.
     private static let feedFallbacks: [String: String] = [
-        "api/v1/feed": "v1/social/newsfeed",
-        "api/v1/bites": "v1/social/bites",
-        "v1/social/newsfeed": "api/v1/feed",
-        "v1/social/bites": "api/v1/bites",
+        "v1/social/feed": "api/v1/social/feed",
+        "api/v1/social/feed": "v1/social/feed",
     ]
     private static let upcomingAliases: [String: String] = feedFallbacks
 
@@ -71,9 +69,9 @@ enum BitesAPI {
         }
     }
 
-    /// Newsfeed (text posts) — prefer `/api/v1/feed`, fall back to `/v1/social/newsfeed`.
+    /// Public feed. Live route is GET /v1/social/feed (server already filters visibility=public).
     static func newsfeed(limit: Int = 40, offset: Int = 0, useCache: Bool = true) async throws -> [BiteItem] {
-        let path = "api/v1/feed?limit=\(limit)&offset=\(offset)"
+        let path = "v1/social/feed?limit=\(limit)&offset=\(offset)"
         let cacheKey = "newsfeed-\(offset)"
         if useCache, offset == 0, let cached = BitesCache.load(cacheKey),
            let page = try? BlindbanditAPI.decode(SocialFeedPage.self, from: cached) {

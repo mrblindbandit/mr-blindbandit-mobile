@@ -46,7 +46,8 @@ class CallAndFeedRegressionTest {
     }
 
     @Test fun sharedFeedDropsPrivateStates() {
-        assertTrue(isSharedFeedVisible("", ""))
+        assertFalse(isSharedFeedVisible("", ""))
+        assertTrue(isSharedFeedVisible("public", ""))
         assertTrue(isSharedFeedVisible("public", "published"))
         assertFalse(isSharedFeedVisible("draft", ""))
         assertFalse(isSharedFeedVisible("private", "ok"))

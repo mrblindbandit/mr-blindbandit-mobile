@@ -9,12 +9,14 @@ enum BitePlaybackMode: String {
 enum BiteFeedPolicy {
     static let hiddenStates: Set<String> = ["private", "draft", "deleted", "blocked", "hidden", "reported"]
 
-    /// Missing visibility stays in the shared feed. Explicit private states do not.
+    /// The shared feed shows a row only when it is explicitly public.
+    /// A missing visibility field is not treated as public. The server feed query
+    /// also keeps `visibility='public'` rows only; the client does not widen that.
     static func includeInSharedFeed(visibility: String?, status: String?) -> Bool {
         let vis = visibility?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
         let state = status?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
         if hiddenStates.contains(vis) || hiddenStates.contains(state) { return false }
-        return true
+        return vis == "public" || vis == "everyone"
     }
 
     static func include(_ item: BiteItem) -> Bool {

@@ -42,7 +42,7 @@ class SocialRepository(
         cache.loadBites()?.items()?.mapNotNull { BanditBite.parse(it) }.orEmpty()
 
     suspend fun newsfeed(limit: Int = 40, filter: String = "all"): List<SocialPost> {
-        val data = request("/v1/social/newsfeed?limit=$limit&filter=${enc(filter)}", allowPublic = true)
+        val data = request("/v1/social/feed?limit=$limit&offset=0", allowPublic = true)
         cache.saveNewsfeed(data)
         return data.items().mapNotNull { SocialPost.parse(it) }
     }

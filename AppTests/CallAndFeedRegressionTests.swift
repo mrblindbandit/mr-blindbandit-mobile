@@ -57,7 +57,8 @@ final class CallAndFeedRegressionTests: XCTestCase {
     }
 
     func testSharedFeedDropsPrivateStates() {
-        XCTAssertTrue(BiteFeedPolicy.includeInSharedFeed(visibility: nil, status: nil))
+        XCTAssertFalse(BiteFeedPolicy.includeInSharedFeed(visibility: nil, status: nil))
+        XCTAssertTrue(BiteFeedPolicy.includeInSharedFeed(visibility: "public", status: nil))
         XCTAssertTrue(BiteFeedPolicy.includeInSharedFeed(visibility: "public", status: "published"))
         XCTAssertFalse(BiteFeedPolicy.includeInSharedFeed(visibility: "draft", status: nil))
         XCTAssertFalse(BiteFeedPolicy.includeInSharedFeed(visibility: "private", status: "ok"))

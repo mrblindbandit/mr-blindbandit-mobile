@@ -71,16 +71,19 @@ struct BiteItem: Identifiable, Equatable, Decodable {
     var liked_by_me: Bool
     var my_reaction: String?
     var kind: Kind
+    var visibility: String?
+    var status: String?
 
     enum Kind: String { case post, bite }
 
     init(id: String, body: String, caption: String?, media: [String], video_url: String?, poster_url: String?,
          created_at: Double, author: BiteAuthor, likes: Int, comments: Int, liked_by_me: Bool,
-         my_reaction: String?, kind: Kind) {
+         my_reaction: String?, kind: Kind, visibility: String? = nil, status: String? = nil) {
         self.id = id; self.body = body; self.caption = caption; self.media = media
         self.video_url = video_url; self.poster_url = poster_url; self.created_at = created_at
         self.author = author; self.likes = likes; self.comments = comments
         self.liked_by_me = liked_by_me; self.my_reaction = my_reaction; self.kind = kind
+        self.visibility = visibility; self.status = status
     }
 
     init(from decoder: Decoder) throws {
@@ -116,12 +119,17 @@ struct BiteItem: Identifiable, Equatable, Decodable {
         } else {
             kind = .post
         }
+        visibility = try? c.decodeIfPresent(String.self, forKey: .visibility)
+        status = try? c.decodeIfPresent(String.self, forKey: .status)
+        video_url = PublicMediaURL.httpsString(video_url)
+        poster_url = PublicMediaURL.httpsString(poster_url)
+        author.avatar_url = PublicMediaURL.httpsString(author.avatar_url)
     }
 
     enum CodingKeys: String, CodingKey {
         case id, body, caption, media, video_url, poster_url, created_at, author, likes, comments
         case like_count, comment_count
-        case liked_by_me, my_reaction, reactions, handle, product
+        case liked_by_me, my_reaction, reactions, handle, product, visibility, status
     }
 
     var displayText: String {

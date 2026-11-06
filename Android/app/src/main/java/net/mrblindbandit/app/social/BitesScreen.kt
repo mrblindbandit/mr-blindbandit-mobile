@@ -407,7 +407,7 @@ private fun BiteCard(
             if (bite.caption.isNotBlank()) Text(bite.caption, style = MaterialTheme.typography.bodyLarge)
             if (bite.videoUrl.isNotBlank()) {
                 if (expanded) {
-                    BiteVideoPlayer(videoUrl = bite.videoUrl, autoPlay = true, onPlaying = onViewed)
+                    BiteVideoPlayer(videoUrl = bite.videoUrl, autoPlay = false, onPlaying = onViewed)
                     TextButton(onClick = { expanded = false }) { Text("Hide video") }
                 } else {
                     Button(

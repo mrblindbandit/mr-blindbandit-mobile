@@ -21,29 +21,36 @@ final class AgoraCallSession: NSObject {
 
     func join(appId: String, channel: String, token: String, uid: UInt, userAccount: String? = nil, video: Bool, defaultToSpeaker: Bool) throws {
         leave()
-        // Game streaming uses the media volume. CallKit may have already forced voice-chat mode.
-        CallMediaSession.activateAgoraMediaVolume()
+        // Ask for media volume without activating the session. CallKit owns activation.
+        CallMediaSession.configureAgoraMediaVolume()
+        let mediaVolume = CallMediaSession.mediaVolumeIsActive()
         let config = AgoraRtcEngineConfig()
         config.appId = appId
         config.audioScenario = .gameStreaming
         let eng = AgoraRtcEngineKit.sharedEngine(with: config, delegate: self)
+        // The SDK must not call setActive. That fights CallKit and surfaces as recording not allowed.
+        eng.setAudioSessionOperationRestriction(.all)
         eng.setChannelProfile(.communication)
         eng.setClientRole(.broadcaster)
-        // Scenario and profile before enableAudio / join. Stereo processing only works on media volume.
         eng.setAudioScenario(.gameStreaming)
-        eng.setAudioProfile(.musicHighQualityStereo)
         let advanced = AgoraAdvancedAudioOptions()
-        if let stereo = AgoraAudioProcessChannels(rawValue: CallAudioPolicy.stereoProcessingChannels) {
-            advanced.audioProcessingChannels = stereo
+        if mediaVolume {
+            eng.setAudioProfile(.musicHighQualityStereo)
+            if let stereo = AgoraAudioProcessChannels(rawValue: CallAudioPolicy.stereoProcessingChannels) {
+                advanced.audioProcessingChannels = stereo
+            }
+        } else {
+            // Voice-chat unit is mono. Publishing stereo on it is what the far end hears as scrambled.
+            eng.setAudioProfile(.musicHighQuality)
+            if let mono = AgoraAudioProcessChannels(rawValue: 1) {
+                advanced.audioProcessingChannels = mono
+            }
         }
         eng.setAdvancedAudioOptions(advanced)
-        // Hear the room. Echo cancellation stays on so speakerphone does not howl.
         eng.setAINSMode(CallAudioPolicy.aiNoiseSuppression, mode: AUDIO_AINS_MODE.AINS_MODE_BALANCED)
         eng.setParameters("{\"che.audio.aec.enable\":\(CallAudioPolicy.echoCancellation)}")
         eng.setParameters("{\"che.audio.ans.enable\":\(CallAudioPolicy.noiseSuppression)}")
         eng.setParameters("{\"che.audio.agc.enable\":\(CallAudioPolicy.automaticGainControl)}")
-        eng.setParameters("{\"che.audio.sf.nsEnable\":0}")
-        eng.setParameters("{\"che.audio.sf.ainsToLoadFlag\":0}")
         eng.adjustRecordingSignalVolume(CallAudioPolicy.unityVolume)
         eng.adjustPlaybackSignalVolume(CallAudioPolicy.unityVolume)
         eng.setDefaultAudioRouteToSpeakerphone(defaultToSpeaker)
@@ -77,7 +84,6 @@ final class AgoraCallSession: NSObject {
             leave()
             throw CommunicationsError.server("Agora join failed (code \(code)).")
         }
-        CallMediaSession.activateAgoraMediaVolume()
     }
 
     func setMic(enabled: Bool) {
@@ -103,13 +109,9 @@ final class AgoraCallSession: NSObject {
             info.position = simd_float3(item.seat.front, item.seat.right, item.seat.top)
             info.forward = simd_float3(item.seat.forwardFront, item.seat.forwardRight, item.seat.forwardTop)
             spatial.updateRemotePosition(item.uid, positionInfo: info)
-            let params = AgoraSpatialAudioParams()
-            params.enable_air_absorb = true
-            params.enable_doppler = false
-            params.enable_blur = false
-            // Weak attenuation (0, 0.5): a little air, speech stays clear. 0 would disable it.
-            params.speaker_attenuation = CallSpatialLayout.airAttenuation
-            engine?.setRemoteUserSpatialAudioParams(item.uid, params: params)
+            // Position comes from the spatial engine only. SpatialAudioParams defaults
+            // azimuth and distance to 0, which fights the seat and muffles the voice.
+            spatial.setRemoteAudioAttenuation(CallSpatialLayout.airAttenuation, uid: item.uid, forceSet: false)
         }
     }
 

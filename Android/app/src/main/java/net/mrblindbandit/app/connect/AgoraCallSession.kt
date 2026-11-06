@@ -6,7 +6,6 @@ import io.agora.rtc2.Constants
 import io.agora.rtc2.IRtcEngineEventHandler
 import io.agora.rtc2.RtcEngine
 import io.agora.rtc2.RtcEngineConfig
-import io.agora.rtc2.SpatialAudioParams
 import io.agora.rtc2.audio.AdvancedAudioOptions
 import io.agora.spatialaudio.ILocalSpatialAudioEngine
 import io.agora.spatialaudio.LocalSpatialAudioConfig
@@ -109,8 +108,6 @@ class AgoraCallSession(
         eng.setParameters("{\"che.audio.aec.enable\":${CallAudioPolicy.echoCancellation}}")
         eng.setParameters("{\"che.audio.ans.enable\":${CallAudioPolicy.noiseSuppression}}")
         eng.setParameters("{\"che.audio.agc.enable\":${CallAudioPolicy.automaticGainControl}}")
-        eng.setParameters("{\"che.audio.sf.nsEnable\":0}")
-        eng.setParameters("{\"che.audio.sf.ainsToLoadFlag\":0}")
         eng.adjustRecordingSignalVolume(CallAudioPolicy.unityVolume)
         eng.adjustPlaybackSignalVolume(CallAudioPolicy.unityVolume)
         eng.setDefaultAudioRoutetoSpeakerphone(defaultToSpeaker)
@@ -177,19 +174,14 @@ class AgoraCallSession(
 
     fun applySpatialSeats(seats: List<Pair<Int, CallSpatialSeat>>) {
         val spatialEngine = spatial ?: return
-        val eng = engine ?: return
+        if (engine == null) return
         updateSelfPosition()
         for ((uid, seat) in seats) {
             val info = RemoteVoicePositionInfo()
             info.position = floatArrayOf(seat.front, seat.right, seat.top)
             info.forward = floatArrayOf(seat.forwardFront, seat.forwardRight, seat.forwardTop)
             spatialEngine.updateRemotePosition(uid, info)
-            val params = SpatialAudioParams()
-            params.enable_air_absorb = true
-            params.enable_doppler = false
-            params.enable_blur = false
-            params.speaker_attenuation = CallSpatialLayout.AIR_ATTENUATION
-            eng.setRemoteUserSpatialAudioParams(uid, params)
+            spatialEngine.setRemoteAudioAttenuation(uid, CallSpatialLayout.AIR_ATTENUATION, false)
         }
     }
 

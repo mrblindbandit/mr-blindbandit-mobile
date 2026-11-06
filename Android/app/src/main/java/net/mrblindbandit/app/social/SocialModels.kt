@@ -37,6 +37,7 @@ data class BanditBite(
 ) {
     companion object {
         fun parse(row: JSONObject): BanditBite? {
+            if (!isSharedFeedVisible(row.lString("visibility"), row.lString("status"))) return null
             val id = row.lString("id")
             if (id.isBlank()) return null
             val reactions = row.optJSONObject("reactions")
@@ -67,6 +68,7 @@ data class SocialPost(
 ) {
     companion object {
         fun parse(row: JSONObject): SocialPost? {
+            if (!isSharedFeedVisible(row.lString("visibility"), row.lString("status"))) return null
             val id = row.lString("id")
             if (id.isBlank()) return null
             val media = row.optJSONArray("media")
@@ -133,6 +135,15 @@ data class PublicProfile(
             )
         }
     }
+}
+
+/** Shared feed keeps public and unspecified posts. Private, draft, deleted, blocked, hidden, and reported rows stay out. */
+fun isSharedFeedVisible(visibility: String, status: String): Boolean {
+    val blocked = setOf("private", "draft", "deleted", "blocked", "hidden", "reported")
+    val vis = visibility.trim().lowercase()
+    val state = status.trim().lowercase()
+    if (vis in blocked || state in blocked) return false
+    return vis == "public" || vis == "everyone"
 }
 
 /** Resolve relative CDN paths from the API to absolute https URLs. */

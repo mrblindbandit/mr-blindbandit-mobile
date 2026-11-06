@@ -46,7 +46,7 @@ final class Release220Build38Tests: XCTestCase {
     }
 
     func testProjectBuildNumberIs38() {
-        XCTAssertEqual(AppConfig.marketingVersion, "2.3.0")
+        XCTAssertEqual(AppConfig.marketingVersion, "2.3.1")
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
         if let build, !build.isEmpty, build == "38" {
             XCTAssertEqual(build, "38")

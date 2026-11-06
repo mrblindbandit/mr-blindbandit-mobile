@@ -42,7 +42,7 @@ class SocialRepository(
         cache.loadBites()?.items()?.mapNotNull { BanditBite.parse(it) }.orEmpty()
 
     suspend fun newsfeed(limit: Int = 40, filter: String = "all"): List<SocialPost> {
-        val data = request("/v1/social/newsfeed?limit=$limit&filter=${enc(filter)}", allowPublic = true)
+        val data = request("/v1/social/feed?limit=$limit&offset=0", allowPublic = true)
         cache.saveNewsfeed(data)
         return data.items().mapNotNull { SocialPost.parse(it) }
     }
@@ -337,31 +337,25 @@ class SocialRepository(
         request("/v1/social/admin/agora-flags", method = "PUT", body = JSONObject().put("flags", flags))
 
     suspend fun adminUserAction(userId: String, action: String, body: JSONObject = JSONObject()): JSONObject {
-        val suffix = when (action) {
-            "verify" -> "verify"
-            "unverify" -> "unverify"
-            "ban" -> "ban"
-            "suspend" -> "suspend"
-            "reinstate" -> "reinstate"
-            "mute_posts" -> "mute-posts"
-            "unmute_posts" -> "unmute"
-            "mute_messages" -> "mute-messages"
-            "disable_calls" -> "disable-calls"
-            "enable_calls" -> "enable-calls"
-            "shadow" -> "shadow"
-            "rate_limit" -> "rate-limit"
-            "revoke_push" -> "revoke-push"
-            "force_disconnect" -> "force-disconnect"
-            "monetize_approve" -> "monetize"
-            "monetize_reject" -> "monetize"
-            "wipe_sessions" -> "wipe-sessions"
-            "test_push" -> "test-push"
-            else -> action
+        val plan = AdminRoutePlan.userAction(
+            action = action,
+            userId = userId,
+            reason = body.optString("reason").ifBlank { null },
+            untilEpochSeconds = body.optLong("until").takeIf { body.has("until") },
+            multiplier = body.optInt("rate_limit_multiplier").takeIf { body.has("rate_limit_multiplier") },
+            title = body.optString("title").ifBlank { null },
+            message = body.optString("body").ifBlank { null },
+        )
+        plan.unavailableReason?.let { error(it) }
+        val json = JSONObject()
+        plan.body.forEach { (key, value) ->
+            when (value) {
+                "true" -> json.put(key, true)
+                "false" -> json.put(key, false)
+                else -> json.put(key, value.toLongOrNull() ?: value)
+            }
         }
-        val b = JSONObject(body.toString())
-        if (action == "monetize_approve") b.put("approve", true)
-        if (action == "monetize_reject") b.put("approve", false)
-        return request("/v1/social/admin/users/${enc(userId)}/$suffix", method = "POST", body = b)
+        return request(plan.path, method = plan.method, body = json)
     }
 
     suspend fun adminPostAction(postId: String, action: String): JSONObject {
@@ -369,8 +363,7 @@ class SocialRepository(
             "hide" -> request("/v1/social/admin/posts/${enc(postId)}/hide", method = "POST", body = JSONObject())
             "unhide" -> request("/v1/social/admin/posts/${enc(postId)}/unhide", method = "POST", body = JSONObject())
             "delete" -> request("/v1/social/admin/posts/${enc(postId)}", method = "DELETE")
-            "pin" -> request("/v1/social/admin/posts/${enc(postId)}/pin", method = "POST", body = JSONObject())
-            "unpin" -> request("/v1/social/admin/posts/${enc(postId)}/pin", method = "DELETE")
+            "pin", "unpin" -> error(AdminRoutePlan.userAction(action, "unused").unavailableReason!!)
             else -> throw IllegalArgumentException("Unknown post action $action")
         }
     }

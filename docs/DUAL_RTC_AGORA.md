@@ -50,6 +50,8 @@ Speaker, earpiece, wired headphones, and Bluetooth still route through Agora (`s
 
 VoiceOver / TalkBack hears the seat ("Emma joined, on your left.") and a route change onto headphones. A 1:1 seat is in front. A group stays up for two minutes after the last remote leaves, matching the LiveKit rule. A 1:1 still ends when the other person leaves.
 
+On iOS, CallKit owns `setActive`. The app only changes the category. If that category stays in voice-chat mode, capture falls back to mono high quality (profile 4) so the far end does not hear a scrambled stereo frame. Stereo remains the path when media volume is actually active. Noise suppression stays off and echo cancellation stays on. The app does not start call recording.
+
 ## Dependencies
 
 - iOS SPM: `AgoraRtcEngine_iOS` → product `RtcBasic` (≥4.5)

@@ -117,7 +117,10 @@ class CommsModelsTest {
         assertTrue(CallRtcGrant.shouldRequestAgora("Agora", true))
         assertFalse(CallRtcGrant.shouldRequestAgora("agora", false))
         assertFalse(CallRtcGrant.shouldRequestAgora("livekit", true))
-        assertFalse(CallRtcGrant.shouldRequestAgora(null, true))
+        assertTrue(CallRtcGrant.shouldRequestAgora(null, true))
+        assertEquals(null, CallRtcGrant.createRtcProvider("livekit", true))
+        assertEquals("agora", CallRtcGrant.createRtcProvider(null, null))
+        assertEquals(null, CallRtcGrant.createRtcProvider("agora", false))
     }
 
     @Test fun callRtcGrantParsesFlatAgoraAndLegacyLiveKit() {

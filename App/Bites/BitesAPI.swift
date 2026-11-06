@@ -33,12 +33,10 @@ enum BitesCache {
 @MainActor
 enum BitesAPI {
 
-    /// Prefer `/api/v1/feed` (username/like_count shape). Fall back to `/v1/social/newsfeed` on 404.
+    /// Live public feed is `/v1/social/feed`. The server query already requires visibility=public.
     private static let feedFallbacks: [String: String] = [
-        "api/v1/feed": "v1/social/newsfeed",
-        "api/v1/bites": "v1/social/bites",
-        "v1/social/newsfeed": "api/v1/feed",
-        "v1/social/bites": "api/v1/bites",
+        "v1/social/feed": "api/v1/social/feed",
+        "api/v1/social/feed": "v1/social/feed",
     ]
     private static let upcomingAliases: [String: String] = feedFallbacks
 
@@ -71,9 +69,9 @@ enum BitesAPI {
         }
     }
 
-    /// Newsfeed (text posts) — prefer `/api/v1/feed`, fall back to `/v1/social/newsfeed`.
+    /// Public feed. Live route is GET /v1/social/feed (server already filters visibility=public).
     static func newsfeed(limit: Int = 40, offset: Int = 0, useCache: Bool = true) async throws -> [BiteItem] {
-        let path = "api/v1/feed?limit=\(limit)&offset=\(offset)"
+        let path = "v1/social/feed?limit=\(limit)&offset=\(offset)"
         let cacheKey = "newsfeed-\(offset)"
         if useCache, offset == 0, let cached = BitesCache.load(cacheKey),
            let page = try? BlindbanditAPI.decode(SocialFeedPage.self, from: cached) {
@@ -82,19 +80,46 @@ enum BitesAPI {
         }
         let data = try await requestSocial(path)
         if offset == 0 { BitesCache.save(data, key: cacheKey) }
-        return try BlindbanditAPI.decode(SocialFeedPage.self, from: data).items
+        return try BlindbanditAPI.decode(SocialFeedPage.self, from: data).items.filter(BiteFeedPolicy.include)
     }
 
     static func cachedNewsfeed() -> [BiteItem] {
         guard let cached = BitesCache.load("newsfeed-0"),
               let page = try? BlindbanditAPI.decode(SocialFeedPage.self, from: cached) else { return [] }
-        return page.items
+        return page.items.filter(BiteFeedPolicy.include)
     }
 
     static func videoBites(limit: Int = 25, offset: Int = 0) async throws -> [BiteItem] {
         let data = try await requestSocial("api/v1/bites?limit=\(limit)&offset=\(offset)")
         if offset == 0 { BitesCache.save(data, key: "bites-0") }
-        return try BlindbanditAPI.decode(SocialFeedPage.self, from: data).items
+        return try BlindbanditAPI.decode(SocialFeedPage.self, from: data).items.filter(BiteFeedPolicy.include)
+    }
+
+    static func publishBite(caption: String, videoURL: String) async throws -> BiteItem {
+        guard let https = PublicMediaURL.httpsString(videoURL) else {
+            throw CommunicationsError.server("That video address cannot be opened. Use an https link.")
+        }
+        let data = try await BlindbanditAPI.request(
+            "v1/social/bites",
+            method: "POST",
+            body: ["caption": String(caption.prefix(2200)), "video_url": https]
+        )
+        if let item = try? BlindbanditAPI.decode(BiteItem.self, from: data) { return item }
+        return BiteItem(
+            id: "local-\(UUID().uuidString)",
+            body: caption,
+            caption: caption,
+            media: [],
+            video_url: https,
+            poster_url: nil,
+            created_at: Date().timeIntervalSince1970 * 1000,
+            author: BiteAuthor(handle: "me"),
+            likes: 0,
+            comments: 0,
+            liked_by_me: false,
+            my_reaction: nil,
+            kind: .bite
+        )
     }
 
     static func publishPost(body: String, media: [String] = []) async throws -> BiteItem {

@@ -65,6 +65,41 @@ data class CallAudioRoute(
     }
 }
 
+/** Names on the call screen. Long numeric ids and Agora uids are not spoken as names. */
+object CallPeerLabel {
+    fun spoken(name: String, handle: String = ""): String {
+        val trimmed = name.trim()
+        if (trimmed.isNotEmpty() && !looksLikeRawIdentifier(trimmed)) return trimmed
+        val handleTrimmed = handle.trim().trim('@')
+        if (handleTrimmed.isNotEmpty() && !looksLikeRawIdentifier(handleTrimmed)) {
+            return if (handleTrimmed.contains(" ") || handleTrimmed.startsWith("@")) handleTrimmed else "@$handleTrimmed"
+        }
+        return "Caller"
+    }
+
+    fun looksLikeRawIdentifier(raw: String): Boolean {
+        val s = raw.trim()
+        if (s.isEmpty()) return true
+        val lowered = s.lowercase()
+        if (lowered.startsWith("profile_") || lowered.startsWith("user_") || lowered.startsWith("uid_")) return true
+        if (s.length >= 5 && s.all { it.isDigit() }) return true
+        val hex = s.filter { it != '-' }
+        if (hex.length >= 32 && hex.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' }) return true
+        return false
+    }
+}
+
+enum class CallCapturePlan {
+    STEREO_MEDIA,
+    MONO_INTELLIGIBLE;
+
+    companion object {
+        const val MONO_HIGH_QUALITY_PROFILE = 4
+        fun choose(mediaVolumeActive: Boolean): CallCapturePlan =
+            if (mediaVolumeActive) STEREO_MEDIA else MONO_INTELLIGIBLE
+    }
+}
+
 /** Seats remote people on a virtual circle around the local listener. */
 object CallSpatialLayout {
     const val RADIUS = 1.6f

@@ -52,7 +52,7 @@ fun ProfileAvatar(url: String?, displayName: String, size: Dp = 40.dp, modifier:
     var bitmap by remember(url) { mutableStateOf<android.graphics.Bitmap?>(null) }
     LaunchedEffect(url) {
         bitmap = null
-        val u = url?.trim().orEmpty()
+        val u = net.mrblindbandit.app.social.absoluteMediaUrl(url?.trim().orEmpty())
         if (u.startsWith("https://")) {
             bitmap = withContext(Dispatchers.IO) {
                 runCatching {

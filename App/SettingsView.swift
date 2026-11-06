@@ -337,7 +337,7 @@ struct Settings: View {
         } header: {
             Text("Audio & calls")
         } footer: {
-            Text("Calls use echo cancellation and noise suppression. The microphone and camera are used only during calls and recordings you start.")
+            Text("Calls keep echo cancellation on and leave room sound in. The microphone and camera are used only during calls and recordings you start.")
         }
         .sheet(isPresented: $showingRingtones) {
             TonePickerSheet(title: "Ringtone", tones: CallSounds.Ringtone.allCases, name: { $0.title },

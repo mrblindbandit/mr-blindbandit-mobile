@@ -164,8 +164,12 @@ enum CallSounds {
         let session = AVAudioSession.sharedInstance()
         let progress = forCallProgress || outgoingProgress != .idle
         if progress {
+            // Media-volume call is already up. Do not activate the session again.
+            if session.category == .playAndRecord && session.mode == .default { return }
             try? session.setCategory(.playAndRecord, mode: .voiceChat,
                                     options: [.allowBluetooth, .allowBluetoothA2DP, .mixWithOthers, .duckOthers])
+        } else if session.category == .playAndRecord {
+            return
         } else {
             try? session.setCategory(.ambient, mode: .default, options: [.mixWithOthers, .duckOthers])
         }

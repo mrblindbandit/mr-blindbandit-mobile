@@ -23,11 +23,7 @@ struct ProfileAvatar: View {
     }
 
     private var url: URL? {
-        guard let s = urlString?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else { return nil }
-        if let u = URL(string: s), u.scheme == "https" { return u }
-        // Relative CDN paths from social API (e.g. /assets/mobile-artist.jpg)
-        if let resolved = BlindbanditAPI.resolveURL(s), resolved.scheme == "https" { return resolved }
-        return nil
+        PublicMediaURL.normalize(urlString)
     }
 
     var body: some View {

@@ -38,9 +38,20 @@ data class CallRtcGrant(
     }
 
     companion object {
-        /** Owner selected Agora and the server has credentials. Client must send `rtc_provider=agora`. */
+        /**
+         * Agora is the default for a new call. LiveKit is used when the server preference
+         * says livekit, or when Agora is explicitly not configured. A null preference still
+         * asks for Agora so both phones opt in the same way once the server accepts the field.
+         */
+        fun createRtcProvider(preferredProvider: String?, agoraConfigured: Boolean?): String? {
+            val preferred = preferredProvider?.trim()?.lowercase()
+            if (preferred == "livekit") return null
+            if (agoraConfigured == false) return null
+            return "agora"
+        }
+
         fun shouldRequestAgora(preferredProvider: String?, agoraConfigured: Boolean): Boolean =
-            preferredProvider.equals("agora", ignoreCase = true) && agoraConfigured
+            createRtcProvider(preferredProvider, agoraConfigured) == "agora"
 
         fun parse(response: JSONObject): CallRtcGrant {
             val rtc = response.optJSONObject("rtc")

@@ -19,7 +19,10 @@ final class BitesFeedModel: ObservableObject {
     @Published var error = ""
     @Published var offlineHint = false
     @Published var composerDraft = ""
+    @Published var loadingMore = false
+    @Published var reachedEnd = false
     private var didLoadOnce = false
+    private let pageSize = 20
 
     func bootstrap() async {
         if !didLoadOnce {
@@ -37,16 +40,10 @@ final class BitesFeedModel: ObservableObject {
         if forceSpinner { loading = true }
         defer { loading = false; refreshing = false }
         do {
-            let feed = try await BitesAPI.newsfeed(useCache: false)
-            let videos = (try? await BitesAPI.videoBites()) ?? []
-            var seen = Set<String>()
-            var merged: [BiteItem] = []
-            for i in videos + feed {
-                if seen.insert(i.id).inserted { merged.append(i) }
-            }
-            let muted = Set(BitesLocalPrefs.mutedAuthors)
-            let hidden = Set(BitesLocalPrefs.hiddenPostIDs)
-            items = merged.filter { !hidden.contains($0.id) && !muted.contains($0.author.handle.lowercased()) }
+            let feed = try await BitesAPI.newsfeed(limit: pageSize, offset: 0, useCache: false)
+            let videos = (try? await BitesAPI.videoBites(limit: pageSize, offset: 0)) ?? []
+            items = merge(videos: videos, feed: feed, into: [])
+            reachedEnd = feed.count < pageSize
             error = ""
             offlineHint = false
             didLoadOnce = true
@@ -106,6 +103,32 @@ final class BitesFeedModel: ObservableObject {
     func muteAuthor(_ handle: String) {
         BitesLocalPrefs.muteAuthor(handle)
         items.removeAll { $0.author.handle.lowercased() == handle.lowercased() }
+    }
+
+    func loadMore() async {
+        guard !loadingMore, !reachedEnd, !loading else { return }
+        loadingMore = true
+        defer { loadingMore = false }
+        do {
+            let feed = try await BitesAPI.newsfeed(limit: pageSize, offset: items.count, useCache: false)
+            items = merge(videos: [], feed: feed, into: items)
+            if feed.count < pageSize { reachedEnd = true }
+        } catch {
+            offlineHint = true
+        }
+    }
+
+    private func merge(videos: [BiteItem], feed: [BiteItem], into existing: [BiteItem]) -> [BiteItem] {
+        var seen = Set(existing.map(\.id))
+        var merged = existing
+        let muted = Set(BitesLocalPrefs.mutedAuthors)
+        let hidden = Set(BitesLocalPrefs.hiddenPostIDs)
+        for item in videos + feed where BiteFeedPolicy.include(item) {
+            guard seen.insert(item.id).inserted else { continue }
+            if hidden.contains(item.id) || muted.contains(item.author.handle.lowercased()) { continue }
+            merged.append(item)
+        }
+        return merged
     }
 
     func saveDraft(_ text: String) {
@@ -199,6 +222,13 @@ struct BitesFeedView: View {
                             onHide: { model.remove(item.id) }
                         )
                         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    }
+                    if !model.reachedEnd {
+                        Button(model.loadingMore ? "Loading more Bites" : "Load more Bites") {
+                            Task { await model.loadMore() }
+                        }
+                        .disabled(model.loadingMore)
+                        .accessibilityHint("Loads the next page of the shared feed")
                     }
                 }
                 .listStyle(.plain)
@@ -420,15 +450,13 @@ struct BiteRow: View {
 
     @ViewBuilder
     private var mediaHint: some View {
-        if let video = item.video_url, !video.isEmpty {
-            Label("Short video Bite", systemImage: "play.rectangle.fill")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .accessibilityLabel("Short video Bite attached")
+        if let video = PublicMediaURL.normalize(item.video_url) {
+            BiteLoopingPlayer(url: video, inCall: communications.isInCall || communications.isRinging)
         } else if !item.media.isEmpty {
-            Label("\(item.media.count) media", systemImage: "photo.on.rectangle")
+            Label("\(item.media.count) photo\(item.media.count == 1 ? "" : "s")", systemImage: "photo.on.rectangle")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+                .accessibilityLabel("\(item.media.count) photos attached")
         }
     }
 
@@ -575,6 +603,7 @@ struct BiteComposerView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var communications: ProductionCommunicationsService
     @State private var text: String
+    @State private var videoLink = ""
     @State private var posting = false
     @State private var error = ""
     var onDraftChange: (String) -> Void
@@ -599,6 +628,15 @@ struct BiteComposerView: View {
                 Text("\(text.count) / \(limit)")
                     .accessibilityLabel("\(text.count) of \(limit) characters")
             }
+            Section {
+                TextField("https video link, optional", text: $videoLink)
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.URL)
+                    .accessibilityLabel("Video link")
+                    .accessibilityHint("Optional https address. Posted Bites are visible to other signed-in people.")
+            } footer: {
+                Text("Leave this empty for a text Bite. A video link is shared on the Bandit Feed, not kept private.")
+            }
             Section("Creator tools") {
                 CreatorAppleToolsStrip(biteText: text)
             }
@@ -614,16 +652,31 @@ struct BiteComposerView: View {
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button(posting ? "Posting…" : "Post") { Task { await post() } }
-                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || posting || text.count > limit)
+                    .disabled(posting || text.count > limit || (text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && videoLink.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
             }
         }
     }
 
     private func post() async {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !body.isEmpty else { return }
+        let video = videoLink.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty || !video.isEmpty else { return }
         posting = true
         defer { posting = false }
+        if !video.isEmpty {
+            do {
+                _ = try await BitesAPI.publishBite(caption: body, videoURL: video)
+                AppHaptics.success()
+                onDone(nil)
+                dismiss()
+                UIAccessibility.post(notification: .announcement, argument: "Video Bite posted")
+            } catch {
+                self.error = error.localizedDescription
+                AppHaptics.error()
+                UIAccessibility.post(notification: .announcement, argument: error.localizedDescription)
+            }
+            return
+        }
         FeatureBehaviors220.beginBitePostLiveActivity(preview: body)
         let optimistic = BitesAPI.makeLocalPost(
             body: body,

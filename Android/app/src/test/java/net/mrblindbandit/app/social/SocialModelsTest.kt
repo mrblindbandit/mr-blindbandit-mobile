@@ -61,7 +61,7 @@ class SocialModelsTest {
     fun banditBite_parses() {
         val bite = BanditBite.parse(
             JSONObject(
-                """{"id":"b1","caption":"hi","video_url":"https://cdn/v.mp4","author":{"handle":"bob","verified":false},"likes":3}"""
+                """{"id":"b1","caption":"hi","visibility":"public","video_url":"https://cdn/v.mp4","author":{"handle":"bob","verified":false},"likes":3}"""
             )
         )!!
         assertEquals("b1", bite.id)

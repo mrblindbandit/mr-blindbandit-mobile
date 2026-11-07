@@ -176,12 +176,53 @@ enum CallSpatialLayout {
     }
 }
 
-/// Media-volume session for Agora game-streaming. Voice-chat mode uses the call
-/// volume and Apple's noise suppression, which this call path must not turn on.
+/// What to publish. Stereo is the preference, but only when the session is actually
+/// on media volume. A voice-chat unit plus stereo frames is what scrambles the far end.
+enum CallCapturePlan: Equatable {
+    case stereoMedia
+    case monoIntelligible
+
+    static let monoHighQualityProfile = 4
+
+    static func choose(mediaVolumeActive: Bool) -> CallCapturePlan {
+        mediaVolumeActive ? .stereoMedia : .monoIntelligible
+    }
+}
+
+/// Names shown on the call screen. Raw numeric ids and Agora uids are not names.
+enum CallPeerLabel {
+    static func spoken(name: String, handle: String = "") -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty, !looksLikeRawIdentifier(trimmed) { return trimmed }
+        let handleTrimmed = handle.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "@"))
+        if !handleTrimmed.isEmpty, !looksLikeRawIdentifier(handleTrimmed) {
+            return handleTrimmed.contains(" ") || handleTrimmed.hasPrefix("@") ? handleTrimmed : "@\(handleTrimmed)"
+        }
+        return "Caller"
+    }
+
+    static func looksLikeRawIdentifier(_ raw: String) -> Bool {
+        let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.isEmpty { return true }
+        let lowered = s.lowercased()
+        if lowered.hasPrefix("profile_") || lowered.hasPrefix("user_") || lowered.hasPrefix("uid_") { return true }
+        if s.count >= 5, s.allSatisfy(\.isNumber) { return true }
+        let hex = s.filter { $0 != "-" }
+        if hex.count >= 32, hex.allSatisfy(\.isHexDigit) { return true }
+        return false
+    }
+}
+
+/// Configures the Agora media-volume session. Does not call setActive.
+/// CallKit already activated the session; a second activation is what iOS rejects
+/// as recording not being allowed.
 enum CallMediaSession {
-    nonisolated static func activateAgoraMediaVolume(_ session: AVAudioSession = .sharedInstance()) {
+    nonisolated static func configureAgoraMediaVolume(_ session: AVAudioSession = .sharedInstance()) {
         let options: AVAudioSession.CategoryOptions = [.allowBluetooth, .allowBluetoothA2DP, .mixWithOthers]
         try? session.setCategory(.playAndRecord, mode: .default, options: options)
-        try? session.setActive(true)
+    }
+
+    nonisolated static func mediaVolumeIsActive(_ session: AVAudioSession = .sharedInstance()) -> Bool {
+        session.category == .playAndRecord && session.mode != .voiceChat
     }
 }

@@ -1,3 +1,12 @@
+## 2026-11-06 — iOS 2.3.1 (49) and Android 2.3.1 (23): call connect, photo address, Bites playback
+
+- Answering no longer asks iOS to activate the microphone a second time. CallKit keeps the session. If the session stays on the voice-chat unit, Agora publishes mono high-quality audio instead of a stereo frame that the other person hears scrambled. Stereo and spatial seating stay when media volume is active. Echo cancellation stays on. Noise suppression stays off. The app does not record calls.
+- Call titles no longer show a raw numeric id or Agora uid.
+- Profile photos accept a relative or `http` site address and turn it into `https://mrblindbandit.net/...`. A bad address is not pasted back into the error.
+- Bandit Feed plays short videos natively, looped, silent until Sound is turned on, with Audio mode and Video mode. Offscreen and in-call playback does not emit Bite audio. Private, draft, deleted, blocked, hidden, and reported rows stay out of the shared feed. Pagination asks for the next page.
+- New calls ask for Agora unless the server preference is LiveKit or Agora is explicitly not configured. The Admin Call RTC buttons are the switch. They do not change a call that is already up. Messages stay on Blindbandit encrypted delivery. Agora Chat and Agora RTM are not in this app.
+- Admin mute, push test, call disconnect, and monetization buttons use the live platform routes. Pin and wipe-session are reported as missing on the server and are not sent.
+
 ## 2026-11-05 — iOS 2.3.0 (48) and Android 2.3.0 (22): Agora call audio
 
 - Agora calls use music high-quality stereo (48 kHz, up to 128 kbps) and stereo capture (`audioProcessingChannels = 2`).

@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import net.mrblindbandit.app.auth.ClerkAuthService
+import net.mrblindbandit.app.social.absoluteMediaUrl
 import net.mrblindbandit.app.config.AppConfig
 import org.json.JSONArray
 import org.json.JSONObject
@@ -652,7 +653,10 @@ class ProductionCommunicationsService(
         try {
             val response = postCall(JSONObject().put("handle", target).put("kind", if (video) "video" else "voice"))
             callId = response.lString("id", "call_id").ifBlank { null }
-            callPeerName = response.optJSONObject("recipient")?.lString("display_name").orEmpty().ifBlank { "@$target" }
+            callPeerName = CallPeerLabel.spoken(
+                response.optJSONObject("recipient")?.lString("display_name").orEmpty().ifBlank { "@$target" },
+                target,
+            )
             callPeerHandle = target
             // Phase 2: server minted the call — switch dial → US ringback.
             statusMessage = "Ringing ${callPeerName}…"
@@ -754,7 +758,10 @@ class ProductionCommunicationsService(
                     .items().firstOrNull { it.lString("id", "call_id") == callId }
             }.getOrNull()
             val caller = response.optJSONObject("caller") ?: response.optJSONObject("other") ?: invite?.optJSONObject("caller")
-            callPeerName = caller?.lString("display_name", "handle").orEmpty().ifBlank { "Blindbandit caller" }
+            callPeerName = CallPeerLabel.spoken(
+                caller?.lString("display_name").orEmpty(),
+                caller?.lString("handle").orEmpty().ifBlank { "Blindbandit caller" },
+            )
             callPeerHandle = caller?.lString("handle").orEmpty()
                 .ifBlank { invite?.lString("from_handle", "caller_handle").orEmpty() }
             // Connect immediately — media first. Frame E2EE catches up in background.
@@ -894,7 +901,8 @@ class ProductionCommunicationsService(
             requestAgora = CallRtcGrant.shouldRequestAgora(preferred, configured)
             CallLog.i("rtc preference preferred=$preferred agoraConfigured=$configured requestAgora=$requestAgora")
         } catch (e: Exception) {
-            CallLog.w("rtc preference unavailable ${e.javaClass.simpleName}")
+            requestAgora = CallRtcGrant.createRtcProvider(null, null) == "agora"
+            CallLog.w("rtc preference unavailable ${e.javaClass.simpleName} requestAgora=$requestAgora")
         }
     }
 
@@ -1621,8 +1629,8 @@ class ProductionCommunicationsService(
             val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
             if (status == 404) error("Profile photo upload is not available on the server yet.")
             val profile = BlindbanditApiEnvelope.unwrap(status, text)
-            val url = profile.lString("avatar_url")
-            require(url.isNotBlank()) { "Upload succeeded but no public avatar URL was returned." }
+            val url = absoluteMediaUrl(profile.lString("avatar_url", "url", "public_url", "content_url"))
+            require(url.startsWith("https://")) { "The photo was sent, but the server did not return an address this phone can open." }
             myAvatarUrl = url
             url
         } finally { connection.disconnect() }

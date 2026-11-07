@@ -308,38 +308,28 @@ enum AdminAPI {
         var body: [String: Any] = extra
         if let reason, !reason.isEmpty { body["reason"] = reason }
         let id = BlindbanditAPI.escape(target.trimmingCharacters(in: CharacterSet(charactersIn: "@")))
-        let pathMap: [String: (String, String)] = [
-            // action -> (suffix or full relative, method)
-            "verify": ("verify", "POST"),
-            "unverify": ("unverify", "POST"),
-            "ban": ("ban", "POST"),
-            "suspend": ("suspend", "POST"),
-            "reinstate": ("reinstate", "POST"),
-            "mute_posts": ("mute-posts", "POST"),
-            "unmute_posts": ("unmute", "POST"),
-            "mute_messages": ("mute-messages", "POST"),
-            "disable_calls": ("disable-calls", "POST"),
-            "enable_calls": ("enable-calls", "POST"),
-            "shadow": ("shadow", "POST"),
-            "rate_limit": ("rate-limit", "POST"),
-            "revoke_push": ("revoke-push", "POST"),
-            "force_disconnect": ("force-disconnect", "POST"),
-            "monetize_approve": ("monetize", "POST"),
-            "monetize_reject": ("monetize", "POST"),
-            "wipe_sessions": ("wipe-sessions", "POST"),
-        ]
-        guard let (suffix, method) = pathMap[action] else {
-            throw CommunicationsError.server("Unknown admin action \(action)")
+        let until = extra["until"] as? Int
+        let multiplier = extra["rate_limit_multiplier"] as? Int
+        let plan = AdminRoutePlan.userAction(action: action, userId: id, reason: reason, until: until, multiplier: multiplier)
+        if let unavailable = plan.unavailableReason {
+            throw CommunicationsError.server(unavailable)
         }
-        if action == "monetize_approve" { body["approve"] = true }
-        if action == "monetize_reject" { body["approve"] = false }
-        if action == "unmute_posts" {
-            // unmute clears mute+shadow via reinstate-like unmute endpoint
+        var sent: [String: Any] = body
+        for (key, value) in plan.body {
+            if key == "until" || key == "rate_limit_multiplier", let number = Int(value) {
+                sent[key] = number
+            } else if value == "true" {
+                sent[key] = true
+            } else if value == "false" {
+                sent[key] = false
+            } else {
+                sent[key] = value
+            }
         }
         let data = try await requestAdmin(
-            "v1/social/admin/users/\(id)/\(suffix)",
-            method: method,
-            body: body.isEmpty ? [:] : body
+            plan.path,
+            method: plan.method,
+            body: sent.isEmpty ? [:] : sent
         )
         return String(data: data, encoding: .utf8) ?? "OK"
     }
@@ -354,22 +344,17 @@ enum AdminAPI {
             return String(data: data, encoding: .utf8) ?? "Unhidden"
         case "delete":
             try await deletePost(id: postId); return "Deleted"
-        case "pin":
-            try await pinPost(id: postId, pin: true); return "Pinned"
-        case "unpin":
-            try await pinPost(id: postId, pin: false); return "Unpinned"
+        case "pin", "unpin":
+            throw CommunicationsError.server(AdminRoutePlan.userAction(action: action, userId: "unused").unavailableReason ?? "Not available")
         default:
             throw CommunicationsError.server("Unknown post action \(action)")
         }
     }
 
     static func testPush(target: String, title: String, body: String) async throws -> String {
-        let id = BlindbanditAPI.escape(target.trimmingCharacters(in: CharacterSet(charactersIn: "@")))
-        let data = try await requestAdmin(
-            "v1/social/admin/users/\(id)/test-push",
-            method: "POST",
-            body: ["title": title, "body": body]
-        )
+        let id = target.trimmingCharacters(in: CharacterSet(charactersIn: "@"))
+        let plan = AdminRoutePlan.userAction(action: "test_push", userId: id, title: title, message: body)
+        let data = try await requestAdmin(plan.path, method: plan.method, body: plan.body)
         return String(data: data, encoding: .utf8) ?? "Sent"
     }
 
@@ -764,10 +749,13 @@ struct AdminHideBiteView: View {
 // MARK: - Call RTC
 
 struct AdminCallRtcView: View {
+    @EnvironmentObject private var communications: ProductionCommunicationsService
     @State private var status: CallRtcStatus?
     @State private var note = ""
     @State private var busy = false
     @State private var error = ""
+
+    private var callBusy: Bool { communications.isInCall || communications.isRinging }
 
     var body: some View {
         Form {
@@ -792,21 +780,32 @@ struct AdminCallRtcView: View {
                 } label: {
                     Label("Use LiveKit", systemImage: "antenna.radiowaves.left.and.right")
                 }
-                .disabled(busy)
+                .disabled(busy || callBusy)
                 .accessibilityLabel("Use LiveKit")
-                .accessibilityHint("Set preferred call provider to LiveKit")
+                .accessibilityHint(callBusy ? "Unavailable while a call is active" : "Set preferred call provider to LiveKit for new calls")
 
                 Button {
                     Task { await setProvider("agora") }
                 } label: {
                     Label("Use Agora", systemImage: "waveform.badge.mic")
                 }
-                .disabled(busy)
+                .disabled(busy || callBusy)
                 .accessibilityLabel("Use Agora")
-                .accessibilityHint("Set preferred call provider to Agora")
+                .accessibilityHint(callBusy ? "Unavailable while a call is active" : "Set preferred call provider to Agora for new calls")
+                if callBusy {
+                    Text("Hang up before changing the call provider. A call that is already up stays on the provider it started with.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Section("Messages") {
+                Text(CallProviderPlan.messageTransportNote)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(CallProviderPlan.messageTransportNote)
             }
             Section {
-                Text("Existing calls keep their original provider. New compatible apps follow this preference.")
+                Text("Existing calls keep their original provider. New calls from both phones follow this choice. Agora is the default when the server has not selected LiveKit.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -828,14 +827,26 @@ struct AdminCallRtcView: View {
     private func setProvider(_ provider: String) async {
         busy = true
         defer { busy = false }
+        guard !callBusy else {
+            note = "Hang up before changing the call provider."
+            UIAccessibility.post(notification: .announcement, argument: note)
+            return
+        }
         do {
             status = try await AdminAPI.setCallRtc(provider: provider)
-            note = "Switched to \(provider)."
+            let actual = status?.providerLabel ?? provider
+            if actual != provider.lowercased() {
+                note = "The server kept \(actual). \(provider) was not applied."
+            } else {
+                note = "New calls will use \(actual)."
+            }
             error = ""
             AppHaptics.success()
+            UIAccessibility.post(notification: .announcement, argument: note)
         } catch {
             note = error.localizedDescription
             AppHaptics.error()
+            UIAccessibility.post(notification: .announcement, argument: note)
         }
     }
 }

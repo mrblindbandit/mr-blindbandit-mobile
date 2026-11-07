@@ -361,8 +361,11 @@ extension BlindbanditAPI {
 
     /// Contract: POST /v1/social/calls {kind, group_id}.
     static func startGroupCall(groupID: String, video: Bool) async throws -> BlindbanditCallResponse {
-        try decode(BlindbanditCallResponse.self, from: try await request(
-            "v1/social/calls", method: "POST", body: ["kind": video ? "video" : "voice", "group_id": groupID]
+        let provider = await BlindbanditAPI.callCreateProviderField()
+        var body: [String: Any] = ["kind": video ? "video" : "voice", "group_id": groupID]
+        if let provider { body["rtc_provider"] = provider }
+        return try decode(BlindbanditCallResponse.self, from: try await request(
+            "v1/social/calls", method: "POST", body: body
         ))
     }
 

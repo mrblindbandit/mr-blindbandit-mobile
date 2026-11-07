@@ -447,7 +447,7 @@ extension CallKitManager: CXProviderDelegate {
         let agora = MainActor.assumeIsolated { self.service?.activeRtcProvider == "agora" }
         if agora {
             // Media volume. Voice-chat mode would turn Apple's noise suppression back on.
-            CallMediaSession.activateAgoraMediaVolume(audioSession)
+            CallMediaSession.configureAgoraMediaVolume(audioSession)
         } else {
             try? audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth, .allowBluetoothA2DP, .mixWithOthers])
             try? AudioManager.shared.setEngineAvailability(.default)

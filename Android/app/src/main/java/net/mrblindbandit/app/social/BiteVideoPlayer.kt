@@ -4,7 +4,9 @@ import android.net.Uri
 import android.widget.MediaController
 import android.widget.VideoView
 import androidx.compose.foundation.background
+import android.media.MediaPlayer
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -36,9 +38,12 @@ fun BiteVideoPlayer(
     onPlaying: () -> Unit = {},
 ) {
     if (videoUrl.isBlank()) return
-    var playing by remember(videoUrl) { mutableStateOf(autoPlay) }
+    var playing by remember(videoUrl) { mutableStateOf(false) }
+    var soundOn by remember(videoUrl) { mutableStateOf(false) }
+    var audioOnly by remember(videoUrl) { mutableStateOf(false) }
     var error by remember(videoUrl) { mutableStateOf<String?>(null) }
     var videoViewRef by remember { mutableStateOf<VideoView?>(null) }
+    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
 
     Box(
         modifier
@@ -54,11 +59,13 @@ fun BiteVideoPlayer(
                     controller.setAnchorView(this)
                     setMediaController(controller)
                     setOnPreparedListener { mp ->
+                        mediaPlayer = mp
                         mp.isLooping = true
+                        val volume = if (soundOn) 1f else 0f
+                        mp.setVolume(volume, volume)
                         error = null
-                        if (autoPlay || playing) {
+                        if (autoPlay && playing) {
                             start()
-                            playing = true
                             onPlaying()
                         }
                     }
@@ -74,6 +81,10 @@ fun BiteVideoPlayer(
                 }
             },
             update = { view ->
+                view.setOnPreparedListener { mp ->
+                    mp.isLooping = true
+                    mp.setVolume(if (soundOn) 1f else 0f, if (soundOn) 1f else 0f)
+                }
                 if (playing && !view.isPlaying) {
                     view.start()
                     onPlaying()
@@ -81,8 +92,9 @@ fun BiteVideoPlayer(
                     view.pause()
                 }
             },
-            modifier = Modifier.fillMaxWidth().heightIn(min = 200.dp, max = 420.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = if (audioOnly) 0.dp else 200.dp, max = if (audioOnly) 0.dp else 420.dp),
         )
+        Row(Modifier.align(Alignment.BottomStart).padding(8.dp)) {
         TextButton(
             onClick = {
                 val v = videoViewRef
@@ -96,9 +108,16 @@ fun BiteVideoPlayer(
                     onPlaying()
                 }
             },
-            modifier = Modifier.align(Alignment.BottomStart).padding(8.dp),
+            modifier = Modifier.padding(8.dp),
         ) {
             Text(if (playing) "Pause" else "Play")
+        }
+        TextButton(onClick = {
+            soundOn = !soundOn
+            val volume = if (soundOn) 1f else 0f
+            mediaPlayer?.setVolume(volume, volume)
+        }) { Text(if (soundOn) "Sound off" else "Sound on") }
+        TextButton(onClick = { audioOnly = !audioOnly }) { Text(if (audioOnly) "Video mode" else "Audio mode") }
         }
         if (error != null) {
             Text(

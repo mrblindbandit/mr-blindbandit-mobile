@@ -663,12 +663,15 @@ enum BlindbanditAPI {
             let envelope = try? JSONDecoder().decode(APIErrorEnvelope.self, from: data)
             throw CommunicationsError.server(envelope?.error?.message ?? "Could not upload profile picture (HTTP \(http.statusCode)).")
         }
-        let profile = try decode(BlindbanditSocialProfile.self, from: data)
-        let trimmed = profile.avatar_url?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !trimmed.isEmpty else {
-            throw CommunicationsError.server("Upload succeeded but no public avatar URL was returned.")
+        if let profile = try? decode(BlindbanditSocialProfile.self, from: data),
+           let https = PublicMediaURL.httpsString(profile.avatar_url) {
+            return https
         }
-        return trimmed
+        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let https = PublicMediaURL.firstHTTPS(in: object) {
+            return https
+        }
+        throw CommunicationsError.server("The photo was sent, but the server did not return an address this phone can open.")
     }
 
     static func clearPublicAvatar() async throws {
@@ -834,9 +837,37 @@ enum BlindbanditAPI {
     }
 
     static func startCall(handle: String, video: Bool) async throws -> BlindbanditCallResponse {
-        try decode(BlindbanditCallResponse.self, from: try await request(
-            "v1/social/calls", method: "POST", body: ["handle": handle, "to_handle": handle, "kind": video ? "video" : "voice"]
-        ))
+        try await postNewCall(["handle": handle, "to_handle": handle, "kind": video ? "video" : "voice"])
+    }
+
+    /// Reads the server call preference. Agora is the default. A LiveKit preference is obeyed.
+    static func callCreateProviderField() async -> String? {
+        var preferred: String?
+        var configured: Bool?
+        if let data = try? await request("v1/social/rtc/config", timeout: 4),
+           let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let payload = (root["data"] as? [String: Any]) ?? root
+            preferred = payload["preferred_provider"] as? String
+            if let agora = payload["agora"] as? [String: Any] {
+                configured = agora["configured"] as? Bool
+            }
+        }
+        return CallProviderPlan.createField(serverPreferred: preferred, agoraConfigured: configured)
+    }
+
+    private static func postNewCall(_ fields: [String: Any]) async throws -> BlindbanditCallResponse {
+        let provider = await callCreateProviderField()
+        var body = fields
+        if let provider { body["rtc_provider"] = provider }
+        do {
+            return try decode(BlindbanditCallResponse.self, from: try await request("v1/social/calls", method: "POST", body: body))
+        } catch {
+            let text = "\(error)"
+            guard provider == "agora", text.contains("AGORA_NOT") else { throw error }
+            var fallback = fields
+            fallback.removeValue(forKey: "rtc_provider")
+            return try decode(BlindbanditCallResponse.self, from: try await request("v1/social/calls", method: "POST", body: fallback))
+        }
     }
 
     static func joinCall(id: String) async throws -> BlindbanditCallResponse {
@@ -1074,8 +1105,7 @@ final class ProductionCommunicationsService: ObservableObject {
     }
 
     func applyMyAvatarURL(_ url: String?) {
-        let t = url?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        myAvatarURL = t.isEmpty ? nil : t
+        myAvatarURL = PublicMediaURL.httpsString(url)
     }
 
     func applyMyDisplayName(_ name: String) {
@@ -1894,7 +1924,7 @@ final class ProductionCommunicationsService: ObservableObject {
         do {
             let response = try await BlindbanditAPI.joinCall(id: id)
             if let invite {
-                callPeerName = invite.group_name ?? invite.from_name
+                callPeerName = CallPeerLabel.spoken(name: invite.group_name ?? invite.from_name, handle: invite.from_handle)
                 callGroupID = invite.group_id
                 callGroupName = invite.group_name
             } else if let peer = callHistory.first(where: { $0.id == id })?.other?.handle {
@@ -2177,8 +2207,7 @@ final class ProductionCommunicationsService: ObservableObject {
 
     private func spatialDisplayName(index: Int, count: Int) -> String {
         if callGroupID == nil && count == 1 {
-            let name = callPeerName.trimmingCharacters(in: .whitespacesAndNewlines)
-            return name.isEmpty ? "The other person" : name
+            return CallPeerLabel.spoken(name: callPeerName)
         }
         if count == 1 { return "Someone" }
         return "Person \(index + 1)"
@@ -2227,7 +2256,7 @@ final class ProductionCommunicationsService: ObservableObject {
         for uid in (agoraSession?.remoteUids ?? []).sorted() {
             list.append(CallParticipantInfo(
                 id: String(uid),
-                name: spatialNames[uid] ?? (callPeerName.isEmpty ? "Caller \(uid)" : callPeerName),
+                name: spatialNames[uid] ?? CallPeerLabel.spoken(name: callPeerName),
                 isLocal: false,
                 isSpeaking: lastSpatialSpeaker == uid, micOn: !locallyMuted.contains(String(uid)), cameraOn: isVideoCall,
                 sharingScreen: false, quality: .unknown, handRaised: raisedHands.contains(String(uid)),

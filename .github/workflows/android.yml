@@ -75,19 +75,19 @@ jobs:
           cp Android/app/build/outputs/apk/debug/app-debug.apk "dist/Mr-Blindbandit-Android-v$v-debug.apk"
           suffix=$([ "$SIGNED" = "true" ] && echo signed || echo unsigned)
           cp Android/app/build/outputs/bundle/release/app-release.aab "dist/Mr-Blindbandit-Android-v$v-$suffix.aab"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Mr-Blindbandit-Android-${{ steps.version.outputs.name }}-debug-APK
           path: dist/*.apk
           if-no-files-found: error
           retention-days: 14
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Mr-Blindbandit-Android-${{ steps.version.outputs.name }}-AAB
           path: dist/*.aab
           if-no-files-found: error
           retention-days: 14
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: Mr-Blindbandit-Android-reports
@@ -130,7 +130,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           working-directory: Android
           script: ./gradlew connectedDebugAndroidTest --stacktrace
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: Mr-Blindbandit-Android-instrumentation-reports

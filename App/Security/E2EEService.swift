@@ -262,7 +262,7 @@ final class E2EEService: ObservableObject {
         let p = stamp(payload, chatKey: key)
         let env = try MessageCrypto.encrypt(p, local: id, recipients: devs, storage: storage)
         store.store(p, msgID: env.msg_id, sender: myHandle, expiresIn: p.expires_in)
-        var body: [String: Any] = ["handle": handle, "e2ee": true, "envelope": env.jsonObject, "client_msg_id": env.msg_id]
+        var body: [String: Any] = ["handle": handle, "e2ee": true, "envelope": env.jsonObject, "client_msg_id": env.msg_id, "kind": p.t]
         if let attachmentID = p.media?.attachment_id, !attachmentID.isEmpty { body["attachment_ids"] = [attachmentID] }
         if viewOnce { body["view_once"] = true }
         if p.silent == true { body["silent"] = true }
@@ -289,7 +289,7 @@ final class E2EEService: ObservableObject {
         let p = stamp(payload, chatKey: "group:\(groupID)")
         let env = try MessageCrypto.encrypt(p, local: id, recipients: devs, storage: storage)
         store.store(p, msgID: env.msg_id, sender: myHandle, expiresIn: p.expires_in)
-        var body: [String: Any] = ["e2ee": true, "envelope": env.jsonObject, "client_msg_id": env.msg_id]
+        var body: [String: Any] = ["e2ee": true, "envelope": env.jsonObject, "client_msg_id": env.msg_id, "kind": p.t]
         if let attachmentID = p.media?.attachment_id, !attachmentID.isEmpty { body["attachment_ids"] = [attachmentID] }
         if viewOnce { body["view_once"] = true }
         if p.silent == true { body["silent"] = true }

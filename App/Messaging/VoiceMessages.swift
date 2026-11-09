@@ -130,7 +130,7 @@ enum VoiceSender {
         let text = "🎤 Voice message (\(Int(duration.rounded())) s, transcribed on my iPhone): " + (transcript ?? "[couldn't transcribe]")
         var ok = false
         if case .group(let gid) = chat { ok = (try? await BlindbanditAPI.sendGroupMessage(id: gid, body: text)) != nil }
-        else { ok = await comms.sendMessage(recipient: handle, body: text) != nil }
+        else { ok = await comms.sendMessage(recipient: handle, body: text, clientMsgID: localID) != nil }
         UIAccessibility.post(notification: .announcement, argument: ok ? "Sent as a transcript. Play still works on this iPhone from the local recording." : "Voice message not sent")
         return ok
     }
@@ -805,11 +805,9 @@ struct VoiceRowPlayAction: View {
                     duration: transcriptDuration(body), transcript: body, alt: nil)
             }
         }
-        guard isVoice(mime: decrypted?.media?.mime, kind: kind, decryptedType: decrypted?.t, body: body) else { return nil }
-        // Stub so the play control still renders; load will announce when audio was never stored.
-        return E2EEPayload.Media(url: nil, attachment_id: nil, key: "", nonce: nil, sha256: "",
-            mime: "audio/mp4", size: nil, filename: "voice.m4a", caption: nil, view_once: nil,
-            duration: transcriptDuration(body), transcript: body, alt: "transcript-only")
+        // A transcript without a linked attachment is text, not a playable voice message.
+        // Returning nil prevents a dead Play button from surfacing [noURL].
+        return nil
     }
 
     /// Documented action name for tests / callers that need the label without a live player.

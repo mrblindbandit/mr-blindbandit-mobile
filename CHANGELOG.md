@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.3.5 (54 iOS / 27 Android) — 2026-11-10
+
+- Fixed transcript-fallback voice messages losing the local attachment identity and showing `No attachment id or URL [noURL]`.
+- Reused one client message ID from local audio cache through the server echo so the sender can play the recording immediately.
+- Removed dead Play controls from genuine transcript-only messages.
+- Tagged encrypted voice and file rows with their correct media kind on both platforms.
+
 ## 2.3.4 (52 iOS / 26 Android) — 2026-11-09
 
 - Silenced encrypted call-key control traffic on the server contract.

@@ -59,6 +59,7 @@ suspend fun ProductionCommunicationsService.sendAttachment(chatId: String, handl
     check(recipients.isNotEmpty()) { "Recipients unavailable. File not sent." }
     val fields = engine.fields(recipients, payload) ?: error("Encrypted attachments require recipient device keys. File not sent.")
     fields.put("attachment_ids", org.json.JSONArray().put(slot.getString("attachment_id")))
+    fields.put("kind", if (duration != null) "voice" else "file")
     objectTransfer(slot.getJSONObject("upload").getString("url"), sealed.blob)
     val path = if (group) "/v1/social/groups/${enc(chatId)}/messages" else "/v1/social/messages"
     if (!group) fields.put("handle", handles.first())

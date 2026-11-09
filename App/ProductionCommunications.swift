@@ -1533,7 +1533,7 @@ final class ProductionCommunicationsService: ObservableObject {
         conversations.first { $0.id == id }
     }
 
-    func sendMessage(recipient: String, body: String, silent: Bool = false) async -> String? {
+    func sendMessage(recipient: String, body: String, silent: Bool = false, clientMsgID: String? = nil) async -> String? {
         let handle = BlindbanditHandle.normalize(recipient)
         let text = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !handle.isEmpty, !text.isEmpty else {
@@ -1541,7 +1541,7 @@ final class ProductionCommunicationsService: ObservableObject {
             return nil
         }
         // Show a pending bubble immediately; mark it sent only when the server confirms.
-        let lid = "local-" + UUID().uuidString
+        let lid = clientMsgID?.isEmpty == false ? clientMsgID! : "local-" + UUID().uuidString
         var localID: String?
         if let open = openConversationID, conversation(id: open)?.other?.handle.lowercased() == handle.lowercased() {
             var m = BlindbanditServerMessage(id: lid, sender_id: myProfileID, body: String(text.prefix(4000)),

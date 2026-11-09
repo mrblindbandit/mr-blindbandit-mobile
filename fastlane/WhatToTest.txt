@@ -1,14 +1,7 @@
-2.3.0 (48) — Agora call audio: stereo, media volume, spatial seats
+2.3.2 (50) — Voice-message playback repair
 
-• Agora calls use the highest music stereo profile (48 kHz, stereo) and the media volume, not the phone-call volume.
-• Noise suppression is off, including AI noise suppression, so the room stays audible. Echo cancellation stays on.
-• People are seated around you. A one-to-one call places the other person in front. VoiceOver says where they are, for example "Emma joined, on your left."
-• Wired headphones and Bluetooth turn on a headphone equalizer. Speaker and earpiece do not.
-• A group call stays open for two minutes after the last other person leaves.
+• New encrypted voice messages bind their uploaded audio to the sent message so it is not treated as an abandoned temporary upload.
+• Legacy clear-m4a voice messages can play even when old key metadata is absent.
+• Standard base64, base64url, and legacy key/nonce field names are accepted.
 
-Please try with VoiceOver, on a real Agora call:
-1. Speaker, then earpiece.
-2. Wired headphones. Hear the route announcement and confirm the other person is still audible.
-3. Bluetooth headphones. Same check. Switch back to the speaker.
-4. One-to-one: the other person is announced in front of you. Background sound in their room should still be audible, without a strong echo on speakerphone.
-5. If a third person joins, each person gets a spoken seat. When someone leaves, the others are still audible.
+Please send and play a voice message in both a direct chat and a group. Also retry the message that previously announced “Attachment key or nonce missing.”

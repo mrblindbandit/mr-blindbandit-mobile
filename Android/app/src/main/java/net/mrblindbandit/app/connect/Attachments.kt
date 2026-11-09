@@ -9,6 +9,17 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Base64
 
+internal fun decodeAttachmentKeyMaterial(value: String?): ByteArray? {
+    val text = value?.trim().orEmpty()
+    if (text.isEmpty()) return null
+    runCatching { Base64.getDecoder().decode(text) }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { return it }
+    val padded = text.replace('-', '+').replace('_', '/').let { it + "=".repeat((4 - it.length % 4) % 4) }
+    return runCatching { Base64.getDecoder().decode(padded) }.getOrNull()?.takeIf { it.isNotEmpty() }
+}
+
+internal fun looksLikeM4A(bytes: ByteArray): Boolean =
+    bytes.size >= 8 && bytes.copyOfRange(4, 8).contentEquals("ftyp".toByteArray())
+
 /** Signed object URLs do not receive the Clerk JWT. No redirects or cleartext transfers. */
 private suspend fun objectTransfer(url: String, upload: ByteArray? = null): ByteArray = withContext(Dispatchers.IO) {
     val target = URL(url)
@@ -47,6 +58,7 @@ suspend fun ProductionCommunicationsService.sendAttachment(chatId: String, handl
     } else handles
     check(recipients.isNotEmpty()) { "Recipients unavailable. File not sent." }
     val fields = engine.fields(recipients, payload) ?: error("Encrypted attachments require recipient device keys. File not sent.")
+    fields.put("attachment_ids", org.json.JSONArray().put(slot.getString("attachment_id")))
     objectTransfer(slot.getJSONObject("upload").getString("url"), sealed.blob)
     val path = if (group) "/v1/social/groups/${enc(chatId)}/messages" else "/v1/social/messages"
     if (!group) fields.put("handle", handles.first())
@@ -57,7 +69,16 @@ suspend fun ProductionCommunicationsService.downloadAttachment(media: JSONObject
     val id = media.getString("attachment_id")
     val response = request("/v1/social/attachments/${enc(id)}")
     val blob = objectTransfer(response.lString("url", "download_url"))
+    if (looksLikeM4A(blob)) return blob
+    val key = sequenceOf("key", "attachment_key", "encryption_key", "wrapped_key")
+        .mapNotNull { decodeAttachmentKeyMaterial(media.optString(it, null)) }.firstOrNull()
+        ?: error("Attachment key missing")
+    val nonce = sequenceOf("nonce", "base_nonce", "iv")
+        .mapNotNull { decodeAttachmentKeyMaterial(media.optString(it, null)) }.firstOrNull()
+        ?: error("Attachment nonce missing")
+    val digest = decodeAttachmentKeyMaterial(media.optString("sha256", null))
+        ?: error("Attachment digest missing")
     return withContext(Dispatchers.Default) {
-        AttachmentCrypto.open(blob, Base64.getDecoder().decode(media.getString("key")), Base64.getDecoder().decode(media.getString("nonce")), media.getInt("size"), Base64.getDecoder().decode(media.getString("sha256")))
+        AttachmentCrypto.open(blob, key, nonce, media.getInt("size"), digest)
     }
 }

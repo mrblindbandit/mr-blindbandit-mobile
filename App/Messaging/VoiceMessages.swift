@@ -444,10 +444,6 @@ enum VoicePlayerModel {
         if let s = m.url, let u = BlindbanditAPI.resolveURL(s), u.isFileURL,
            let d = try? Data(contentsOf: u), !d.isEmpty { return d }
 
-        let key = decodeKeyMaterial(m.key) ?? decodeKeyMaterial(m.wrapped_key)
-        let nonce = decodeKeyMaterial(m.nonce)
-        guard let key, let nonce else { throw LoadError.missingKey }
-
         var blob: Data?
         var lastHTTP: Int?
 
@@ -487,6 +483,12 @@ enum VoicePlayerModel {
             }
             return blob
         }
+
+        // Legacy senders sometimes uploaded a clear m4a without key metadata. Fetch first so those notes
+        // remain playable; encrypted blobs still fail closed unless both AES key and base nonce are valid.
+        let key = decodeKeyMaterial(m.key) ?? decodeKeyMaterial(m.wrapped_key)
+        let nonce = decodeKeyMaterial(m.nonce)
+        guard let key, let nonce else { throw LoadError.missingKey }
 
         let sha = decodeKeyMaterial(m.sha256)
         let plain: Data

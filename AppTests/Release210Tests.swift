@@ -112,6 +112,19 @@ final class Release210Tests: XCTestCase {
         XCTAssertFalse(VoicePlayerModel.looksLikeM4A(Data([0, 1, 2, 3])))
     }
 
+    func testVoiceMediaDecodesLegacyAliasesAndMissingCryptoMetadata() throws {
+        let aliased = Data(#"{"attachment_id":"a1","attachment_key":"AQID","base_nonce":"BAUG","sha256":"BwgJ","mime":"audio/mp4","size":12}"#.utf8)
+        let media = try JSONDecoder().decode(E2EEPayload.Media.self, from: aliased)
+        XCTAssertEqual(media.key, "AQID")
+        XCTAssertEqual(media.nonce, "BAUG")
+        XCTAssertEqual(media.attachment_id, "a1")
+
+        let clearLegacy = Data(#"{"attachment_id":"a2","mime":"audio/mp4","filename":"voice.m4a"}"#.utf8)
+        let clearMedia = try JSONDecoder().decode(E2EEPayload.Media.self, from: clearLegacy)
+        XCTAssertEqual(clearMedia.key, "")
+        XCTAssertNil(clearMedia.nonce)
+    }
+
     func testVoiceLogPersists() {
         let prev = VoiceLog.lastError
         VoiceLog.lastError = "unit-test-error"

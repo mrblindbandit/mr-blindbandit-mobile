@@ -6,6 +6,12 @@ This project uses a simple public release sequence. iOS and Android are kept on 
 
 ---
 
+## [2.3.2] - 2026-11-09 (iOS build 50, Android versionCode 24)
+
+- Voice playback downloads the attachment before demanding key metadata, so legacy clear-m4a voice notes play instead of failing with `missingKey`.
+- iOS and Android accept standard base64, base64url, and legacy attachment key/nonce field names while encrypted blobs still fail closed without valid key material.
+- New voice and file messages bind their attachment IDs to the sent DM or group message, preventing the server's temporary-upload cleanup from deleting valid message audio after 24 hours.
+
 
 
 ## [2.0.17] - 2026-10-30 (Android, versionCode 21)

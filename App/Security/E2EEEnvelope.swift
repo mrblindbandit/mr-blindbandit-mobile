@@ -65,6 +65,53 @@ struct E2EEPayload: Codable, Equatable {
         var duration: Double?
         var transcript: String?
         var alt: String?
+
+        init(url: String?, attachment_id: String?, key: String, wrapped_key: String? = nil, nonce: String?, sha256: String,
+             mime: String, size: Int?, filename: String?, caption: String?, view_once: Bool?, duration: Double?,
+             transcript: String?, alt: String?) {
+            self.url = url; self.attachment_id = attachment_id; self.key = key; self.wrapped_key = wrapped_key
+            self.nonce = nonce; self.sha256 = sha256; self.mime = mime; self.size = size; self.filename = filename
+            self.caption = caption; self.view_once = view_once; self.duration = duration; self.transcript = transcript; self.alt = alt
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case url, attachment_id, key, wrapped_key, nonce, sha256, mime, size, filename, caption, view_once, listen_once, duration, transcript, alt
+            case attachment_key, encryption_key, base_nonce, iv
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            url = try c.decodeIfPresent(String.self, forKey: .url)
+            attachment_id = try c.decodeIfPresent(String.self, forKey: .attachment_id)
+            key = (try c.decodeIfPresent(String.self, forKey: .key))
+                ?? (try c.decodeIfPresent(String.self, forKey: .attachment_key))
+                ?? (try c.decodeIfPresent(String.self, forKey: .encryption_key)) ?? ""
+            wrapped_key = try c.decodeIfPresent(String.self, forKey: .wrapped_key)
+            nonce = (try c.decodeIfPresent(String.self, forKey: .nonce))
+                ?? (try c.decodeIfPresent(String.self, forKey: .base_nonce))
+                ?? (try c.decodeIfPresent(String.self, forKey: .iv))
+            sha256 = (try c.decodeIfPresent(String.self, forKey: .sha256)) ?? ""
+            mime = (try c.decodeIfPresent(String.self, forKey: .mime)) ?? ""
+            size = try c.decodeIfPresent(Int.self, forKey: .size)
+            filename = try c.decodeIfPresent(String.self, forKey: .filename)
+            caption = try c.decodeIfPresent(String.self, forKey: .caption)
+            view_once = (try c.decodeIfPresent(Bool.self, forKey: .view_once))
+                ?? (try c.decodeIfPresent(Bool.self, forKey: .listen_once))
+            duration = try c.decodeIfPresent(Double.self, forKey: .duration)
+            transcript = try c.decodeIfPresent(String.self, forKey: .transcript)
+            alt = try c.decodeIfPresent(String.self, forKey: .alt)
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encodeIfPresent(url, forKey: .url); try c.encodeIfPresent(attachment_id, forKey: .attachment_id)
+            try c.encode(key, forKey: .key); try c.encodeIfPresent(wrapped_key, forKey: .wrapped_key)
+            try c.encodeIfPresent(nonce, forKey: .nonce); try c.encode(sha256, forKey: .sha256); try c.encode(mime, forKey: .mime)
+            try c.encodeIfPresent(size, forKey: .size); try c.encodeIfPresent(filename, forKey: .filename)
+            try c.encodeIfPresent(caption, forKey: .caption); try c.encodeIfPresent(view_once, forKey: .view_once)
+            try c.encodeIfPresent(duration, forKey: .duration); try c.encodeIfPresent(transcript, forKey: .transcript)
+            try c.encodeIfPresent(alt, forKey: .alt)
+        }
     }
     struct Poll: Codable, Equatable {
         var question: String

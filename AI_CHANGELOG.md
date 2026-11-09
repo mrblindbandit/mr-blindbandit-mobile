@@ -1,3 +1,9 @@
+## 2026-11-09 — iOS 2.3.2 (50) and Android 2.3.2 (24): voice attachment repair
+
+- Voice playback now fetches the blob before requiring attachment crypto metadata. Legacy clear-m4a notes play; encrypted blobs still require a valid 32-byte key and 12-byte nonce.
+- Media decoding accepts base64/base64url plus legacy `attachment_key` / `encryption_key` and `base_nonce` / `iv` aliases.
+- Encrypted DM and group sends now include `attachment_ids`, atomically binding uploaded voice/file objects to the message so the server does not expire them as abandoned uploads.
+
 ## 2026-11-06 — iOS 2.3.1 (49) and Android 2.3.1 (23): call connect, photo address, Bites playback
 
 - Answering no longer asks iOS to activate the microphone a second time. CallKit keeps the session. If the session stays on the voice-chat unit, Agora publishes mono high-quality audio instead of a stereo frame that the other person hears scrambled. Stereo and spatial seating stay when media volume is active. Echo cancellation stays on. Noise suppression stays off. The app does not record calls.

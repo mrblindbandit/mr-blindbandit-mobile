@@ -6,6 +6,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import net.mrblindbandit.app.connect.decodeAttachmentKeyMaterial
+import net.mrblindbandit.app.connect.looksLikeM4A
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -99,6 +101,13 @@ class P256InteropTest {
         assertArrayEquals(plain, AttachmentCrypto.open(sealed.blob, sealed.key, sealed.nonce, plain.size, sealed.digest))
         sealed.blob[0] = (sealed.blob[0].toInt() xor 1).toByte()
         assertThrows(IllegalArgumentException::class.java) { AttachmentCrypto.open(sealed.blob, sealed.key, sealed.nonce, plain.size, sealed.digest) }
+    }
+    @Test fun attachmentKeyAliasesAcceptBase64UrlAndClearM4a() {
+        assertArrayEquals(byteArrayOf(1, 2, 3), decodeAttachmentKeyMaterial("AQID"))
+        assertArrayEquals(byteArrayOf(0xfb.toByte(), 0xff.toByte()), decodeAttachmentKeyMaterial("-_8"))
+        val m4a = ByteArray(12).also { "ftyp".toByteArray().copyInto(it, 4) }
+        assertTrue(looksLikeM4A(m4a))
+        assertFalse(looksLikeM4A(byteArrayOf(1, 2, 3)))
     }
     @Test fun paddingBoundariesAndAadTamper() {
         val v = vectors().getJSONArray("padding")

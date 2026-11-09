@@ -2,14 +2,14 @@
 
 # Mr. Blindbandit Mobile
 
-### Version 1.6 — accessibility-first creator + communications app
+### Version 2.3.2 — accessibility-first creator + communications app
 
 **Accessibility-first • Creator-focused • Security-conscious • Cross-platform**
 
 Mr. Blindbandit Mobile is the native iOS and Android companion for the Mr. Blindbandit / Blindbandit Records ecosystem, combining creator tools, music, secure account access, voice/video calling, messaging, and trusted first-party web experiences.
 
 [![Website](https://img.shields.io/badge/Website-mrblindbandit.net-111111?style=for-the-badge&logo=googlechrome&logoColor=white)](https://mrblindbandit.net)
-[![Release](https://img.shields.io/badge/Release-v1.6-111111?style=for-the-badge)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/Release-v2.3.2-111111?style=for-the-badge)](CHANGELOG.md)
 [![iOS](https://img.shields.io/badge/iOS-17%2B-000000?style=for-the-badge&logo=apple&logoColor=white)](#ios)
 [![Android](https://img.shields.io/badge/Android-26%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)](#android)
 [![Accessibility](https://img.shields.io/badge/Accessibility-VoiceOver_%2B_TalkBack-111111?style=for-the-badge)](#accessibility)
@@ -24,8 +24,8 @@ Mr. Blindbandit Mobile is the native iOS and Android companion for the Mr. Blind
 
 | Platform | Public version | Build/code | Minimum OS | CI validation artifact |
 |---|---:|---:|---:|---|
-| iOS | 1.6 | 6 | iOS 17 | `Mr-Blindbandit-iOS-v1.6-unsigned-IPA` |
-| Android | 1.6.0 | 6 | Android 8 / API 26 | `Mr-Blindbandit-Android-v1.6-debug-APK` + unsigned AAB |
+| iOS | 2.3.2 | 50 | iOS 17 | TestFlight |
+| Android | 2.3.2 | 24 | Android 8 / API 26 | Google Play release AAB |
 
 Version 1.6 productionizes authentication and communications: Clerk-backed sessions, Sign in with Apple on iOS, server-authorized LiveKit room grants, server-backed calls/messages, first-launch permission onboarding, account deletion, an iOS privacy manifest, Android API 36 targeting, and stricter store-validation CI.
 

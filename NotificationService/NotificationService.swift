@@ -157,6 +157,7 @@ enum PushDecryptor {
               let out = try? MessageCrypto.decrypt(env, local: me, storage: PeekSessionStorage()) else { return nil }
         switch out.payload.t {
         case "voice": return "Voice message"
+        case "call_key": return "Call security update"
         case "poll": return "Poll: " + (out.payload.body ?? "")
         case "image", "photo": return "Photo"
         default: return out.payload.body

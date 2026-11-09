@@ -290,3 +290,10 @@ Cross-links:
 - Voice attachment playback accepts legacy Base64/base64url metadata and clear M4A fallback; sends bind attachment IDs.
 - Notification previews fail closed for encrypted envelopes and call-frame key payloads.
 - Fixed Swift throwing decode chains and synchronized Android AppConfig version metadata.
+
+
+## 2026-11-09 — Silent call-key control release
+
+- iOS 2.3.4 (52), Android 2.3.4 (26).
+- Notification Service now maps decrypted call_key controls to a safe human-readable label.
+- Mobile and server contracts propagate silent control-message delivery end to end.

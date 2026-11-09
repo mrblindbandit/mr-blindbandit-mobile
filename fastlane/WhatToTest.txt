@@ -1,6 +1,7 @@
-Version 2.3.3 (51)
+Version 2.3.4 (52)
 
 - Play voice messages sent by current and older app versions, including legacy clear M4A attachments.
 - Confirm voice messages no longer fail with missingKey when the file is playable without encryption metadata.
-- Confirm incoming encrypted messages never display raw JSON, attachment keys, call-frame keys, or nonces in notifications.
-- Confirm incoming calls show a human-readable caller message and still open the call screen.
+- Confirm incoming encrypted messages never display raw JSON, attachment keys, call-frame keys, or nonces.
+- Start and answer voice/video calls; call-key control traffic must not create a visible notification.
+- Confirm actual incoming calls still show a human-readable caller message and open the call screen.

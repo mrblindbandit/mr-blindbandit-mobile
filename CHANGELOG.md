@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.4 (52 iOS / 26 Android) — 2026-11-09
+
+- Silenced encrypted call-key control traffic on the server contract.
+- Added a final iOS fail-closed mapping so a decrypted call-key control payload can never expose its JSON key material in a notification preview.
+
+
 ## 2.3.3 (51 iOS / 25 Android) — 2026-11-09
 
 - Fixed voice attachments that failed when legacy key/nonce fields used standard Base64 or when clear legacy M4A files had no encryption metadata.

@@ -45,8 +45,9 @@ class BlindbanditFirebaseMessagingService : FirebaseMessagingService() {
 
         val title = message.notification?.title ?: message.data["title"] ?: if (isCall) "Incoming call" else "New message"
         val hidePreview = prefs.getBoolean("hideMessagePreviews", true) || message.data["e2ee"] in setOf("true", "1")
-        val body = if (!isCall && hidePreview) "New message" else message.notification?.body ?: message.data["body"].orEmpty()
         val caller = message.data["from_name"] ?: message.data["from_handle"]?.let { "@$it" } ?: title
+        val rawBody = message.notification?.body ?: message.data["body"].orEmpty()
+        val body = net.mrblindbandit.app.connect.PushPreviewSanitizer.visibleBody(rawBody, isCall, hidePreview, caller)
         if (isCall) {
             CallLog.i("fcm incoming call idPresent=${!payload.callId.isNullOrBlank()} foreground=${isAppForeground()}")
             payload.callId?.let { CallTelecom.reportIncoming(this, it, caller) }
@@ -77,7 +78,7 @@ class BlindbanditFirebaseMessagingService : FirebaseMessagingService() {
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(if (!isCall && hidePreview) "BlindBandit" else title)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-            .setContentText(if (isCall) "$caller is calling" else body)
+            .setContentText(body)
             .setAutoCancel(true)
             .setTimeoutAfter(if (isCall) 45_000L else 0L)
             .setContentIntent(pending)

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.3.3 (51 iOS / 25 Android) — 2026-11-09
+
+- Fixed voice attachments that failed when legacy key/nonce fields used standard Base64 or when clear legacy M4A files had no encryption metadata.
+- Bound uploaded attachments to sent messages so voice files are retained instead of expiring as temporary uploads.
+- Prevented encrypted call-frame keys and nonces from appearing in iOS and Android notification previews.
+- Added safe server/app preview fallbacks and notification privacy regression coverage.
+- Fixed the iOS compatibility decoder build and synchronized Android release metadata.
+
+
 All notable changes to **Mr. Blindbandit Mobile** are documented in this file.
 
 This project uses a simple public release sequence. iOS and Android are kept on the same public release line whenever both platforms are part of the release. Earlier entries were reconstructed from repository history so the project has a clean, continuous public record from the initial app through the current release.

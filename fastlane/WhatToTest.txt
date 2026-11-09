@@ -1,7 +1,6 @@
-2.3.2 (50) — Voice-message playback repair
+Version 2.3.3 (51)
 
-• New encrypted voice messages bind their uploaded audio to the sent message so it is not treated as an abandoned temporary upload.
-• Legacy clear-m4a voice messages can play even when old key metadata is absent.
-• Standard base64, base64url, and legacy key/nonce field names are accepted.
-
-Please send and play a voice message in both a direct chat and a group. Also retry the message that previously announced “Attachment key or nonce missing.”
+- Play voice messages sent by current and older app versions, including legacy clear M4A attachments.
+- Confirm voice messages no longer fail with missingKey when the file is playable without encryption metadata.
+- Confirm incoming encrypted messages never display raw JSON, attachment keys, call-frame keys, or nonces in notifications.
+- Confirm incoming calls show a human-readable caller message and still open the call screen.

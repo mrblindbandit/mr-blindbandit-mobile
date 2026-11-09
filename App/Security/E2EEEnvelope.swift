@@ -83,20 +83,25 @@ struct E2EEPayload: Codable, Equatable {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             url = try c.decodeIfPresent(String.self, forKey: .url)
             attachment_id = try c.decodeIfPresent(String.self, forKey: .attachment_id)
-            key = (try c.decodeIfPresent(String.self, forKey: .key))
-                ?? (try c.decodeIfPresent(String.self, forKey: .attachment_key))
-                ?? (try c.decodeIfPresent(String.self, forKey: .encryption_key)) ?? ""
+            let directKey = try c.decodeIfPresent(String.self, forKey: .key)
+            let attachmentKey = try c.decodeIfPresent(String.self, forKey: .attachment_key)
+            let encryptionKey = try c.decodeIfPresent(String.self, forKey: .encryption_key)
+            key = directKey ?? attachmentKey ?? encryptionKey ?? ""
             wrapped_key = try c.decodeIfPresent(String.self, forKey: .wrapped_key)
-            nonce = (try c.decodeIfPresent(String.self, forKey: .nonce))
-                ?? (try c.decodeIfPresent(String.self, forKey: .base_nonce))
-                ?? (try c.decodeIfPresent(String.self, forKey: .iv))
+            let directNonce = try c.decodeIfPresent(String.self, forKey: .nonce)
+            let baseNonce = try c.decodeIfPresent(String.self, forKey: .base_nonce)
+            let initializationVector = try c.decodeIfPresent(String.self, forKey: .iv)
+            nonce = directNonce ?? baseNonce ?? initializationVector
             sha256 = (try c.decodeIfPresent(String.self, forKey: .sha256)) ?? ""
             mime = (try c.decodeIfPresent(String.self, forKey: .mime)) ?? ""
             size = try c.decodeIfPresent(Int.self, forKey: .size)
             filename = try c.decodeIfPresent(String.self, forKey: .filename)
             caption = try c.decodeIfPresent(String.self, forKey: .caption)
-            view_once = (try c.decodeIfPresent(Bool.self, forKey: .view_once))
-                ?? (try c.decodeIfPresent(Bool.self, forKey: .listen_once))
+            if let value = try c.decodeIfPresent(Bool.self, forKey: .view_once) {
+                view_once = value
+            } else {
+                view_once = try c.decodeIfPresent(Bool.self, forKey: .listen_once)
+            }
             duration = try c.decodeIfPresent(Double.self, forKey: .duration)
             transcript = try c.decodeIfPresent(String.self, forKey: .transcript)
             alt = try c.decodeIfPresent(String.self, forKey: .alt)
@@ -152,4 +157,28 @@ struct E2EEPayload: Codable, Equatable {
     }
 
     static func deleteSigningMessage(_ target: String) -> Data { Data("bb-delete:\(target)".utf8) }
+}
+
+
+/// Fail-closed notification preview rules shared by the app and notification extension.
+/// Raw encryption metadata and call-frame keys must never appear on the lock screen.
+enum PushPreviewSanitizer {
+    private static func object(_ text: String) -> [String: Any]? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.first == "{", let data = trimmed.data(using: .utf8),
+              let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return value
+    }
+
+    static func isCallControl(_ text: String) -> Bool {
+        guard let value = object(text) else { return false }
+        return value["call_id"] != nil && value["index"] != nil &&
+            (value["key"] != nil || value["nonce"] != nil)
+    }
+
+    static func containsSensitiveJSON(_ text: String) -> Bool {
+        guard let value = object(text) else { return false }
+        let secretKeys = ["key", "nonce", "ciphertext", "wrapped", "wrapped_key", "keys", "attachment_key", "encryption_key", "base_nonce", "iv"]
+        return secretKeys.contains { value[$0] != nil }
+    }
 }

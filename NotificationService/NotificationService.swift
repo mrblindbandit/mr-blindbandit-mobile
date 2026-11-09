@@ -15,12 +15,20 @@ final class NotificationService: UNNotificationServiceExtension {
         guard let content = request.content.mutableCopy() as? UNMutableNotificationContent else { contentHandler(request.content); return }
         best = content
         let info = content.userInfo
-        let category = (info["category"] as? String) ?? (info["type"] as? String) ?? ""
+        let category = ((info["category"] as? String) ?? (info["type"] as? String) ?? "").lowercased()
         let hidePreviews = PreviewPrivacyLookup.hidePreviews(info)
         let nameOnly = PreviewPrivacyLookup.nameOnlyPreviews()
         let muteSound = PreviewPrivacyLookup.muteSound(info)
+        let rawBody = content.body
+        let deepLink = ((info["deep_link"] as? String) ?? (info["deepLink"] as? String) ?? "").lowercased()
+        let isCall = category.contains("call") || deepLink.contains("/calls") ||
+            info["call_id"] != nil || info["callId"] != nil || PushPreviewSanitizer.isCallControl(rawBody)
 
-        if hidePreviews {
+        if isCall {
+            let caller = PushDecryptor.senderName(info)
+            content.title = caller.map { "Call from \($0)" } ?? "Incoming call"
+            content.body = caller.map { "\($0) is calling" } ?? "Incoming call"
+        } else if hidePreviews {
             // Global hidden, or per-chat hide: never surface decrypted body.
             content.body = "Message"
             if PreviewPrivacyLookup.fullyHidden() {
@@ -37,12 +45,14 @@ final class NotificationService: UNNotificationServiceExtension {
         } else if let text = PushDecryptor.decrypt(info) {
             content.body = text
             if (info["is_group"] as? Bool) != true, content.title.isEmpty { content.title = PushDecryptor.senderName(info) ?? content.title }
+        } else if PushPreviewSanitizer.containsSensitiveJSON(rawBody) {
+            content.body = "New message"
         }
         let myHandle = UserDefaults(suiteName: PushDecryptor.appGroup)?.string(forKey: "myHandle")?.lowercased()
         let mentioned = category.contains("mention") || (myHandle.map { content.body.lowercased().contains("@" + $0) } ?? false)
-        if category.contains("call") || mentioned { content.interruptionLevel = .timeSensitive }
+        if isCall || mentioned { content.interruptionLevel = .timeSensitive }
         // 2.0.6: ringing-call notification fallback uses the app ringtone (default Mr. BlindBandit, < 30 s).
-        if category.contains("call"), !category.contains("end"), !category.contains("missed") {
+        if isCall, !category.contains("end"), !category.contains("missed") {
             let file = UserDefaults(suiteName: PushDecryptor.appGroup)?.string(forKey: "ringtoneFile") ?? "ringtone_mrblindbandit.caf"
             content.sound = UNNotificationSound(named: UNNotificationSoundName(file))
         } else if muteSound {

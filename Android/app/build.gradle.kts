@@ -27,8 +27,8 @@ android {
         applicationId = "net.mrblindbandit.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 24
-        versionName = "2.3.2"
+        versionCode = 25
+        versionName = "2.3.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("String", "WEB_BASE_URL", "\"https://mrblindbandit.net\"")

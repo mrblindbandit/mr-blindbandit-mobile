@@ -15,3 +15,30 @@ data class PushPayload(val type: String, val callId: String?, val conversationId
         )
     }
 }
+
+
+/** Prevents encrypted envelopes and call-frame keys from leaking into OS notification previews. */
+internal object PushPreviewSanitizer {
+    private fun objectOrNull(text: String): org.json.JSONObject? {
+        val trimmed = text.trim()
+        if (!trimmed.startsWith("{")) return null
+        return runCatching { org.json.JSONObject(trimmed) }.getOrNull()
+    }
+
+    fun isCallControl(text: String): Boolean {
+        val value = objectOrNull(text) ?: return false
+        return value.has("call_id") && value.has("index") && (value.has("key") || value.has("nonce"))
+    }
+
+    fun containsSensitiveJson(text: String): Boolean {
+        val value = objectOrNull(text) ?: return false
+        return listOf("key", "nonce", "ciphertext", "wrapped", "wrapped_key", "keys",
+            "attachment_key", "encryption_key", "base_nonce", "iv").any(value::has)
+    }
+
+    fun visibleBody(raw: String, isCall: Boolean, hidePreview: Boolean, caller: String): String = when {
+        isCall -> "$caller is calling"
+        hidePreview || containsSensitiveJson(raw) -> "New message"
+        else -> raw
+    }
+}

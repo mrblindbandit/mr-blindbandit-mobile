@@ -282,3 +282,11 @@ Cross-links:
 - Add explicit cloud summaries and audio transcription, caption lifecycle handling, full current ringtone/ambient asset pack with native preview lifecycle.
 - Extend p256-v1 receive/interoperability validation. See docs/ANDROID_PARITY.md for exact remaining gaps and release gates.
 - No backend changes, new production signing identity, merge or Google Play publication.
+
+
+## 2026-11-09 — Voice playback and push privacy hotfix
+
+- iOS 2.3.3 (51), Android 2.3.3 (25).
+- Voice attachment playback accepts legacy Base64/base64url metadata and clear M4A fallback; sends bind attachment IDs.
+- Notification previews fail closed for encrypted envelopes and call-frame key payloads.
+- Fixed Swift throwing decode chains and synchronized Android AppConfig version metadata.

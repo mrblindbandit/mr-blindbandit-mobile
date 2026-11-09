@@ -6,6 +6,8 @@ name: Release AAB (Google Play) — Mr. Blindbandit
 # Optional auto-upload to Play when PLAY_SERVICE_ACCOUNT_JSON is set (default track: production).
 on:
   workflow_dispatch:
+  push:
+    branches: [release/android]
 permissions:
   contents: read
 concurrency:
